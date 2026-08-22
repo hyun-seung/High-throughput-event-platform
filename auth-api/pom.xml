@@ -20,7 +20,7 @@
 
     <dependencies>
         <dependency>
-            <groupId>com.hyunseung</groupId>
+            <groupId>org.side.project.event</groupId>
             <artifactId>common-core</artifactId>
             <version>${project.version}</version>
         </dependency>
