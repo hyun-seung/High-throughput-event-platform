@@ -4,6 +4,10 @@ target/
 !**/src/test/**/target/
 .kotlin
 
+# Local configuration
+application-local.yml
+.env
+
 ### IntelliJ IDEA ###
 .idea/modules.xml
 .idea/jarRepositories.xml
