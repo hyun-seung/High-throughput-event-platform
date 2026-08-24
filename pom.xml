@@ -21,7 +21,7 @@
 
     <modules>
         <module>common-core</module>
-        <module>auth-api</module>
+        <module>auth-module</module>
         <module>event-api</module>
         <module>common-security</module>
     </modules>

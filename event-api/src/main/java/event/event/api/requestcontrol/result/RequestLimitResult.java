@@ -8,6 +8,11 @@ public record RequestLimitResult(
 ) {
 
     public boolean isAllowed() {
-        return status == RequestLimitStatus.ALLOWED;
+        return status == RequestLimitStatus.ALLOWED
+                || status == RequestLimitStatus.REDIS_UNAVAILABLE_BYPASS;
+    }
+
+    public static RequestLimitResult redisUnavailableBypass() {
+        return new RequestLimitResult(RequestLimitStatus.REDIS_UNAVAILABLE_BYPASS, -1, -1, -1);
     }
 }

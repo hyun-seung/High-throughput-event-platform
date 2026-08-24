@@ -4,9 +4,7 @@ import event.common.security.security.jwt.exception.JwtAuthenticationException;
 import event.common.security.security.jwt.exception.JwtErrorCode;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.Strings;
-import org.springframework.stereotype.Component;
 
-@Component
 public class JwtHeaderTokenExtractor {
 
     private static final String TOKEN_PREFIX = "Bearer ";
