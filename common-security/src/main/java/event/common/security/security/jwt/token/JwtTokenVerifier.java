@@ -7,11 +7,9 @@ import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
 import org.apache.commons.lang3.StringUtils;
-import org.springframework.stereotype.Component;
 
 import javax.crypto.SecretKey;
 
-@Component
 public class JwtTokenVerifier {
 
     private final JwtParser jwtParser;

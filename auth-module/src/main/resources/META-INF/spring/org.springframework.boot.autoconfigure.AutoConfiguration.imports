@@ -1,0 +1,2 @@
+event.auth.module.auth.config.AuthModuleAutoConfiguration
+event.auth.module.auth.config.AuthTokenSecurityAutoConfiguration

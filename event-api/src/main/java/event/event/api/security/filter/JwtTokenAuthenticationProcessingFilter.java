@@ -14,6 +14,7 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -25,6 +26,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 import java.util.Collections;
 
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class JwtTokenAuthenticationProcessingFilter extends OncePerRequestFilter {
@@ -42,12 +44,18 @@ public class JwtTokenAuthenticationProcessingFilter extends OncePerRequestFilter
         try {
             authenticate(request);
             } catch (ExpiredJwtException e) {   // JWT 만료
+                log.warn("JWT authentication failed. reason=TOKEN_EXPIRED, method={}, uri={}",
+                        request.getMethod(), request.getRequestURI());
                 authenticationEntryPoint.commence(request, response, new JwtAuthenticationException(JwtErrorCode.TOKEN_EXPIRED, e));
                 return;
             } catch (JwtAuthenticationException e) {    // Authorization Header 누락, Token 누락 등 인증 처리 중 발생한 명시적 예외
+                log.warn("JWT authentication failed. reason={}, method={}, uri={}",
+                        e.getErrorCode(), request.getMethod(), request.getRequestURI());
                 authenticationEntryPoint.commence(request, response, e);
                 return;
             } catch (JwtException | IllegalArgumentException e) {   // JWT 서명 오류, 형식 오류, Claims 파싱 오류 등 유효하지 않은 Token
+                log.warn("JWT authentication failed. reason=INVALID_TOKEN, method={}, uri={}",
+                        request.getMethod(), request.getRequestURI());
                 authenticationEntryPoint.commence(request, response, new JwtAuthenticationException(JwtErrorCode.INVALID_TOKEN, e));
                 return;
             }
