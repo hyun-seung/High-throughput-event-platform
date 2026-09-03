@@ -34,31 +34,36 @@ public class JwtTokenAuthenticationProcessingFilter extends OncePerRequestFilter
     private static final String CLAIM_USERNAME = "username";
 
     private final JwtHeaderTokenExtractor tokenExtractor;
-    private final JwtTokenVerifier JwtTokenVerifier;
+    private final JwtTokenVerifier jwtTokenVerifier;
     private final JwtAuthenticationEntryPoint authenticationEntryPoint;
 
     @Override
-    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
-            throws ServletException, IOException {
+    protected void doFilterInternal(
+            HttpServletRequest request,
+            HttpServletResponse response,
+            FilterChain filterChain
+    ) throws ServletException, IOException {
 
         try {
             authenticate(request);
-            } catch (ExpiredJwtException e) {   // JWT 만료
-                log.warn("JWT authentication failed. reason=TOKEN_EXPIRED, method={}, uri={}",
-                        request.getMethod(), request.getRequestURI());
-                authenticationEntryPoint.commence(request, response, new JwtAuthenticationException(JwtErrorCode.TOKEN_EXPIRED, e));
-                return;
-            } catch (JwtAuthenticationException e) {    // Authorization Header 누락, Token 누락 등 인증 처리 중 발생한 명시적 예외
-                log.warn("JWT authentication failed. reason={}, method={}, uri={}",
-                        e.getErrorCode(), request.getMethod(), request.getRequestURI());
-                authenticationEntryPoint.commence(request, response, e);
-                return;
-            } catch (JwtException | IllegalArgumentException e) {   // JWT 서명 오류, 형식 오류, Claims 파싱 오류 등 유효하지 않은 Token
-                log.warn("JWT authentication failed. reason=INVALID_TOKEN, method={}, uri={}",
-                        request.getMethod(), request.getRequestURI());
-                authenticationEntryPoint.commence(request, response, new JwtAuthenticationException(JwtErrorCode.INVALID_TOKEN, e));
-                return;
-            }
+        } catch (ExpiredJwtException e) {
+            // JWT 만료
+            log.warn("JWT authentication failed. reason=TOKEN_EXPIRED, method={}, uri={}",
+                    request.getMethod(), request.getRequestURI());
+
+            authenticationEntryPoint.commence(request, response, new JwtAuthenticationException(JwtErrorCode.TOKEN_EXPIRED, e));
+            return;
+        } catch (JwtAuthenticationException e) {
+            // Authorization Header 누락, Token 누락 등 인증 처리 중 발생한 명시적 예외
+            log.warn("JWT authentication failed. reason={}, method={}, uri={}", e.getErrorCode(), request.getMethod(), request.getRequestURI());
+            authenticationEntryPoint.commence(request, response, e);
+            return;
+        } catch (JwtException | IllegalArgumentException e) {
+            // JWT 서명 오류, 형식 오류, Claims 파싱 오류 등 유효하지 않은 Token
+            log.warn("JWT authentication failed. reason=INVALID_TOKEN, method={}, uri={}", request.getMethod(), request.getRequestURI());
+            authenticationEntryPoint.commence(request, response, new JwtAuthenticationException(JwtErrorCode.INVALID_TOKEN, e));
+            return;
+        }
 
         filterChain.doFilter(request, response);
     }
@@ -66,16 +71,16 @@ public class JwtTokenAuthenticationProcessingFilter extends OncePerRequestFilter
     private void authenticate(HttpServletRequest request) {
         String authorization = request.getHeader(HttpHeaders.AUTHORIZATION);
         String token = tokenExtractor.extract(authorization);
-        Claims claims = JwtTokenVerifier.parseClaims(token);
+        Claims claims = jwtTokenVerifier.parseClaims(token);
 
         String subject = claims.getSubject();
-
         if (StringUtils.isBlank(subject)) {
             throw new JwtAuthenticationException(JwtErrorCode.INVALID_TOKEN);
         }
 
         Long userId = Long.valueOf(subject);
         String username = claims.get(CLAIM_USERNAME, String.class);
+
         AuthenticatedUser principal = new AuthenticatedUser(userId, username);
 
         UsernamePasswordAuthenticationToken authentication =

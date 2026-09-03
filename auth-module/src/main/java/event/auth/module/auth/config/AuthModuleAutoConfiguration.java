@@ -2,6 +2,7 @@ package event.auth.module.auth.config;
 
 import event.auth.module.AuthModuleMarker;
 import event.auth.module.auth.controller.AuthController;
+import event.auth.module.auth.exception.AuthExceptionHandler;
 import event.auth.module.auth.jwt.JwtTokenIssuer;
 import event.auth.module.auth.password.PasswordMatcher;
 import event.auth.module.auth.service.AuthService;
@@ -21,7 +22,8 @@ import org.springframework.context.annotation.Import;
         PasswordMatcher.class,
         JwtTokenIssuer.class,
         AuthService.class,
-        AuthController.class
+        AuthController.class,
+        AuthExceptionHandler.class
 })
 public class AuthModuleAutoConfiguration {
 }
