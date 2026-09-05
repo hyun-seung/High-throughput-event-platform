@@ -1,0 +1,8 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Event" type="CompoundRunConfigurationType">
+    <toRun name="EventApiApplication" type="SpringBootApplicationConfigurationType" />
+    <toRun name="EventProcessingWorkerApplication" type="SpringBootApplicationConfigurationType" />
+    <toRun name="ExternalApiSimulatorApplication" type="SpringBootApplicationConfigurationType" />
+    <method v="2" />
+  </configuration>
+</component>

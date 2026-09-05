@@ -1,6 +1,6 @@
 package event.event.api.event.service;
 
-import event.event.api.event.dto.EventMessage;
+import event.contract.message.EventMessage;
 import event.event.api.event.dto.EventRequest;
 import event.event.api.event.dto.EventResponse;
 import event.event.api.event.kafka.producer.EventProducer;

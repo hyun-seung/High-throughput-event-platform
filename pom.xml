@@ -24,6 +24,9 @@
         <module>auth-module</module>
         <module>event-api</module>
         <module>common-security</module>
+        <module>event-contract</module>
+        <module>event-processing-worker</module>
+        <module>external-api-simulator</module>
     </modules>
 
     <properties>
