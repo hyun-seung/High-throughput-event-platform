@@ -1,4 +1,4 @@
-package event.event.api.event.dto;
+package event.contract.message;
 
 import java.time.Instant;
 import java.util.Map;
