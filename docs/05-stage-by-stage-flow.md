@@ -102,28 +102,27 @@ Dispatch 발행 후 최초 record commit 전에 종료되면 Dispatch event가 �
 
 ## 5. Dispatch Consumer와 Provider 호출
 
-**일부**
-
-현재:
+**구현**
 
 ```text
 DispatchRequested consume
 → event type 검증
-→ deliveryId를 Provider Idempotency-Key로 사용
+→ deliveryId + provider + routeOrder + attemptNumber로 안정적인 attemptId 생성
+→ DISPATCH_ATTEMPT conditional claim
+→ PROCESSING + leaseUntil + version 저장
+→ attemptId를 Provider Idempotency-Key로 사용
 → Mock Provider HTTP 호출
+→ version 조건으로 ACCEPTED 저장
 ```
 
-HTTP connection timeout과 read timeout이 있습니다. Mock Provider는 동일 Idempotency-Key에 기존 응답을 반환합니다.
+완료된 Attempt는 Provider 호출 없이 listener를 완료합니다. 유효한 lease가 있으면 중복 호출하지 않고 record 처리를 실패시켜 offset을 commit하지 않습니다. lease가 만료되면 version을 증가시켜 같은 attemptId로 다시 점유합니다.
 
-추가할 흐름:
+현재 남은 흐름:
 
 ```text
-DispatchRequested consume
-→ DISPATCH_ATTEMPT conditional claim
-→ PROCESSING + leaseUntil
-→ Provider 호출
+Provider 호출 예외 분류
 → ACCEPTED / FAILED / UNKNOWN 저장
-→ offset commit
+→ Retry 또는 조정 경로 선택
 ```
 
 Provider가 key를 지원하지 않는 mode에서는 Attempt claim만으로 HTTP 응답 유실 뒤의 중복 부수 효과를 완전히 막을 수 없습니다.
@@ -205,8 +204,9 @@ delivery.finalized.v1
 | API 접수 | 없음 | Kafka ack가 접수 원장 |
 | Delivery 원본 projection | 1회 | 조회와 idempotency 충돌 확인 |
 | 단순 payload 변환 | 생략 | 원본에서 재계산 가능 |
-| Provider Attempt claim | 필수 | 외부 호출 중복 방지 |
-| Provider 응답/UNKNOWN | 필수 | Retry/Fallback 판단 |
+| Provider Attempt claim | 1회 | 외부 호출 중복 방지 |
+| Provider 성공 응답 | 1회 | 완료 중복 skip와 복구 판단 |
+| Provider 실패/UNKNOWN | 예정 | Retry/Fallback 판단 |
 | Retry 예약 | 필수 | 횟수, deadline, 다음 실행 시각 |
 | Receipt 상태 전이 | 필수 | 중복과 순서 역전 방지 |
 | 로그/메트릭 | 생략 | Loki/Prometheus 사용 |

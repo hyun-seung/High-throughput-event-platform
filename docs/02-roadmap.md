@@ -19,6 +19,7 @@
 - Producer `acks=all`, idempotence, zstd 설정
 - Provider HTTP timeout과 Idempotency-Key 전달
 - Idempotency-Key를 지원하는 Mock Provider의 중복 응답 수렴
+- Dispatch Attempt conditional claim, lease, version과 완료 skip
 - DynamoDB Local named volume 영속화
 
 ## Phase 0. 재현 가능한 로컬 환경

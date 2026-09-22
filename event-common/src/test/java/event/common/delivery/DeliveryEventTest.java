@@ -62,4 +62,16 @@ class DeliveryEventTest {
         assertEquals(first.payload(), second.payload());
         assertEquals(first.payload().keySet().stream().toList(), java.util.List.of("a", "z"));
     }
+
+    @Test
+    void sameProviderAttemptProducesStableAttemptId() {
+        String deliveryId = DeliveryIds.deliveryId(10L, "client-request-1");
+
+        String first = DeliveryIds.attemptId(deliveryId, "mock-provider", 1, 1);
+        String duplicate = DeliveryIds.attemptId(deliveryId, "mock-provider", 1, 1);
+        String retry = DeliveryIds.attemptId(deliveryId, "mock-provider", 1, 2);
+
+        assertEquals(first, duplicate);
+        assertNotEquals(first, retry);
+    }
 }

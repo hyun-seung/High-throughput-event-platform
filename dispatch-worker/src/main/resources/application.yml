@@ -19,3 +19,7 @@ external-api:
   base-url: ${EXTERNAL_API_BASE_URL:http://localhost:8090}
   connect-timeout: ${EXTERNAL_API_CONNECT_TIMEOUT:2s}
   read-timeout: ${EXTERNAL_API_READ_TIMEOUT:5s}
+
+dispatch:
+  provider: ${DISPATCH_PROVIDER:mock-provider}
+  lease-duration: ${DISPATCH_LEASE_DURATION:30s}
