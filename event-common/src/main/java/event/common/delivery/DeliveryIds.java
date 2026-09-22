@@ -16,6 +16,15 @@ public final class DeliveryIds {
         return nameBasedId("event:" + deliveryId + ":" + eventType.name() + ":v1");
     }
 
+    public static String attemptId(
+            String deliveryId,
+            String provider,
+            int routeOrder,
+            int attemptNumber
+    ) {
+        return nameBasedId("attempt:" + deliveryId + ":" + provider + ":" + routeOrder + ":" + attemptNumber);
+    }
+
     private static String nameBasedId(String source) {
         return UUID.nameUUIDFromBytes(source.getBytes(StandardCharsets.UTF_8)).toString();
     }

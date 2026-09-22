@@ -3,8 +3,7 @@ package event.delivery.dispatch.consumer;
 import event.common.delivery.DeliveryEvent;
 import event.common.delivery.DeliveryEventType;
 import event.common.delivery.DeliveryTopics;
-import event.delivery.dispatch.external.client.ExternalApiClient;
-import event.delivery.dispatch.external.dto.ProviderDispatchResponse;
+import event.delivery.dispatch.service.DispatchService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.annotation.KafkaListener;
@@ -15,7 +14,7 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class DispatchRequestConsumer {
 
-    private final ExternalApiClient externalApiClient;
+    private final DispatchService dispatchService;
 
     @KafkaListener(
             topics = DeliveryTopics.DISPATCH_REQUESTED,
@@ -26,9 +25,6 @@ public class DispatchRequestConsumer {
             throw new IllegalArgumentException("Unexpected delivery event type: " + event.eventType());
         }
 
-        ProviderDispatchResponse response = externalApiClient.send(event);
-
-        log.debug("Dispatch completed. deliveryId={}, providerAccepted={}, processedAt={}",
-                event.deliveryId(), response.accepted(), response.processedAt());
+        dispatchService.dispatch(event);
     }
 }

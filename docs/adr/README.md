@@ -34,7 +34,7 @@
 | [ADR-005](ADR-005-delivery-identifiers.md) | Delivery 식별자와 event envelope | Accepted |
 | ADR-006 | topic, partition key, retention과 Consumer Group | 1 |
 | ADR-007 | Delivery/Attempt 상태 머신과 순서 역전 규칙 | 2 |
-| ADR-008 | Sender claim, lease와 Provider idempotency | 3 |
+| [ADR-008](ADR-008-dispatch-attempt-idempotency.md) | Sender claim, lease와 Provider idempotency | Accepted |
 | ADR-009 | Provider 결과 불명 상태의 조정 정책 | 3 |
 | ADR-010 | Retry와 Recovery 분리 및 스케줄 방식 | 4~5 |
 | ADR-011 | Provider routing, fallback 조건과 전체 deadline | 5 |
