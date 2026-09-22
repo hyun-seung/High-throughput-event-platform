@@ -1,0 +1,29 @@
+spring:
+  application:
+    name: delivery-ingress-worker
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      key-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      properties:
+        "[spring.deserializer.key.delegate.class]": org.apache.kafka.common.serialization.StringDeserializer
+        "[spring.deserializer.value.delegate.class]": org.springframework.kafka.support.serializer.JacksonJsonDeserializer
+        "[spring.json.value.default.type]": event.common.delivery.DeliveryEvent
+        "[spring.json.trusted.packages]": event.common.delivery
+    producer:
+      acks: all
+      properties:
+        "[enable.idempotence]": true
+        "[compression.type]": zstd
+        "[linger.ms]": 5
+        "[spring.json.add.type.headers]": false
+
+delivery:
+  dynamodb:
+    region: ${AWS_REGION:ap-northeast-2}
+    endpoint: ${DYNAMODB_ENDPOINT:http://localhost:8000}
+    initialize-tables: ${DYNAMODB_INITIALIZE_TABLES:true}

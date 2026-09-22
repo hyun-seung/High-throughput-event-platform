@@ -25,7 +25,8 @@
         <module>event-api</module>
         <module>common-security</module>
         <module>event-common</module>
-        <module>event-processing-worker</module>
+        <module>delivery-ingress-worker</module>
+        <module>dispatch-worker</module>
         <module>external-api-simulator</module>
     </modules>
 
