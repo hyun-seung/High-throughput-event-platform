@@ -1,0 +1,8 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Delivery" type="CompoundRunConfigurationType">
+    <toRun name="DeliveryApiApplication" type="SpringBootApplicationConfigurationType" />
+    <toRun name="DeliveryProcessingWorkerApplication" type="SpringBootApplicationConfigurationType" />
+    <toRun name="MockDeliveryProviderApplication" type="SpringBootApplicationConfigurationType" />
+    <method v="2" />
+  </configuration>
+</component>
