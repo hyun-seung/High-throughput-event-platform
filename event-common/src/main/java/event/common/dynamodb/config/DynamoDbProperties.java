@@ -6,7 +6,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @Getter
 @Setter
-@ConfigurationProperties(prefix = "event.dynamodb")
+@ConfigurationProperties(prefix = "delivery.dynamodb")
 public class DynamoDbProperties {
 
     private String endpoint;

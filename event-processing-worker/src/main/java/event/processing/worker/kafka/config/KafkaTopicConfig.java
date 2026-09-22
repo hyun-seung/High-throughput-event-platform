@@ -1,6 +1,6 @@
 package event.processing.worker.kafka.config;
 
-import event.common.topic.EventTopics;
+import event.common.delivery.DeliveryTopics;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -13,18 +13,36 @@ public class KafkaTopicConfig {
     private static final int REPLICA_COUNT = 1;
 
     @Bean
-    public NewTopic eventRequestsTopic() {
+    public NewTopic deliveryRequestedTopic() {
         return TopicBuilder
-                .name(EventTopics.EVENT_REQUESTS)
+                .name(DeliveryTopics.DELIVERY_REQUESTED)
                 .partitions(PARTITION_COUNT)
                 .replicas(REPLICA_COUNT)
                 .build();
     }
 
     @Bean
-    public NewTopic eventRequestsDltTopic() {
+    public NewTopic dispatchRequestedTopic() {
         return TopicBuilder
-                .name(EventTopics.EVENT_REQUESTS_DLT)
+                .name(DeliveryTopics.DISPATCH_REQUESTED)
+                .partitions(PARTITION_COUNT)
+                .replicas(REPLICA_COUNT)
+                .build();
+    }
+
+    @Bean
+    public NewTopic deliveryRequestedDltTopic() {
+        return TopicBuilder
+                .name(DeliveryTopics.DELIVERY_REQUESTED_DLT)
+                .partitions(PARTITION_COUNT)
+                .replicas(REPLICA_COUNT)
+                .build();
+    }
+
+    @Bean
+    public NewTopic dispatchRequestedDltTopic() {
+        return TopicBuilder
+                .name(DeliveryTopics.DISPATCH_REQUESTED_DLT)
                 .partitions(PARTITION_COUNT)
                 .replicas(REPLICA_COUNT)
                 .build();
