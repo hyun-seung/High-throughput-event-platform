@@ -24,7 +24,7 @@
         <module>auth-module</module>
         <module>event-api</module>
         <module>common-security</module>
-        <module>event-contract</module>
+        <module>event-common</module>
         <module>event-processing-worker</module>
         <module>external-api-simulator</module>
     </modules>
@@ -33,6 +33,19 @@
         <java.version>21</java.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <jjwt.version>0.13.0</jjwt.version>
+        <aws.sdk.version>2.54.12</aws.sdk.version>
     </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>bom</artifactId>
+                <version>${aws.sdk.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 
 </project>

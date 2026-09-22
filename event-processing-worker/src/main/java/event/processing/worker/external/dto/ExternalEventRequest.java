@@ -1,6 +1,6 @@
 package event.processing.worker.external.dto;
 
-import event.contract.message.EventMessage;
+import event.common.message.EventMessage;
 
 import java.time.Instant;
 import java.util.Map;

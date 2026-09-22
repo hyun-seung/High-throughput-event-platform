@@ -1,6 +1,6 @@
 package event.processing.worker.external.client;
 
-import event.contract.message.EventMessage;
+import event.common.message.EventMessage;
 import event.processing.worker.external.dto.ExternalEventRequest;
 import event.processing.worker.external.dto.ExternalEventResponse;
 import lombok.RequiredArgsConstructor;
