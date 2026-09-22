@@ -26,13 +26,14 @@ API는 DynamoDB를 호출하지 않습니다. Kafka ack가 최초 접수 보장�
 | 모듈 | 현재 역할 |
 |---|---|
 | `event-api` | JWT 인증, Redis admission control, Kafka-first Delivery 접수 |
-| `event-processing-worker` | Delivery 원본 conditional 저장, Dispatch event 발행, Provider 호출 |
+| `delivery-ingress-worker` | Delivery 원본 conditional 저장, Dispatch event 발행 |
+| `dispatch-worker` | Dispatch event 소비, 외부 Provider 호출 |
 | `external-api-simulator` | Idempotency-Key 기반 중복 방지와 성공/강제 500 응답 |
 | `event-common` | Delivery event 계약, Topic, DynamoDB 설정과 테이블 초기화 |
 | `auth-module`, `common-security` | 사용자 인증과 JWT |
 | `common-core` | 공통 API 응답과 오류 |
 
-모듈 artifact 이름의 `event`는 아직 유지하고 있으며 업무 코드에는 `Delivery` 용어를 적용했습니다.
+각 처리 단계는 독립 실행 모듈로 분리되어 별도 확장과 장애 격리가 가능합니다. 공통 계약 모듈에는 `event` 이름이 남아 있으며 업무 코드에는 `Delivery` 용어를 적용했습니다.
 
 ## 3. 구현된 신뢰성 경계
 
