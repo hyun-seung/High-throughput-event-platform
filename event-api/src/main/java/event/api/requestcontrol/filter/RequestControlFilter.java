@@ -22,14 +22,14 @@ import java.util.Objects;
 @RequiredArgsConstructor
 public class RequestControlFilter extends OncePerRequestFilter {
 
-    private static final String EVENT_API_PATH = "/api/v1/events";
+    private static final String DELIVERY_API_PATH = "/api/v1/deliveries";
 
     private final RequestLimiter requestLimiter;
     private final RequestControlFailureHandler failureHandler;
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        return !HttpMethod.POST.matches(request.getMethod()) || !EVENT_API_PATH.equals(request.getServletPath());
+        return !HttpMethod.POST.matches(request.getMethod()) || !DELIVERY_API_PATH.equals(request.getServletPath());
     }
 
     @Override

@@ -1,8 +1,8 @@
 package event.processing.worker.external.client;
 
-import event.common.message.EventMessage;
-import event.processing.worker.external.dto.ExternalEventRequest;
-import event.processing.worker.external.dto.ExternalEventResponse;
+import event.common.delivery.DeliveryEvent;
+import event.processing.worker.external.dto.ProviderDispatchRequest;
+import event.processing.worker.external.dto.ProviderDispatchResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -15,15 +15,16 @@ public class ExternalApiClient {
 
     private final RestClient externalApiRestClient;
 
-    public ExternalEventResponse send(EventMessage message) {
-        ExternalEventRequest request = ExternalEventRequest.from(message);
+    public ProviderDispatchResponse send(DeliveryEvent event) {
+        ProviderDispatchRequest request = ProviderDispatchRequest.from(event);
 
-        ExternalEventResponse response = externalApiRestClient
+        ProviderDispatchResponse response = externalApiRestClient
                 .post()
-                .uri("/api/v1/events")
+                .uri("/api/v1/deliveries")
+                .header("Idempotency-Key", event.deliveryId())
                 .body(request)
                 .retrieve()
-                .body(ExternalEventResponse.class);
+                .body(ProviderDispatchResponse.class);
 
         return Objects.requireNonNull(response, "External API response must not be null");
     }

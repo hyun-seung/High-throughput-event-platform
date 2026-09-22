@@ -39,7 +39,7 @@ public class DynamoDbAutoConfiguration {
 
     @Bean
     @ConditionalOnProperty(
-            prefix = "event.dynamodb",
+            prefix = "delivery.dynamodb",
             name = "initialize-tables",
             havingValue = "true"
     )
