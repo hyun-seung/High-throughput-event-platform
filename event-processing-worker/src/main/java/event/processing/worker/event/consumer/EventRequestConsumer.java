@@ -1,7 +1,7 @@
 package event.processing.worker.event.consumer;
 
-import event.contract.message.EventMessage;
-import event.contract.topic.EventTopics;
+import event.common.message.EventMessage;
+import event.common.topic.EventTopics;
 import event.processing.worker.event.service.EventProcessingService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

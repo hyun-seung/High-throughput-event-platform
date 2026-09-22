@@ -16,7 +16,7 @@
         <!-- Common -->
         <dependency>
             <groupId>org.side.project.event</groupId>
-            <artifactId>event-contract</artifactId>
+            <artifactId>event-common</artifactId>
             <version>${project.version}</version>
         </dependency>
 
