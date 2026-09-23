@@ -34,7 +34,17 @@ public class DeliveryService {
                 Instant.now()
         );
 
-        return deliveryEventPublisher.send(event)
-                .thenApply(ignored -> new DeliveryResponse(deliveryId, ACCEPTED));
+        try {
+            return deliveryEventPublisher.send(event)
+                    .handle((ignored, failure) -> {
+                        if (failure != null) {
+                            throw new DeliveryAcceptanceException(failure);
+                        }
+                        return new DeliveryResponse(deliveryId, ACCEPTED);
+                    });
+        } catch (RuntimeException failure) {
+            // Kafka send can fail before returning a future (metadata/buffer/serialization).
+            return CompletableFuture.failedFuture(new DeliveryAcceptanceException(failure));
+        }
     }
 }
