@@ -28,7 +28,7 @@ case "${1:-help}" in
     exec python3 scripts/local-smoke.py
     ;;
   build)
-    "${MAVEN_BIN:-mvn}" clean package
+    "${MAVEN_BIN:-./mvnw}" clean package
     ;;
   run)
     module="${2:-}"
@@ -52,7 +52,11 @@ case "${1:-help}" in
     fi
     jar="$module/target/$module-1.0-SNAPSHOT.jar"
     [[ -f "$jar" ]] || { echo 'Build first: bash scripts/local.sh build' >&2; exit 1; }
-    exec "${JAVA_HOME:+$JAVA_HOME/bin/}java" -jar "$jar" --server.port="$SERVER_PORT"
+    java_bin="${JAVA_HOME:+$JAVA_HOME/bin/}java"
+    java_version=$("$java_bin" -XshowSettings:properties -version 2>&1) || { echo 'Cannot run Java. Set JAVA_HOME to a JDK 21 installation.' >&2; exit 1; }
+    java_major=$(awk '$1 == "java.specification.version" { print $3 }' <<< "$java_version")
+    [[ "$java_major" == 21 ]] || { echo "Java 21 is required (found $java_major). Set JAVA_HOME to a JDK 21 installation." >&2; exit 1; }
+    exec "$java_bin" -jar "$jar" --server.port="$SERVER_PORT"
     ;;
   status)
     docker compose ps
