@@ -25,11 +25,11 @@ public class DeliveryRequestConsumer {
     public void consume(DeliveryEvent event) {
         requireType(event, DeliveryEventType.DELIVERY_REQUESTED);
 
-        boolean inserted = deliveryRepository.saveIfAbsent(event);
-        log.debug("Delivery request consumed. deliveryId={}, eventId={}, inserted={}",
-                event.deliveryId(), event.eventId(), inserted);
+        DeliveryEvent stored = deliveryRepository.saveOrLoad(event);
+        log.debug("Delivery request consumed. deliveryId={}, eventId={}, occurredAt={}",
+                stored.deliveryId(), stored.eventId(), stored.occurredAt());
 
-        deliveryFlowProducer.sendDispatchRequested(event.toDispatchRequested()).join();
+        deliveryFlowProducer.sendDispatchRequested(stored.toDispatchRequested()).join();
     }
 
     private void requireType(DeliveryEvent event, DeliveryEventType expected) {

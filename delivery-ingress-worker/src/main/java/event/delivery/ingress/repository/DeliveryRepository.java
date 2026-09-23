@@ -1,6 +1,7 @@
 package event.delivery.ingress.repository;
 
 import event.common.delivery.DeliveryEvent;
+import event.common.delivery.DeliveryPayloads;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
@@ -40,7 +41,7 @@ public class DeliveryRepository {
     private final DynamoDbClient dynamoDbClient;
     private final JsonMapper jsonMapper;
 
-    public boolean saveIfAbsent(DeliveryEvent event) {
+    public DeliveryEvent saveOrLoad(DeliveryEvent event) {
         Map<String, AttributeValue> item = toItem(event);
         PutItemRequest request = PutItemRequest.builder()
                 .tableName(DELIVERY_STATE)
@@ -51,20 +52,24 @@ public class DeliveryRepository {
 
         try {
             dynamoDbClient.putItem(request);
-            return true;
+            return event;
         } catch (ConditionalCheckFailedException e) {
-            verifyExistingDelivery(event);
-            return false;
+            return loadExistingDelivery(event);
         }
     }
 
-    private void verifyExistingDelivery(DeliveryEvent event) {
+    private DeliveryEvent loadExistingDelivery(DeliveryEvent event) {
         Map<String, AttributeValue> existing = dynamoDbClient.getItem(GetItemRequest.builder()
                         .tableName(DELIVERY_STATE)
                         .key(key(event.deliveryId()))
                         .consistentRead(true)
                         .build())
                 .item();
+
+        if (existing.isEmpty()) {
+            throw new IllegalStateException(
+                    "Existing delivery disappeared during duplicate verification. deliveryId=" + event.deliveryId());
+        }
 
         boolean sameRequest = value(existing, EVENT_ID).equals(event.eventId())
                 && value(existing, TENANT_ID).equals(String.valueOf(event.tenantId()))
@@ -75,6 +80,13 @@ public class DeliveryRepository {
             throw new IllegalStateException(
                     "Idempotency key collision with a different delivery request. deliveryId=" + event.deliveryId());
         }
+
+        // A client retry has a new API timestamp. Always forward the first persisted ingress time.
+        Instant originalOccurredAt = Instant.parse(value(existing, OCCURRED_AT));
+        return new DeliveryEvent(
+                event.schemaVersion(), event.eventId(), event.eventType(), event.deliveryId(),
+                event.tenantId(), event.deliveryType(), event.payload(), originalOccurredAt,
+                event.correlationId(), event.causationId());
     }
 
     private Map<String, AttributeValue> toItem(DeliveryEvent event) {
@@ -110,7 +122,7 @@ public class DeliveryRepository {
 
     private String serializePayload(Map<String, Object> payload) {
         try {
-            return jsonMapper.writeValueAsString(payload);
+            return jsonMapper.writeValueAsString(DeliveryPayloads.canonicalize(payload));
         } catch (JacksonException e) {
             throw new IllegalStateException("Failed to serialize delivery payload.", e);
         }
