@@ -12,6 +12,7 @@
 - [장애 시나리오와 검증표](docs/03-failure-test-matrix.md)
 - [전체 End-to-End 처리 흐름](docs/04-end-to-end-flow.md)
 - [구간별 상세 처리 흐름](docs/05-stage-by-stage-flow.md)
+- [로컬 통합 실행](docs/06-local-development.md)
 - [ADR 목록](docs/adr/README.md)
 
 ## 가장 먼저 할 일

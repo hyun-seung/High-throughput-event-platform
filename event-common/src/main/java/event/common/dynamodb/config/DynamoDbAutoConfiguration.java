@@ -15,6 +15,7 @@ import software.amazon.awssdk.services.dynamodb.DynamoDbClientBuilder;
 import java.net.URI;
 
 @AutoConfiguration
+@ConditionalOnProperty(prefix = "delivery.dynamodb", name = "enabled", havingValue = "true")
 @EnableConfigurationProperties(DynamoDbProperties.class)
 public class DynamoDbAutoConfiguration {
 

@@ -38,6 +38,12 @@ public class JwtTokenAuthenticationProcessingFilter extends OncePerRequestFilter
     private final JwtAuthenticationEntryPoint authenticationEntryPoint;
 
     @Override
+    protected boolean shouldNotFilterAsyncDispatch() {
+        // CompletableFuture responses resume on a thread with a fresh security context.
+        return false;
+    }
+
+    @Override
     protected void doFilterInternal(
             HttpServletRequest request,
             HttpServletResponse response,
