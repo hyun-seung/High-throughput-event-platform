@@ -12,10 +12,14 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertSame;
 class DeliveryServiceTest {
 
     @Test
@@ -51,6 +55,34 @@ class DeliveryServiceTest {
         assertEquals(first.deliveryId(), second.deliveryId());
 
         assertEquals(publisher.events.get(0).eventId(), publisher.events.get(1).eventId());
+    }
+
+    @Test
+    void failedKafkaAckDoesNotAcceptAndRetainsTheCause() {
+        var kafkaResult = new CompletableFuture<SendResult<String, DeliveryEvent>>();
+        var service = new DeliveryService(new CapturingPublisher(kafkaResult));
+        var acceptance = service.accept(new AuthenticatedUser(10L, "tenant"), "request-1",
+                new DeliveryRequest("EMAIL", Map.of()));
+        var failure = new org.apache.kafka.common.errors.TimeoutException("ack was not observed");
+
+        kafkaResult.completeExceptionally(failure);
+
+        var completion = assertThrows(CompletionException.class, acceptance::join);
+        var exception = assertInstanceOf(DeliveryAcceptanceException.class, completion.getCause());
+        assertSame(failure, exception.getCause());
+    }
+
+    @Test
+    void synchronousSendFailureHasTheSameUnconfirmedAcceptanceContract() {
+        var failure = new org.apache.kafka.common.errors.TimeoutException("metadata unavailable");
+        var service = new DeliveryService(event -> { throw failure; });
+
+        var acceptance = service.accept(new AuthenticatedUser(10L, "tenant"), "request-1",
+                new DeliveryRequest("EMAIL", Map.of()));
+
+        var completion = assertThrows(CompletionException.class, acceptance::join);
+        var exception = assertInstanceOf(DeliveryAcceptanceException.class, completion.getCause());
+        assertSame(failure, exception.getCause());
     }
 
     private static final class CapturingPublisher implements DeliveryEventPublisher {

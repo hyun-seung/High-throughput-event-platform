@@ -8,6 +8,10 @@ spring:
   profiles:
     active: ${SPRING_PROFILES_ACTIVE:local}
 
+  mvc:
+    async:
+      request-timeout: ${DELIVERY_HTTP_ASYNC_TIMEOUT:20s}
+
   datasource:
     url: ${DB_URL}
     username: ${DB_USERNAME}
@@ -41,6 +45,9 @@ spring:
         "[compression.type]": zstd
         "[linger.ms]": 5
         "[spring.json.add.type.headers]": false
+        "[max.block.ms]": ${KAFKA_PUBLISH_MAX_BLOCK_MS:5000}
+        "[request.timeout.ms]": ${KAFKA_PUBLISH_REQUEST_TIMEOUT_MS:5000}
+        "[delivery.timeout.ms]": ${KAFKA_PUBLISH_DELIVERY_TIMEOUT_MS:10000}
 
 jwt:
   access-token-expiration: 3600

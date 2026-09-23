@@ -1,5 +1,6 @@
 package event.api.common.exception;
 
+import event.api.delivery.service.DeliveryAcceptanceException;
 import event.common.core.exception.CommonErrorCode;
 import event.common.core.response.ApiError;
 import event.common.core.response.ApiResponse;
@@ -12,10 +13,23 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.async.AsyncRequestTimeoutException;
 
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler({DeliveryAcceptanceException.class, AsyncRequestTimeoutException.class})
+    public ResponseEntity<ApiResponse<ApiError>> handleAcceptanceFailure(
+            Exception e,
+            HttpServletRequest request
+    ) {
+        CommonErrorCode errorCode = CommonErrorCode.DELIVERY_ACCEPTANCE_UNCONFIRMED;
+        log.warn("Delivery acceptance unconfirmed. method={}, uri={}, failureType={}",
+                request.getMethod(), request.getRequestURI(), e.getClass().getSimpleName());
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(ApiResponse.error(
+                HttpStatus.SERVICE_UNAVAILABLE.value(), errorCode.getCode(), errorCode.getDesc()));
+    }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiResponse<ApiError>> handleValidationException(
