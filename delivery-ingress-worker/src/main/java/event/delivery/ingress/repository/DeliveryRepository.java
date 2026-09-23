@@ -77,8 +77,7 @@ public class DeliveryRepository {
                 && value(existing, PAYLOAD).equals(serializePayload(event.payload()));
 
         if (!sameRequest) {
-            throw new IllegalStateException(
-                    "Idempotency key collision with a different delivery request. deliveryId=" + event.deliveryId());
+            throw new IdempotencyConflictException(event.deliveryId());
         }
 
         // A client retry has a new API timestamp. Always forward the first persisted ingress time.

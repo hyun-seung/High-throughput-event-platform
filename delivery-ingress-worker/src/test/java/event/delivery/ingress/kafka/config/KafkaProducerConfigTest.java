@@ -24,5 +24,21 @@ class KafkaProducerConfigTest {
             byte[] raw = {0, 1, 2};
             assertArrayEquals(raw, serializer.serialize("delivery.dlt", raw));
         }
+        factory.reset();
+    }
+
+    @Test
+    void preservesRawFailedKeysWhileSupportingNormalStringKeys() {
+        var properties = new KafkaProperties();
+        var factory = new KafkaProducerConfig().dltProducerFactory(properties);
+        try (var serializer = factory.getKeySerializer()) {
+            serializer.configure(properties.buildProducerProperties(), true);
+            assertArrayEquals("delivery-1".getBytes(StandardCharsets.UTF_8),
+                    serializer.serialize("delivery.dlt", "delivery-1"));
+            byte[] raw = {(byte) 0xff, 0, 2};
+            assertArrayEquals(raw, serializer.serialize("delivery.dlt", raw));
+            assertNull(serializer.serialize("delivery.dlt", null));
+        }
+        factory.reset();
     }
 }
