@@ -24,6 +24,7 @@ spring:
 
 delivery:
   dynamodb:
+    enabled: true
     region: ${AWS_REGION:ap-northeast-2}
     endpoint: ${DYNAMODB_ENDPOINT:http://localhost:8000}
     initialize-tables: ${DYNAMODB_INITIALIZE_TABLES:true}

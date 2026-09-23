@@ -61,8 +61,19 @@ services:
       retries: 10
       start_period: 10s
 
+  dynamodb-data-init:
+    image: amazon/dynamodb-local:2.6.1
+    user: "0:0"
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["chown -R 1000:1000 /home/dynamodblocal/data"]
+    volumes:
+      - dynamodb-data:/home/dynamodblocal/data
+
   dynamodb-local:
     image: amazon/dynamodb-local:2.6.1
+    depends_on:
+      dynamodb-data-init:
+        condition: service_completed_successfully
     hostname: dynamodb-local
     command: ["-jar", "DynamoDBLocal.jar", "-sharedDb", "-dbPath", "/home/dynamodblocal/data"]
     ports:
@@ -70,9 +81,9 @@ services:
     volumes:
       - dynamodb-data:/home/dynamodblocal/data
     healthcheck:
-      test: ["CMD-SHELL", "curl --silent --output /dev/null http://localhost:8000/"]
+      test: ["CMD-SHELL", "curl --silent --fail --max-time 3 --aws-sigv4 aws:amz:ap-northeast-2:dynamodb --user local:local -H 'Content-Type: application/x-amz-json-1.0' -H 'X-Amz-Target: DynamoDB_20120810.ListTables' -d '{}' http://localhost:8000/ >/dev/null"]
       interval: 5s
-      timeout: 3s
+      timeout: 4s
       retries: 10
       start_period: 10s
 

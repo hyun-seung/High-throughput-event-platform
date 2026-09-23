@@ -23,7 +23,7 @@ public class KafkaProducerConfig {
         Map<Class<?>, Serializer<?>> serializers = new LinkedHashMap<>();
 
         serializers.put(byte[].class, new ByteArraySerializer());
-        serializers.put(Object.class, new JacksonJsonSerializer<>().noTypeInfo());
+        serializers.put(Object.class, new JacksonJsonSerializer<>());
 
         DelegatingByTypeSerializer valueSerializer = new DelegatingByTypeSerializer(serializers, true);
 

@@ -66,7 +66,7 @@ API는 DynamoDB를 호출하지 않습니다. Kafka ack가 최초 접수 보장�
 
 | 영역 | 현재 상태 | 다음 작업 | 우선순위 |
 |---|---|---|---|
-| 로컬 실행 | Kafka, Redis, PostgreSQL, DynamoDB Compose와 healthcheck | 애플리케이션 실행·readiness 절차 추가 | P0 |
+| 로컬 실행 | Compose 실제 API healthcheck, AP 실행·DB/Redis 초기화·Provider 접수 smoke 검증 | 자동 readiness, Maven Wrapper | P0 |
 | API 오류 계약 | Kafka future 기반 202 | publish timeout/실패를 명시적 503 응답으로 표준화 | P0 |
 | Idempotency payload | canonical JSON 문자열 비교 | 대용량 payload에서 hash 저장 여부 검토 | P1 |
 | Ingress consume-produce | at-least-once, downstream 중복 가능 | 중복 테스트와 DLT/error handler | P0 |
@@ -79,7 +79,7 @@ API는 DynamoDB를 호출하지 않습니다. Kafka ack가 최초 접수 보장�
 | DLT | Topic만 생성 | ErrorHandler, replay 절차 | P1 |
 | 상태 조회 | 없음 | eventual projection 조회 API | P1 |
 | Observability | 로그 일부 | metrics, tracing, dashboard와 alert | P1 |
-| 테스트 | ID/payload/Kafka ack 계약 테스트 5건 | Kafka/DynamoDB 통합 및 crash test | P0 |
+| 테스트 | ID/payload/Kafka ack, Dispatch 분기, DynamoDB 자동 설정, 비동기 인증·직렬화 총 14건 | Kafka/DynamoDB 통합 및 crash test | P0 |
 | Kubernetes/CDC | 없음 | 핵심 보장 검증 후 진행 | P2 |
 
 ## 6. 현재 보장 범위

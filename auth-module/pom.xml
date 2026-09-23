@@ -102,6 +102,10 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <!-- Embedded authentication library; no standalone main class. -->
+                    <skip>true</skip>
+                </configuration>
             </plugin>
         </plugins>
     </build>
