@@ -16,7 +16,7 @@
 
 ## 가장 먼저 할 일
 
-1. 로컬 Kafka, Redis, PostgreSQL, DynamoDB와 애플리케이션을 한 번에 실행할 수 있게 만듭니다.
+1. Maven Wrapper와 로컬 애플리케이션 실행·readiness 확인 절차를 추가합니다.
 2. Provider 호출 결과를 accepted, retryable, permanent, unknown으로 분류합니다.
 3. 각 단계에 중복 event를 넣고 상태 전이와 외부 호출 횟수를 검증합니다.
 4. Sender timeout 후 결과 불명 상태를 Provider의 멱등키 지원 여부별로 검증합니다.

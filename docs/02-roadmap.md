@@ -20,7 +20,8 @@
 - Provider HTTP timeout과 Idempotency-Key 전달
 - Idempotency-Key를 지원하는 Mock Provider의 중복 응답 수렴
 - Dispatch Attempt conditional claim, lease, version과 완료 skip
-- DynamoDB Local named volume 영속화
+- Kafka, Redis, PostgreSQL, DynamoDB Local Compose와 named volume
+- 로컬 인프라 healthcheck와 host port 재정의
 
 ## Phase 0. 재현 가능한 로컬 환경
 
@@ -29,9 +30,8 @@
 작업:
 
 1. Maven wrapper와 Java 21 기준을 추가합니다.
-2. Compose에 Kafka, Redis, PostgreSQL, DynamoDB와 healthcheck를 추가합니다.
-3. 환경변수 예시와 실행/종료/초기화 절차를 작성합니다.
-4. Kafka topic 설정을 환경별로 분리합니다.
+2. 환경변수 예시와 실행/종료/초기화 절차를 작성합니다.
+3. Kafka topic 설정을 환경별로 분리합니다.
 
 완료 조건:
 
