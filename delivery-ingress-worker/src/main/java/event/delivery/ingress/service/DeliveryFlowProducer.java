@@ -13,9 +13,9 @@ import java.util.concurrent.CompletableFuture;
 @RequiredArgsConstructor
 public class DeliveryFlowProducer {
 
-    private final KafkaTemplate<String, Object> kafkaTemplate;
+    private final KafkaTemplate<Object, Object> kafkaTemplate;
 
-    public CompletableFuture<SendResult<String, Object>> sendDispatchRequested(DeliveryEvent event) {
+    public CompletableFuture<SendResult<Object, Object>> sendDispatchRequested(DeliveryEvent event) {
         return kafkaTemplate.send(DeliveryTopics.DISPATCH_REQUESTED, event.deliveryId(), event);
     }
 }

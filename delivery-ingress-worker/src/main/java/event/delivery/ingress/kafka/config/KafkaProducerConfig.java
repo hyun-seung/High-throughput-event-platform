@@ -19,24 +19,26 @@ import java.util.Map;
 public class KafkaProducerConfig {
 
     @Bean
-    public ProducerFactory<String, Object> dltProducerFactory(KafkaProperties kafkaProperties) {
+    public ProducerFactory<Object, Object> dltProducerFactory(KafkaProperties kafkaProperties) {
         Map<Class<?>, Serializer<?>> serializers = new LinkedHashMap<>();
 
         serializers.put(byte[].class, new ByteArraySerializer());
         serializers.put(Object.class, new JacksonJsonSerializer<>());
 
         DelegatingByTypeSerializer valueSerializer = new DelegatingByTypeSerializer(serializers, true);
+        DelegatingByTypeSerializer keySerializer = new DelegatingByTypeSerializer(Map.of(
+                byte[].class, new ByteArraySerializer(), String.class, new StringSerializer()));
 
         return new DefaultKafkaProducerFactory<>(
                 kafkaProperties.buildProducerProperties(),
-                new StringSerializer(),
+                keySerializer,
                 valueSerializer
         );
     }
 
     @Bean
-    public KafkaTemplate<String, Object> dltKafkaTemplate(
-            ProducerFactory<String, Object> dltProducerFactory
+    public KafkaTemplate<Object, Object> dltKafkaTemplate(
+            ProducerFactory<Object, Object> dltProducerFactory
     ) {
         return new KafkaTemplate<>(dltProducerFactory);
     }
