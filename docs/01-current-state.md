@@ -66,7 +66,7 @@ API는 DynamoDB를 호출하지 않습니다. Kafka ack가 최초 접수 보장�
 
 | 영역 | 현재 상태 | 다음 작업 | 우선순위 |
 |---|---|---|---|
-| 로컬 실행 | DynamoDB만 Compose에 존재 | Kafka, Redis, PostgreSQL과 healthcheck 추가 | P0 |
+| 로컬 실행 | Kafka, Redis, PostgreSQL, DynamoDB Compose와 healthcheck | 애플리케이션 실행·readiness 절차 추가 | P0 |
 | API 오류 계약 | Kafka future 기반 202 | publish timeout/실패를 명시적 503 응답으로 표준화 | P0 |
 | Idempotency payload | canonical JSON 문자열 비교 | 대용량 payload에서 hash 저장 여부 검토 | P1 |
 | Ingress consume-produce | at-least-once, downstream 중복 가능 | 중복 테스트와 DLT/error handler | P0 |
