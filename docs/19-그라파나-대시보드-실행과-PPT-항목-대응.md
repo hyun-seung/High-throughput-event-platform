@@ -163,6 +163,8 @@ bash scripts/monitoring.sh benchmark --suite baseline
 
 `demo`와 `benchmark`의 동시 실행은 파일 lock으로 차단한다. 시험 중 수동 API 제출이나 서비스 재기동도 하지 않는다. 예상 밖 Kafka ID·재시작·적체 증가·DLT·운영 확인·수집 장애가 발견되면 후속 입력률 증가를 중단한다. 종료해도 Grafana와 앱은 계속 실행된다. 별도 수집·Docker stats 비용이 시험 부하에 포함되며, 모니터링을 끈 대조군이 없으므로 **이 실행만으로 모니터링 오버헤드를 계산하지 않는다.**
 
+각 단계가 끝나면 해당 시간 범위의 Kafka·API·Ingress·Dispatch 로그를 `*-runtime.log.gz`에 보존하고 `runtime-health.json`으로 검사한다. ERROR, offset commit 실패, coordinator 상태 불일치, 음수 histogram 오류 또는 로그 수집 실패가 있으면 후속 단계를 중단한다. `result.json`의 `dataAndLoadPass`는 완주·정합성, `runtimeHealthy`는 로그 검사 결과이며 최종 `pass`는 둘 다 참이어야 한다. 로그가 조용하다는 이유만으로 모든 장애가 없음을 증명하지는 않는다. 상세 stack trace는 여러 줄이므로 signal 횟수는 고유 장애 건수가 아니다.
+
 화면 원본은 `scripts/monitoring/generate_dashboards.py`, 생성 JSON은 `monitoring/grafana/dashboards/`다. 생성기를 고친 뒤 `python3 scripts/monitoring/generate_dashboards.py`를 실행하고 JSON도 함께 커밋한다. Grafana는 파일 provisioning으로 읽으며 UI 변경을 저장하는 용도로 쓰지 않는다.
 
 경보는 Prometheus 규칙 평가와 대시보드 표시까지 구현했다. 현재 임계값(lag 100건 1분, 최장 대기 30초 등)은 로컬 시험용이며 운영 SLO가 아니다. Slack·메일·문자 발송, Alertmanager 연동, 경보 담당자·반복 억제는 아직 없다.

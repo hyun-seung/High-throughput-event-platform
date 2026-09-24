@@ -3,7 +3,9 @@
 Never restarts services, resets offsets, changes policies or deletes existing data.
 """
 import argparse
+from datetime import datetime, timezone
 import fcntl
+import gzip
 import hashlib
 import json
 import os
@@ -17,6 +19,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'poc'))
 from run import Runner, ROOT, RESULTS, TOOLS, request, write_json
 from evidence import KafkaProbe
+from log_health import inspect_log
 
 
 # Runs inside the already available Python collector. Management ports stay private.
@@ -77,6 +80,42 @@ class MonitoringRunner(Runner):
     def provider_counts(self, deliveries):
         return self.inside('counts', deliveries=deliveries)
 
+    def phase(self, label, rate, seconds, mode='unique'):
+        started = datetime.now(timezone.utc).isoformat()
+        try:
+            super().phase(label, rate, seconds, mode)
+        finally:
+            ended = datetime.now(timezone.utc).isoformat()
+            directory = self.directory / label
+            directory.mkdir(exist_ok=True)
+            health = {'from': started, 'until': ended, 'services': {}, 'pass': True}
+            for service in ('kafka', 'api', 'ingress', 'dispatch'):
+                try:
+                    logs = subprocess.check_output(self.compose + ['logs', '--no-color', '--no-log-prefix',
+                            '--since', started, '--until', ended, service], env=self.compose_env,
+                            cwd=ROOT, text=True, stderr=subprocess.STDOUT, timeout=30)
+                    with gzip.open(directory / f'{service}-runtime.log.gz', 'wt') as output:
+                        output.write(logs)
+                    report = inspect_log(logs)
+                except Exception as error:
+                    report = {'pass': False, 'collectionError': str(error)}
+                health['services'][service] = report
+                health['pass'] = health['pass'] and report['pass']
+            write_json(directory / 'runtime-health.json', health)
+            result_path = directory / 'result.json'
+            if result_path.exists():
+                summary = json.loads(result_path.read_text())
+                summary['dataAndLoadPass'] = summary['pass']
+                summary['runtimeHealthy'] = health['pass']
+                summary['pass'] = summary['pass'] and health['pass']
+                write_json(result_path, summary)
+                if self.summaries and self.summaries[-1]['label'] == label:
+                    self.summaries[-1] = summary
+                    write_json(self.directory / 'results.json', self.summaries)
+        print(f'RUNTIME {label}: healthy={health["pass"]}', flush=True)
+        if not health['pass']:
+            raise RuntimeError(f'{label}: runtime errors or missing logs; later phases stopped')
+
     def initialize(self):
         if platform.system() == 'Darwin' and shutil.which('caffeinate'):
             self.awake = subprocess.Popen(['caffeinate', '-i', '-w', str(os.getpid())])
@@ -105,7 +144,8 @@ class MonitoringRunner(Runner):
                    'SIMULATOR_RESPONSE_DELAY_MILLIS', 'SIMULATOR_DEDUPLICATE'}
         containers = []
         for item in inspected:
-            row = {'name': item['Name'], 'image': item['Image'], 'startedAt': item['State']['StartedAt'],
+            row = {'name': item['Name'], 'image': item['Image'], 'imageReference': item['Config']['Image'],
+                   'startedAt': item['State']['StartedAt'],
                    'settings': dict(v.split('=', 1) for v in item['Config']['Env'] if v.split('=', 1)[0] in allowed)}
             for mount in item['Mounts']:
                 if mount['Destination'] == '/app/app.jar':
@@ -119,7 +159,8 @@ class MonitoringRunner(Runner):
         ingress = next(x for x in containers if x['name'] == '/platform-monitoring-ingress-1')
         if ingress['settings'].get('INGRESS_KAFKA_LINGER_MS') != '5':
             raise RuntimeError('Benchmark expects ingress linger 5ms')
-        sources = [Path(__file__), *sorted((ROOT / 'scripts/poc').glob('*.py')), ROOT / 'scripts/poc/load.js']
+        sources = [Path(__file__), Path(__file__).with_name('log_health.py'),
+                   *sorted((ROOT / 'scripts/poc').glob('*.py')), ROOT / 'scripts/poc/load.js']
         write_json(self.directory / 'environment.json', {
             'runId': self.run_id, 'suite': self.args.suite, 'composeProject': 'platform-monitoring',
             'gitCommit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),

@@ -2,7 +2,7 @@ name: reliable-event-platform
 
 services:
   kafka:
-    image: apache/kafka:4.0.0
+    image: apache/kafka:4.0.2
     hostname: kafka
     ports:
       - "127.0.0.1:${KAFKA_HOST_PORT:-9092}:9092"
