@@ -1,5 +1,9 @@
 package event.common.dynamodb.config;
 
+import event.common.metrics.DynamoDbMetricsInterceptor;
+import io.micrometer.core.instrument.MeterRegistry;
+import org.springframework.beans.factory.ObjectProvider;
+
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -21,10 +25,14 @@ public class DynamoDbAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public DynamoDbClient dynamoDbClient(DynamoDbProperties properties) {
+    public DynamoDbClient dynamoDbClient(DynamoDbProperties properties, ObjectProvider<MeterRegistry> registries) {
         DynamoDbClientBuilder builder = DynamoDbClient.builder()
                 .region(Region.of(properties.getRegion()))
                 .httpClientBuilder(UrlConnectionHttpClient.builder());
+        MeterRegistry registry = registries.getIfAvailable();
+        if (registry != null) {
+            builder.overrideConfiguration(config -> config.addExecutionInterceptor(new DynamoDbMetricsInterceptor(registry)));
+        }
 
         if (properties.getEndpoint() != null && !properties.getEndpoint().isBlank()) {
             builder.endpointOverride(URI.create(properties.getEndpoint()))

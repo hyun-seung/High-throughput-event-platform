@@ -4,3 +4,23 @@ spring:
 
 server:
   port: ${SERVER_PORT:8090}
+
+management:
+  server:
+    address: 127.0.0.1
+    port: ${SIMULATOR_METRICS_PORT:19090}
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus,simulator
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      percentiles-histogram:
+        "[http.server.requests]": true
+
+simulator:
+  response-delay-millis: ${SIMULATOR_RESPONSE_DELAY_MILLIS:0}
+  deduplicate: ${SIMULATOR_DEDUPLICATE:false}
+  max-tracked-keys: ${SIMULATOR_MAX_TRACKED_KEYS:200000}

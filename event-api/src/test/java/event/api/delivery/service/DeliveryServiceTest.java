@@ -27,7 +27,7 @@ class DeliveryServiceTest {
         CompletableFuture<SendResult<String, DeliveryEvent>> kafkaResult = new CompletableFuture<>();
         CapturingPublisher publisher = new CapturingPublisher(kafkaResult);
 
-        DeliveryService service = new DeliveryService(publisher);
+        DeliveryService service = new DeliveryService(publisher, metrics());
         CompletableFuture<DeliveryResponse> acceptance = service.accept(
                 new AuthenticatedUser(10L, "tenant"),
                 "client-request-1",
@@ -45,7 +45,7 @@ class DeliveryServiceTest {
     @Test
     void sameClientKeyCreatesSameDeliveryId() {
         CapturingPublisher publisher = new CapturingPublisher(CompletableFuture.completedFuture(null));
-        DeliveryService service = new DeliveryService(publisher);
+        DeliveryService service = new DeliveryService(publisher, metrics());
         AuthenticatedUser user = new AuthenticatedUser(10L, "tenant");
         DeliveryRequest request = new DeliveryRequest("ORDER_COMPLETED", Map.of("orderId", "100"));
 
@@ -60,7 +60,7 @@ class DeliveryServiceTest {
     @Test
     void failedKafkaAckDoesNotAcceptAndRetainsTheCause() {
         var kafkaResult = new CompletableFuture<SendResult<String, DeliveryEvent>>();
-        var service = new DeliveryService(new CapturingPublisher(kafkaResult));
+        var service = new DeliveryService(new CapturingPublisher(kafkaResult), metrics());
         var acceptance = service.accept(new AuthenticatedUser(10L, "tenant"), "request-1",
                 new DeliveryRequest("EMAIL", Map.of()));
         var failure = new org.apache.kafka.common.errors.TimeoutException("ack was not observed");
@@ -75,7 +75,7 @@ class DeliveryServiceTest {
     @Test
     void synchronousSendFailureHasTheSameUnconfirmedAcceptanceContract() {
         var failure = new org.apache.kafka.common.errors.TimeoutException("metadata unavailable");
-        var service = new DeliveryService(event -> { throw failure; });
+        var service = new DeliveryService(event -> { throw failure; }, metrics());
 
         var acceptance = service.accept(new AuthenticatedUser(10L, "tenant"), "request-1",
                 new DeliveryRequest("EMAIL", Map.of()));
@@ -100,4 +100,8 @@ class DeliveryServiceTest {
             return result;
         }
     }
+    private static event.common.metrics.DeliveryMetrics metrics() {
+        return new event.common.metrics.DeliveryMetrics(new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
+    }
+
 }

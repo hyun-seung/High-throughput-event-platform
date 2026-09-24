@@ -52,3 +52,23 @@ spring:
 jwt:
   access-token-expiration: 3600
   secret: ${JWT_SECRET}
+
+management:
+  server:
+    address: 127.0.0.1
+    port: ${DELIVERY_API_METRICS_PORT:19080}
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      maximum-expected-value:
+        "[delivery.acceptance.latency]": 7h
+      percentiles-histogram:
+        "[http.server.requests]": true
+        "[delivery.stage.duration]": true
+        "[delivery.dynamodb.duration]": true
+        "[delivery.acceptance.latency]": true

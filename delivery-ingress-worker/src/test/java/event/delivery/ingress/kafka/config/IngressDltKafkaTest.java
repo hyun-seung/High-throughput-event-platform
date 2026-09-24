@@ -85,7 +85,7 @@ class IngressDltKafkaTest {
         template = new KafkaProducerConfig().dltKafkaTemplate(factory);
         var failure = new IngressFailureProperties(Duration.ofMillis(20), 0L, dltTopic);
         var config = new KafkaConsumerFailureConfig();
-        handler = config.ingressErrorHandler(config.ingressDeadLetterRecoverer(template, failure), failure);
+        handler = config.ingressErrorHandler(config.ingressDeadLetterRecoverer(template, failure), failure, metrics());
         input = new KafkaProducer<>(Map.of("bootstrap.servers", bootstrap, "acks", "all"),
                 new ByteArraySerializer(), new ByteArraySerializer());
     }
@@ -241,4 +241,8 @@ class IngressDltKafkaTest {
     private static byte[] bytes(String value) {
         return value.getBytes(StandardCharsets.UTF_8);
     }
+    private static event.common.metrics.DeliveryMetrics metrics() {
+        return new event.common.metrics.DeliveryMetrics(new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
+    }
+
 }

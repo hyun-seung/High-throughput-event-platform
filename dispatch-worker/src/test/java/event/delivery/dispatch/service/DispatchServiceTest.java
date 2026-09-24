@@ -2,6 +2,8 @@ package event.delivery.dispatch.service;
 
 import event.common.delivery.DeliveryEvent;
 import event.common.delivery.DeliveryIds;
+import event.common.metrics.DeliveryMetrics;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import event.delivery.dispatch.config.DispatchProperties;
 import event.delivery.dispatch.external.dto.ProviderDispatchResponse;
 import event.delivery.dispatch.model.DispatchAttempt;
@@ -31,17 +33,19 @@ class DispatchServiceTest {
     private DispatchService dispatchService;
     private DeliveryEvent event;
     private String attemptId;
+    private SimpleMeterRegistry registry;
 
     @BeforeEach
     void setUp() {
         attemptStore = new FakeDispatchAttemptStore();
         providerClient = new FakeDeliveryProviderClient();
+        registry = new SimpleMeterRegistry();
         DispatchProperties properties = new DispatchProperties(PROVIDER, Duration.ofSeconds(30));
         dispatchService = new DispatchService(
                 attemptStore,
                 providerClient,
                 properties,
-                Clock.fixed(NOW, ZoneOffset.UTC)
+                Clock.fixed(NOW, ZoneOffset.UTC), new DeliveryMetrics(registry)
         );
         event = DeliveryEvent.requested(
                 DeliveryIds.deliveryId(10L, "request-1"),
@@ -66,6 +70,8 @@ class DispatchServiceTest {
         assertEquals(attemptId, providerClient.lastIdempotencyKey);
         assertEquals(attempt, attemptStore.acceptedAttempt);
         assertEquals(providerClient.nextResponse.processedAt(), attemptStore.providerProcessedAt);
+        assertEquals(1, outcome("dispatch_accepted"));
+        assertEquals(1, registry.get("delivery.acceptance.latency").timer().count());
     }
 
     @Test
@@ -76,6 +82,8 @@ class DispatchServiceTest {
 
         assertEquals(0, providerClient.callCount);
         assertFalse(attemptStore.acceptedRecorded);
+        assertEquals(1, outcome("dispatch_duplicate"));
+        assertEquals(0, outcome("dispatch_accepted"));
     }
 
     @Test
@@ -96,6 +104,36 @@ class DispatchServiceTest {
 
         assertEquals(0, providerClient.callCount);
         assertFalse(attemptStore.acceptedRecorded);
+        assertEquals(1, outcome("dispatch_review"));
+        assertEquals(0, outcome("dispatch_accepted"));
+    }
+
+    @Test
+    void successfulProviderCallWithFailedStorageIsNotCountedAsPersistedAcceptance() {
+        attemptStore.nextClaim = DispatchClaim.claimed(new DispatchAttempt(event.deliveryId(), attemptId, PROVIDER, 1));
+        providerClient.nextResponse = new ProviderDispatchResponse(event.deliveryId(), true, NOW);
+        attemptStore.storeFailure = new IllegalStateException("storage unavailable");
+        assertThrows(IllegalStateException.class, () -> dispatchService.dispatch(event));
+        assertEquals(1, providerClient.callCount);
+        assertEquals(0, outcome("dispatch_accepted"));
+        assertEquals(0, registry.get("delivery.acceptance.latency").timer().count());
+        assertEquals(1, registry.get("delivery.stage.duration")
+                .tags("stage", "dispatch_store", "result", "failure").timer().count());
+    }
+
+    @Test
+    void providerRejectionIsCountedAsHttpStageFailure() {
+        attemptStore.nextClaim = DispatchClaim.claimed(new DispatchAttempt(event.deliveryId(), attemptId, PROVIDER, 1));
+        providerClient.nextResponse = new ProviderDispatchResponse(event.deliveryId(), false, NOW);
+        assertThrows(IllegalStateException.class, () -> dispatchService.dispatch(event));
+        assertFalse(attemptStore.acceptedRecorded);
+        assertEquals(0, outcome("dispatch_accepted"));
+        assertEquals(1, registry.get("delivery.stage.duration")
+                .tags("stage", "dispatch_http", "result", "failure").timer().count());
+    }
+
+    private double outcome(String name) {
+        return registry.get("delivery.outcomes").tag("outcome", name).counter().count();
     }
 
     @Test
@@ -115,6 +153,7 @@ class DispatchServiceTest {
         private DispatchAttempt acceptedAttempt;
         private Instant providerProcessedAt;
         private RuntimeException claimFailure;
+        private RuntimeException storeFailure;
 
         @Override
         public DispatchClaim claim(
@@ -132,6 +171,7 @@ class DispatchServiceTest {
 
         @Override
         public void markAccepted(DispatchAttempt attempt, Instant providerProcessedAt, Instant now) {
+            if (storeFailure != null) throw storeFailure;
             acceptedRecorded = true;
             acceptedAttempt = attempt;
             this.providerProcessedAt = providerProcessedAt;

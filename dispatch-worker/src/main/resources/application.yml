@@ -33,3 +33,27 @@ delivery:
     region: ${AWS_REGION:ap-northeast-2}
     endpoint: ${DYNAMODB_ENDPOINT:http://localhost:8000}
     initialize-tables: false
+
+management:
+  server:
+    address: 127.0.0.1
+    port: ${DISPATCH_METRICS_PORT:19082}
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      maximum-expected-value:
+        "[delivery.acceptance.latency]": 7h
+      percentiles-histogram:
+        "[http.server.requests]": true
+        "[delivery.stage.duration]": true
+        "[delivery.dynamodb.duration]": true
+        "[delivery.acceptance.latency]": true
+
+server:
+  address: 127.0.0.1
+  port: ${SERVER_PORT:8092}

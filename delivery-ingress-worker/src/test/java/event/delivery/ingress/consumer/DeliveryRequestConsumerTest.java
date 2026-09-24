@@ -18,7 +18,7 @@ class DeliveryRequestConsumerTest {
 
     private final DeliveryRepository repository = mock(DeliveryRepository.class);
     private final DeliveryFlowProducer producer = mock(DeliveryFlowProducer.class);
-    private final DeliveryRequestConsumer consumer = new DeliveryRequestConsumer(repository, producer);
+    private final DeliveryRequestConsumer consumer = new DeliveryRequestConsumer(repository, producer, metrics());
     private final DeliveryEvent first = DeliveryEvent.requested(
             "delivery-1", 10L, "EMAIL", Map.of("body", "hello"), Instant.parse("2026-09-23T00:00:00Z"));
 
@@ -51,4 +51,8 @@ class DeliveryRequestConsumerTest {
 
         assertThrows(CompletionException.class, () -> consumer.consume(first));
     }
+    private static event.common.metrics.DeliveryMetrics metrics() {
+        return new event.common.metrics.DeliveryMetrics(new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
+    }
+
 }

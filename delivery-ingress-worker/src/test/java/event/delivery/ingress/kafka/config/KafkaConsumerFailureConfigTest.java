@@ -94,7 +94,7 @@ class KafkaConsumerFailureConfigTest {
     @Test
     void transientFailuresRetryBeforeDurableQuarantine() {
         when(template.send(any(ProducerRecord.class))).thenReturn(CompletableFuture.completedFuture(sendResult()));
-        var handler = config.ingressErrorHandler(recoverer, properties);
+        var handler = config.ingressErrorHandler(recoverer, properties, metrics());
         var consumer = mock(Consumer.class);
         var container = mock(MessageListenerContainer.class);
         when(container.isRunning()).thenReturn(true);
@@ -110,7 +110,7 @@ class KafkaConsumerFailureConfigTest {
     @Test
     void idempotencyConflictIsQuarantinedWithoutRedelivery() {
         when(template.send(any(ProducerRecord.class))).thenReturn(CompletableFuture.completedFuture(sendResult()));
-        var handler = config.ingressErrorHandler(recoverer, properties);
+        var handler = config.ingressErrorHandler(recoverer, properties, metrics());
 
         assertTrue(handler.handleOne(new IdempotencyConflictException("delivery-1"), source,
                 mock(Consumer.class), mock(MessageListenerContainer.class)));
@@ -121,4 +121,8 @@ class KafkaConsumerFailureConfigTest {
         var output = new ProducerRecord<Object, Object>(DeliveryTopics.DELIVERY_REQUESTED_DLT, 1, source.key(), source.value());
         return new SendResult<>(output, new RecordMetadata(new TopicPartition(output.topic(), 1), 0, 0, 0, 0, 0));
     }
+    private static event.common.metrics.DeliveryMetrics metrics() {
+        return new event.common.metrics.DeliveryMetrics(new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
+    }
+
 }
