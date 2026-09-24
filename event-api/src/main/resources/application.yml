@@ -68,6 +68,7 @@ management:
       maximum-expected-value:
         "[delivery.acceptance.latency]": 7h
       percentiles-histogram:
+        "[delivery.admission.duration]": true
         "[http.server.requests]": true
         "[delivery.stage.duration]": true
         "[delivery.dynamodb.duration]": true

@@ -45,11 +45,13 @@ class AsyncDeliverySecurityTest {
     @Autowired DeliveryService service;
     @Autowired RequestLimiter limiter;
     @Autowired JwtTokenVerifier verifier;
+    @Autowired io.micrometer.core.instrument.MeterRegistry metrics;
     MockMvc mvc;
 
     @BeforeEach
     void setUp() {
         reset(service, limiter, verifier);
+        metrics.clear();
         when(verifier.parseClaims("valid-token"))
                 .thenReturn(Jwts.claims().subject("1").add("username", "local-user").build());
         when(limiter.tryAcquire(1L))
@@ -74,6 +76,8 @@ class AsyncDeliverySecurityTest {
                 .andExpect(jsonPath("$.data.deliveryId").value("delivery-1"));
         verify(limiter, times(1)).tryAcquire(1L);
         verify(service, times(1)).accept(any(), any(), any());
+        org.junit.jupiter.api.Assertions.assertEquals(1L,
+                metrics.get("delivery.admission.duration").tag("outcome", "allowed").timer().count());
     }
 
     @Test
@@ -84,6 +88,7 @@ class AsyncDeliverySecurityTest {
                         .content("{\"deliveryType\":\"EMAIL\",\"payload\":{}}"))
                 .andExpect(status().isUnauthorized());
         verifyNoInteractions(service, limiter);
+        org.junit.jupiter.api.Assertions.assertNull(metrics.find("delivery.admission.duration").timer());
     }
 
     @Test
@@ -122,6 +127,9 @@ class AsyncDeliverySecurityTest {
             RequestControlFilter.class, RequestControlFailureHandler.class,
             JwtAuthenticationEntryPoint.class, DeliveryController.class, GlobalExceptionHandler.class})
     static class Config {
+        @Bean io.micrometer.core.instrument.MeterRegistry meterRegistry() {
+            return new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
+        }
         @Bean JsonMapper jsonMapper() { return JsonMapper.builder().build(); }
         @Bean JwtHeaderTokenExtractor tokenExtractor() { return new JwtHeaderTokenExtractor(); }
         @Bean JwtTokenVerifier verifier() { return mock(JwtTokenVerifier.class); }
