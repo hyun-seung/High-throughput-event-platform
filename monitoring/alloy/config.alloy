@@ -1,0 +1,32 @@
+logging { level = "warn" }
+local.file_match "apps" {
+  path_targets = [
+    {"__path__" = "/logs/api.log", "service" = "api", "zone" = "local"},
+    {"__path__" = "/logs/ingress.log", "service" = "ingress", "zone" = "local"},
+    {"__path__" = "/logs/dispatch.log", "service" = "dispatch", "zone" = "local"},
+  ]
+}
+loki.source.file "apps" {
+  targets = local.file_match.apps.targets
+  forward_to = [loki.process.audit.receiver]
+}
+loki.process "audit" {
+  // Ship only the explicit field allowlist emitted by delivery.audit.
+  stage.json {
+    expressions = { ts = "\"@timestamp\"", audit_logger = "logger_name" }
+  }
+  stage.labels { values = { audit_logger = "" } }
+  stage.match {
+    selector = "{service=~\".+\",audit_logger!=\"delivery.audit\"}"
+    action = "drop"
+  }
+  stage.timestamp {
+    source = "ts"
+    format = "RFC3339Nano"
+  }
+  stage.label_drop { values = ["filename", "audit_logger"] }
+  forward_to = [loki.write.local.receiver]
+}
+loki.write "local" {
+  endpoint { url = "http://loki:3100/loki/api/v1/push" }
+}

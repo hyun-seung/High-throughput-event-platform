@@ -1,0 +1,1661 @@
+{
+  "uid": "delivery-infra",
+  "title": "발송 관제 · 인프라",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": false,
+  "tags": [
+    "delivery-platform"
+  ],
+  "timezone": "browser",
+  "refresh": "10s",
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Kafka · DynamoDB · Redis · PostgreSQL",
+      "type": "text",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 3
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "로컬 Docker 환경입니다. MSK·MemoryDB·RDS·EKS 운영 지표로 해석하지 않습니다. DynamoDB는 앱의 SDK 계측만 읽고 모니터링 때문에 업무 테이블을 Scan하거나 기록을 추가하지 않습니다."
+      }
+    },
+    {
+      "id": 2,
+      "title": "수집 대상 상태",
+      "type": "table",
+      "gridPos": {
+        "x": 0,
+        "y": 3,
+        "w": 12,
+        "h": 8
+      },
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "platform-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "데이터 없음",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 80
+              },
+              {
+                "color": "red",
+                "value": 100
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "up",
+          "legendFormat": "{{stage}}",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "instance": true,
+              "zone": true,
+              "service": true
+            },
+            "renameByName": {
+              "Value": "값",
+              "job": "대상",
+              "application": "앱",
+              "client_id": "Consumer",
+              "stage": "구간",
+              "status": "HTTP 상태",
+              "alertname": "경보",
+              "alertstate": "상태",
+              "severity": "심각도"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Kafka 관측 정상 여부",
+      "type": "stat",
+      "gridPos": {
+        "x": 12,
+        "y": 3,
+        "w": 6,
+        "h": 4
+      },
+      "description": "0이면 적체 수치를 숨김. 오래된 0을 정상으로 보이지 않게 처리",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "platform-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "데이터 없음",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "red"
+              },
+              {
+                "value": 1,
+                "color": "green"
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "관측 없음",
+                  "color": "gray"
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "nan",
+                "result": {
+                  "text": "관측 없음",
+                  "color": "gray"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "platform_kafka_probe_up",
+          "legendFormat": "{{stage}}",
+          "range": false,
+          "instant": true,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "text": {
+          "valueSize": 32,
+          "titleSize": 14
+        }
+      }
+    },
+    {
+      "id": 4,
+      "title": "Kafka 마지막 관측 이후",
+      "type": "stat",
+      "gridPos": {
+        "x": 18,
+        "y": 3,
+        "w": 6,
+        "h": 4
+      },
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "platform-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "noValue": "데이터 없음",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 80
+              },
+              {
+                "color": "red",
+                "value": 100
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "관측 없음",
+                  "color": "gray"
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "nan",
+                "result": {
+                  "text": "관측 없음",
+                  "color": "gray"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "time()-platform_kafka_probe_last_success_timestamp_seconds",
+          "legendFormat": "{{stage}}",
+          "range": false,
+          "instant": true,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "text": {
+          "valueSize": 32,
+          "titleSize": 14
+        }
+      }
+    },
+    {
+      "id": 5,
+      "title": "Kafka 전체 처리 대기",
+      "type": "stat",
+      "gridPos": {
+        "x": 12,
+        "y": 7,
+        "w": 6,
+        "h": 4
+      },
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "platform-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "데이터 없음",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 80
+              },
+              {
+                "color": "red",
+                "value": 100
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "관측 없음",
+                  "color": "gray"
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "nan",
+                "result": {
+                  "text": "관측 없음",
+                  "color": "gray"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(platform_kafka_committed_lag)",
+          "legendFormat": "{{stage}}",
+          "range": false,
+          "instant": true,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "text": {
+          "valueSize": 32,
+          "titleSize": 14
+        }
+      }
+    },
+    {
+      "id": 6,
+      "title": "Kafka 최장 대기",
+      "type": "stat",
+      "gridPos": {
+        "x": 18,
+        "y": 7,
+        "w": 6,
+        "h": 4
+      },
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "platform-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "noValue": "데이터 없음",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 80
+              },
+              {
+                "color": "red",
+                "value": 100
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "관측 없음",
+                  "color": "gray"
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "nan",
+                "result": {
+                  "text": "관측 없음",
+                  "color": "gray"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(platform_kafka_oldest_uncommitted_age_seconds)",
+          "legendFormat": "{{stage}}",
+          "range": false,
+          "instant": true,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "text": {
+          "valueSize": 32,
+          "titleSize": 14
+        }
+      }
+    },
+    {
+      "id": 7,
+      "title": "토픽·파티션별 committed lag",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 11,
+        "w": 12,
+        "h": 9
+      },
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "platform-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "데이터 없음",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 80
+              },
+              {
+                "color": "red",
+                "value": 100
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "platform_kafka_committed_lag",
+          "legendFormat": "{{topic}} · p{{partition}}",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 8,
+      "title": "토픽별 Kafka 기록 증가율",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 11,
+        "w": 12,
+        "h": 9
+      },
+      "description": "log end offset 기울기. reset/retention 영향 주의, 고유 업무 TPS가 아님",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "platform-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "noValue": "데이터 없음",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 80
+              },
+              {
+                "color": "red",
+                "value": 100
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (topic) (clamp_min(deriv(platform_kafka_log_end_offset[2m]),0))",
+          "legendFormat": "{{topic}}",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 9,
+      "title": "DynamoDB SDK 작업 횟수",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 20,
+        "w": 12,
+        "h": 9
+      },
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "platform-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "noValue": "데이터 없음",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 80
+              },
+              {
+                "color": "red",
+                "value": 100
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (operation,result) (rate(delivery_dynamodb_duration_seconds_count{}[$__rate_interval]))",
+          "legendFormat": "{{operation}} · {{result}}",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 10,
+      "title": "DynamoDB 작업 p95",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 20,
+        "w": 12,
+        "h": 9
+      },
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "platform-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "noValue": "데이터 없음",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 80
+              },
+              {
+                "color": "red",
+                "value": 100
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le,operation) (rate(delivery_dynamodb_duration_seconds_bucket{}[$__rate_interval])))",
+          "legendFormat": "{{operation}}",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 11,
+      "title": "정상 접수당 SDK 쓰기 비율",
+      "type": "stat",
+      "gridPos": {
+        "x": 0,
+        "y": 29,
+        "w": 8,
+        "h": 5
+      },
+      "description": "같은 시간창의 비율. 중복·진행 중 작업 때문에 정확한 건당 과금이 아님",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "platform-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "데이터 없음",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 80
+              },
+              {
+                "color": "red",
+                "value": 100
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "관측 없음",
+                  "color": "gray"
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "nan",
+                "result": {
+                  "text": "관측 없음",
+                  "color": "gray"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(delivery_dynamodb_duration_seconds_count{operation=~\"put_item|update_item\",result=\"success\"}[$__rate_interval])) / (sum(rate(delivery_outcomes_total{application=\"dispatch-worker\",outcome=\"dispatch_accepted\"}[$__rate_interval])))",
+          "legendFormat": "{{stage}}",
+          "range": false,
+          "instant": true,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "text": {
+          "valueSize": 32,
+          "titleSize": 14
+        }
+      }
+    },
+    {
+      "id": 12,
+      "title": "Redis 메모리",
+      "type": "stat",
+      "gridPos": {
+        "x": 8,
+        "y": 29,
+        "w": 8,
+        "h": 5
+      },
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "platform-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "noValue": "데이터 없음",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 80
+              },
+              {
+                "color": "red",
+                "value": 100
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "관측 없음",
+                  "color": "gray"
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "nan",
+                "result": {
+                  "text": "관측 없음",
+                  "color": "gray"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "redis_memory_used_bytes",
+          "legendFormat": "{{stage}}",
+          "range": false,
+          "instant": true,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "text": {
+          "valueSize": 32,
+          "titleSize": 14
+        }
+      }
+    },
+    {
+      "id": 13,
+      "title": "PostgreSQL 연결 수",
+      "type": "stat",
+      "gridPos": {
+        "x": 16,
+        "y": 29,
+        "w": 8,
+        "h": 5
+      },
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "platform-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "데이터 없음",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 80
+              },
+              {
+                "color": "red",
+                "value": 100
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "관측 없음",
+                  "color": "gray"
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "nan",
+                "result": {
+                  "text": "관측 없음",
+                  "color": "gray"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(pg_stat_database_numbackends{datname=\"delivery\"})",
+          "legendFormat": "{{stage}}",
+          "range": false,
+          "instant": true,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "text": {
+          "valueSize": 32,
+          "titleSize": 14
+        }
+      }
+    },
+    {
+      "id": 14,
+      "title": "Redis 명령 처리율",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 34,
+        "w": 12,
+        "h": 8
+      },
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "platform-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "noValue": "데이터 없음",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 80
+              },
+              {
+                "color": "red",
+                "value": 100
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(redis_commands_processed_total{}[$__rate_interval])",
+          "legendFormat": "Redis",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 15,
+      "title": "Redis evicted keys",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 34,
+        "w": 12,
+        "h": 8
+      },
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "platform-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "noValue": "데이터 없음",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 80
+              },
+              {
+                "color": "red",
+                "value": 100
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(redis_evicted_keys_total{}[$__rate_interval])",
+          "legendFormat": "eviction",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 16,
+      "title": "PostgreSQL commit / rollback",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 42,
+        "w": 12,
+        "h": 8
+      },
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "platform-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "noValue": "데이터 없음",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 80
+              },
+              {
+                "color": "red",
+                "value": 100
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(pg_stat_database_xact_commit{datname=\"delivery\"}[$__rate_interval])",
+          "legendFormat": "commit",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(pg_stat_database_xact_rollback{datname=\"delivery\"}[$__rate_interval])",
+          "legendFormat": "rollback",
+          "range": true
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 17,
+      "title": "DB exporter 상태",
+      "type": "table",
+      "gridPos": {
+        "x": 12,
+        "y": 42,
+        "w": 12,
+        "h": 8
+      },
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "platform-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "데이터 없음",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 80
+              },
+              {
+                "color": "red",
+                "value": 100
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "redis_up or pg_up",
+          "legendFormat": "{{stage}}",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "instance": true,
+              "zone": true,
+              "service": true
+            },
+            "renameByName": {
+              "Value": "값",
+              "job": "대상",
+              "application": "앱",
+              "client_id": "Consumer",
+              "stage": "구간",
+              "status": "HTTP 상태",
+              "alertname": "경보",
+              "alertstate": "상태",
+              "severity": "심각도"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "title": "Alloy 로그 전송 포기",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 50,
+        "w": 12,
+        "h": 8
+      },
+      "description": "Loki/Alloy 자체 수집 상태와 함께 확인",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "platform-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "noValue": "데이터 없음",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 80
+              },
+              {
+                "color": "red",
+                "value": 100
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (reason) (rate(loki_write_dropped_entries_total{}[$__rate_interval]))",
+          "legendFormat": "{{reason}}",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 19,
+      "title": "현재 경보",
+      "type": "table",
+      "gridPos": {
+        "x": 12,
+        "y": 50,
+        "w": 12,
+        "h": 8
+      },
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "platform-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "데이터 없음",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 80
+              },
+              {
+                "color": "red",
+                "value": 100
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "ALERTS",
+          "legendFormat": "{{stage}}",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "instance": true,
+              "zone": true,
+              "service": true
+            },
+            "renameByName": {
+              "Value": "값",
+              "job": "대상",
+              "application": "앱",
+              "client_id": "Consumer",
+              "stage": "구간",
+              "status": "HTTP 상태",
+              "alertname": "경보",
+              "alertstate": "상태",
+              "severity": "심각도"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "title": "요청 제한 판단 결과",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 58,
+        "w": 12,
+        "h": 8
+      },
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "platform-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "noValue": "데이터 없음",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 80
+              },
+              {
+                "color": "red",
+                "value": 100
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (outcome) (rate(delivery_admission_duration_seconds_count{}[$__rate_interval]))",
+          "legendFormat": "{{outcome}}",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 21,
+      "title": "Redis 정책·제한 판단 p95",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 58,
+        "w": 12,
+        "h": 8
+      },
+      "description": "앱에서 측정한 전체 admission 판단 시간. Redis 서버 자체 latency가 아님",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "platform-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "noValue": "데이터 없음",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 80
+              },
+              {
+                "color": "red",
+                "value": 100
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le,outcome) (rate(delivery_admission_duration_seconds_bucket{}[$__rate_interval])))",
+          "legendFormat": "{{outcome}}",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    }
+  ],
+  "links": [
+    {
+      "title": "통합 관제",
+      "url": "/d/delivery-overview",
+      "type": "link",
+      "keepTime": true,
+      "includeVars": true
+    },
+    {
+      "title": "서비스",
+      "url": "/d/delivery-services",
+      "type": "link",
+      "keepTime": true,
+      "includeVars": true
+    },
+    {
+      "title": "외부 업체",
+      "url": "/d/delivery-providers",
+      "type": "link",
+      "keepTime": true,
+      "includeVars": true
+    },
+    {
+      "title": "고객",
+      "url": "/d/delivery-customers",
+      "type": "link",
+      "keepTime": true,
+      "includeVars": true
+    },
+    {
+      "title": "오류코드",
+      "url": "/d/delivery-errors",
+      "type": "link",
+      "keepTime": true,
+      "includeVars": true
+    },
+    {
+      "title": "인프라",
+      "url": "/d/delivery-infra",
+      "type": "link",
+      "keepTime": true,
+      "includeVars": true
+    },
+    {
+      "title": "메시지 추적",
+      "url": "/d/delivery-trace",
+      "type": "link",
+      "keepTime": true,
+      "includeVars": true
+    }
+  ],
+  "templating": {
+    "list": []
+  },
+  "annotations": {
+    "list": [
+      {
+        "name": "Annotations & Alerts",
+        "type": "dashboard",
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(255, 96, 96, 1)"
+      }
+    ]
+  }
+}
