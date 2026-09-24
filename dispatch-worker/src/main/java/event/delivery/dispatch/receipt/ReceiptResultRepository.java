@@ -99,7 +99,9 @@ public class ReceiptResultRepository {
                     ":invocation", number(invocation), ":received", text(receipt.receivedAt().toString()),
                     ":occurred", text(receipt.occurredAt().toString())));
             values.put(":code", text(receipt.code()));
-            String expression = "SET #state = :newState, #version = #version + :one, #updated = :now, "
+            values.put(":lifecycleDue", number(failure == null || failure.state() == DispatchFailureDecision.State.DECISION_PENDING ? 0
+                    : failure.nextAttemptAt() != null ? failure.nextAttemptAt().toEpochMilli() : deadline.toEpochMilli()));
+            String expression = "SET lifecycle_due = :lifecycleDue, #state = :newState, #version = #version + :one, #updated = :now, "
                     + "receipt_event_id = :event, receipt_invocation = :invocation, receipt_received_at = :received, "
                     + "provider_result_at = :occurred, receipt_code = :code";
             if (failure != null) {
