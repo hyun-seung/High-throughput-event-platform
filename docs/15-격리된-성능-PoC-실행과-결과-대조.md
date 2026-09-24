@@ -44,9 +44,9 @@ k6는 공식 릴리스의 checksum manifest 자체와 플랫폼별 압축 파일
 | API / Ingress HTTP / Dispatch HTTP / 시뮬레이터 | 28080 / 28081 / 28082 / 28090 |
 | API / Ingress / Dispatch / 시뮬레이터 관리 | 29080 / 29081 / 29082 / 29090 |
 
-각 앱은 한 개, Kafka 파티션 3개·복제 1, Worker consumer 동시성 기본 1이며 JVM heap은 앱당 `-Xms128m -Xmx512m`이다. 컨테이너 자원 제한은 Compose 기본값이며 호스트 자원을 공유한다. 이 로컬 결과는 운영 AWS DynamoDB·다중 AZ 내구성이나 서버별 독립 성능을 의미하지 않는다.
+각 앱은 한 개, Kafka 파티션 3개·복제 1, PoC 도구의 Worker consumer 동시성 기본값은 기준선 재현용 1이며 JVM heap은 앱당 `-Xms128m -Xmx512m`이다. 컨테이너 자원 제한은 Compose 기본값이며 호스트 자원을 공유한다. 이 로컬 결과는 운영 AWS DynamoDB·다중 AZ 내구성이나 서버별 독립 성능을 의미하지 않는다.
 
-`--worker-concurrency 1~3`은 두 Worker의 `INGRESS_CONCURRENCY`·`DISPATCH_CONCURRENCY`에 적용한다. `--ingress-linger-ms 0|5`는 Ingress Producer의 `INGRESS_KAFKA_LINGER_MS`만 바꾼다. API Producer 설정은 유지한다. 기본값은 기존 조건인 1/5이며 실제 선택 값은 `environment.json`에 남긴다. 파티션별 순차 처리, RECORD ack, 후속 발행 ack 대기, DynamoDB 조건부 저장은 유지한다. 앱 시작 로그의 consumer별 partition 할당과 Kafka 지표로 설정 적용을 확인한다.
+`--worker-concurrency 1~3`은 두 Worker의 `INGRESS_CONCURRENCY`·`DISPATCH_CONCURRENCY`에 적용한다. `--ingress-linger-ms 0|5`는 Ingress Producer의 `INGRESS_KAFKA_LINGER_MS`만 바꾼다. API Producer 설정은 유지한다. PoC 도구 기본값은 기존 조건인 1/5이며 실제 선택 값은 `environment.json`에 남긴다. 파티션별 순차 처리, RECORD ack, 후속 발행 ack 대기, DynamoDB 조건부 저장은 유지한다. 앱 시작 로그의 consumer별 partition 할당과 Kafka 지표로 설정 적용을 확인한다. 앱 자체의 동시성 기본값은 후속 시험으로 검증한 3이므로, 앱 기본값과 기준선 재현용 PoC 기본값을 구분한다.
 
 동시성 3은 listener container 세 개로 파티션을 나눠 처리하는 설정이다. 같은 key는 같은 partition에서 처리되며, 동시성 자체가 외부 멱등성을 대신하지 않는다. [Spring Kafka 동시 처리 공식 문서](https://docs.spring.io/spring-kafka/reference/kafka/receiving-messages/message-listener-container.html). `linger.ms`는 작은 배치를 모으는 대기 상한이다. 0이 모든 부하에서 유리하다고 가정하지 않고 순차 ack 대기 구조에서 비교한다. [Kafka Producer 공식 문서](https://kafka.apache.org/40/configuration/producer-configs/).
 

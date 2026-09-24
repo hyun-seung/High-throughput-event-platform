@@ -6,7 +6,7 @@ spring:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     listener:
       ack-mode: record
-      concurrency: ${INGRESS_CONCURRENCY:1}
+      concurrency: ${INGRESS_CONCURRENCY:3}
     consumer:
       auto-offset-reset: earliest
       enable-auto-commit: false
