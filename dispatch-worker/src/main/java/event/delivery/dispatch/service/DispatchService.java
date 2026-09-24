@@ -3,6 +3,7 @@ package event.delivery.dispatch.service;
 import event.common.delivery.DeliveryEvent;
 import event.common.delivery.DeliveryIds;
 import event.common.metrics.DeliveryMetrics;
+import event.common.metrics.DeliveryAudit;
 import event.delivery.dispatch.config.DispatchProperties;
 import event.delivery.dispatch.external.dto.ProviderDispatchResponse;
 import event.delivery.dispatch.model.DispatchClaim;
@@ -51,6 +52,7 @@ public class DispatchService {
 
         switch (claim.status()) {
             case ALREADY_ACCEPTED -> {
+                DeliveryAudit.record(event, "dispatch", "duplicate", attemptId, dispatchProperties.provider(), "already_accepted");
                 metrics.outcome(DeliveryMetrics.Outcome.DISPATCH_DUPLICATE);
                 log.debug("Completed dispatch skipped. deliveryId={}, attemptId={}", event.deliveryId(), attemptId);
             }
@@ -59,6 +61,7 @@ public class DispatchService {
                 throw new DispatchAttemptInProgressException(event.deliveryId());
             }
             case REVIEW_REQUIRED -> {
+                DeliveryAudit.record(event, "dispatch", "review_required", attemptId, dispatchProperties.provider(), "result_unknown");
                 metrics.outcome(DeliveryMetrics.Outcome.DISPATCH_REVIEW);
                 log.warn(
                     "Dispatch requires operational review; provider not called. deliveryId={}, attemptId={}",
@@ -84,6 +87,7 @@ public class DispatchService {
         ));
         metrics.outcome(DeliveryMetrics.Outcome.DISPATCH_ACCEPTED);
         metrics.accepted(event.occurredAt(), dispatchClock.instant());
+        DeliveryAudit.record(event, "dispatch", "accepted", attemptId, dispatchProperties.provider(), "accepted");
 
         log.debug("Dispatch completed. deliveryId={}, attemptId={}, processedAt={}",
                 event.deliveryId(), attemptId, response.processedAt());

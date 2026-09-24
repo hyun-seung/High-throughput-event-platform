@@ -4,6 +4,7 @@ import event.common.delivery.DeliveryEvent;
 import event.common.delivery.DeliveryEventType;
 import event.common.delivery.DeliveryTopics;
 import event.common.metrics.DeliveryMetrics;
+import event.common.metrics.DeliveryAudit;
 import event.delivery.ingress.repository.DeliveryRepository;
 import event.delivery.ingress.service.DeliveryFlowProducer;
 import lombok.RequiredArgsConstructor;
@@ -39,6 +40,7 @@ public class DeliveryRequestConsumer {
         metrics.measure(DeliveryMetrics.Stage.INGRESS_PUBLISH,
                 () -> deliveryFlowProducer.sendDispatchRequested(stored.toDispatchRequested()).join());
         metrics.outcome(DeliveryMetrics.Outcome.INGRESS_FORWARDED);
+        DeliveryAudit.record(stored, "ingress", "forwarded", "", "", "acknowledged");
     }
 
     private void requireType(DeliveryEvent event, DeliveryEventType expected) {
