@@ -1,5 +1,7 @@
 package event.delivery.ingress.kafka.config;
 
+import event.common.metrics.DeliveryMetrics;
+
 import event.delivery.ingress.repository.IdempotencyConflictException;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -33,7 +35,8 @@ public class KafkaConsumerFailureConfig {
 
     @Bean
     public DefaultErrorHandler ingressErrorHandler(
-            DeadLetterPublishingRecoverer ingressDeadLetterRecoverer, IngressFailureProperties properties
+            DeadLetterPublishingRecoverer ingressDeadLetterRecoverer, IngressFailureProperties properties,
+            DeliveryMetrics metrics
     ) {
         var handler = new DefaultErrorHandler(ingressDeadLetterRecoverer,
                 new FixedBackOff(properties.retryInterval().toMillis(), properties.maxRetries()));
@@ -49,12 +52,14 @@ public class KafkaConsumerFailureConfig {
 
             @Override
             public void recovered(ConsumerRecord<?, ?> record, Exception failure) {
+                metrics.outcome(DeliveryMetrics.Outcome.INGRESS_DLT);
                 log.warn("Ingress record stored in DLT. topic={}, partition={}, offset={}, dlt={}",
                         record.topic(), record.partition(), record.offset(), properties.dltTopic());
             }
 
             @Override
             public void recoveryFailed(ConsumerRecord<?, ?> record, Exception original, Exception failure) {
+                metrics.outcome(DeliveryMetrics.Outcome.INGRESS_DLT_FAILED);
                 log.error("DLT storage unconfirmed; retaining source offset. topic={}, partition={}, offset={}",
                         record.topic(), record.partition(), record.offset());
             }

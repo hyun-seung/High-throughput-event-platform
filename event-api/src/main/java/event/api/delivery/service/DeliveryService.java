@@ -6,6 +6,7 @@ import event.api.delivery.kafka.DeliveryEventPublisher;
 import event.api.security.principal.AuthenticatedUser;
 import event.common.delivery.DeliveryEvent;
 import event.common.delivery.DeliveryIds;
+import event.common.metrics.DeliveryMetrics;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -19,6 +20,7 @@ public class DeliveryService {
     private static final String ACCEPTED = "ACCEPTED";
 
     private final DeliveryEventPublisher deliveryEventPublisher;
+    private final DeliveryMetrics metrics;
 
     public CompletableFuture<DeliveryResponse> accept(
             AuthenticatedUser user,
@@ -35,7 +37,7 @@ public class DeliveryService {
         );
 
         try {
-            return deliveryEventPublisher.send(event)
+            return metrics.measureAsync(DeliveryMetrics.Stage.API_PUBLISH, () -> deliveryEventPublisher.send(event))
                     .handle((ignored, failure) -> {
                         if (failure != null) {
                             throw new DeliveryAcceptanceException(failure);

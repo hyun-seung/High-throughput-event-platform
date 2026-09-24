@@ -25,7 +25,8 @@ case "${1:-help}" in
     echo "Local request policy initialized for user $user_id."
     ;;
   smoke)
-    exec python3 scripts/local-smoke.py
+    shift
+    exec python3 scripts/local-smoke.py "$@"
     ;;
   build)
     "${MAVEN_BIN:-./mvnw}" clean package
@@ -44,9 +45,11 @@ case "${1:-help}" in
     export DYNAMODB_ENDPOINT="http://localhost:${DYNAMODB_HOST_PORT:-8000}"
     export EXTERNAL_API_BASE_URL="http://localhost:${MOCK_PROVIDER_PORT:-8090}"
     export SERVER_PORT="${DELIVERY_API_PORT:-8080}"
-    if [[ "$module" == external-api-simulator ]]; then
-      export SERVER_PORT="${MOCK_PROVIDER_PORT:-8090}"
-    fi
+    case "$module" in
+      external-api-simulator) export SERVER_PORT="${MOCK_PROVIDER_PORT:-8090}" ;;
+      delivery-ingress-worker) export SERVER_PORT="${INGRESS_HTTP_PORT:-8091}" ;;
+      dispatch-worker) export SERVER_PORT="${DISPATCH_HTTP_PORT:-8092}" ;;
+    esac
     if [[ "$module" == event-api ]]; then
       : "${JWT_SECRET:?Copy .env.example to .env and set JWT_SECRET}"
     fi

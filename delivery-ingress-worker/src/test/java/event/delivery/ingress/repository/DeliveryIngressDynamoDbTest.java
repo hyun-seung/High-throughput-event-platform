@@ -59,7 +59,7 @@ class DeliveryIngressDynamoDbTest {
     void setUp() {
         repository = new DeliveryRepository(client, JsonMapper.builder().build());
         producer = mock(DeliveryFlowProducer.class);
-        consumer = new DeliveryRequestConsumer(repository, producer);
+        consumer = new DeliveryRequestConsumer(repository, producer, metrics());
         first = DeliveryEvent.requested(DeliveryIds.deliveryId(999L, "ingress-test-" + UUID.randomUUID()),
                 999L, "EMAIL", Map.of("body", "hello", "recipient", "test"),
                 Instant.parse("2026-09-23T00:00:00Z"));
@@ -78,7 +78,7 @@ class DeliveryIngressDynamoDbTest {
     @Test
     void replayAfterStorageBeforePublicationRecoversDispatchWithOriginalTime() {
         repository.saveOrLoad(first); // Process stopped after this durable write.
-        var restarted = new DeliveryRequestConsumer(new DeliveryRepository(client, JsonMapper.builder().build()), producer);
+        var restarted = new DeliveryRequestConsumer(new DeliveryRepository(client, JsonMapper.builder().build()), producer, metrics());
         when(producer.sendDispatchRequested(any())).thenReturn(CompletableFuture.completedFuture(null));
 
         restarted.consume(retryAt(first.occurredAt().plusSeconds(3600)));
@@ -147,4 +147,8 @@ class DeliveryIngressDynamoDbTest {
     private Map<String, AttributeValue> stored() {
         return client.getItem(request -> request.tableName(DELIVERY_STATE).key(key()).consistentRead(true)).item();
     }
+    private static event.common.metrics.DeliveryMetrics metrics() {
+        return new event.common.metrics.DeliveryMetrics(new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
+    }
+
 }

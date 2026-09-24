@@ -240,7 +240,7 @@ class DispatchAttemptDynamoDbTest {
 
     private DispatchService service(DispatchAttemptStore store, Instant now) {
         return new DispatchService(store, provider, new DispatchProperties(PROVIDER, Duration.ofSeconds(30)),
-                Clock.fixed(now, ZoneOffset.UTC));
+                Clock.fixed(now, ZoneOffset.UTC), metrics());
     }
 
     private String attemptId(DeliveryEvent request) {
@@ -261,4 +261,8 @@ class DispatchAttemptDynamoDbTest {
         assertEquals("REVIEW_REQUIRED", item.get(STATUS).s());
         assertEquals("LEASE_EXPIRED_WITHOUT_RESULT", item.get(REVIEW_REASON).s());
     }
+    private static event.common.metrics.DeliveryMetrics metrics() {
+        return new event.common.metrics.DeliveryMetrics(new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
+    }
+
 }
