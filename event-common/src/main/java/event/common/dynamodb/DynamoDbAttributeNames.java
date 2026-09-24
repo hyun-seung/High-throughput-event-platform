@@ -19,6 +19,7 @@ public final class DynamoDbAttributeNames {
     public static final String LEASE_UNTIL = "lease_until";
     public static final String VERSION = "version";
     public static final String PROVIDER_PROCESSED_AT = "provider_processed_at";
+    public static final String REVIEW_REASON = "review_reason";
     public static final String CREATED_AT = "created_at";
     public static final String UPDATED_AT = "updated_at";
 

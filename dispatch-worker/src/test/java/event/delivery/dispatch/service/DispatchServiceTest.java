@@ -88,12 +88,33 @@ class DispatchServiceTest {
         assertFalse(attemptStore.acceptedRecorded);
     }
 
+    @Test
+    void durableReviewStateSkipsProviderCall() {
+        attemptStore.nextClaim = DispatchClaim.reviewRequired();
+
+        dispatchService.dispatch(event);
+
+        assertEquals(0, providerClient.callCount);
+        assertFalse(attemptStore.acceptedRecorded);
+    }
+
+    @Test
+    void failedReviewHandoffEscapesWithoutCallingProvider() {
+        attemptStore.claimFailure = new IllegalStateException("review state write unconfirmed");
+
+        assertThrows(IllegalStateException.class, () -> dispatchService.dispatch(event));
+
+        assertEquals(0, providerClient.callCount);
+        assertFalse(attemptStore.acceptedRecorded);
+    }
+
     private static final class FakeDispatchAttemptStore implements DispatchAttemptStore {
 
         private DispatchClaim nextClaim;
         private boolean acceptedRecorded;
         private DispatchAttempt acceptedAttempt;
         private Instant providerProcessedAt;
+        private RuntimeException claimFailure;
 
         @Override
         public DispatchClaim claim(
@@ -105,6 +126,7 @@ class DispatchServiceTest {
         ) {
             assertEquals(NOW, now);
             assertEquals(NOW.plusSeconds(30), leaseUntil);
+            if (claimFailure != null) throw claimFailure;
             return nextClaim;
         }
 

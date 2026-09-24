@@ -4,6 +4,8 @@ spring:
 
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    listener:
+      ack-mode: record
     consumer:
       auto-offset-reset: earliest
       enable-auto-commit: false
@@ -23,6 +25,7 @@ external-api:
 dispatch:
   provider: ${DISPATCH_PROVIDER:mock-provider}
   lease-duration: ${DISPATCH_LEASE_DURATION:30s}
+  redelivery-backoff-ms: ${DISPATCH_REDELIVERY_BACKOFF_MS:1000}
 
 delivery:
   dynamodb:
