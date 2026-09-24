@@ -84,6 +84,8 @@ class Runner:
         self.infra_started = False
         self.summaries = []
         self.awake = None
+        self.api_url = 'http://localhost:28080'
+        self.dynamo_url = 'http://localhost:28000'
 
     def docker(self, *args, input=None, timeout=180):
         return subprocess.check_output(self.compose + list(args), env=self.compose_env, cwd=ROOT,
@@ -183,15 +185,29 @@ class Runner:
         for app, process in self.apps.items():
             if process.poll() is not None: raise RuntimeError(f'{app} exited unexpectedly')
 
+    def scrape_metrics(self):
+        def scrape(app):
+            return request(f'http://127.0.0.1:{MANAGEMENT[app]}/actuator/prometheus', self.token if app == 'api' else None)
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            return dict(zip(MANAGEMENT, pool.map(scrape, MANAGEMENT)))
+
+    def provider_counts(self, deliveries):
+        def counts(delivery):
+            attempt = attempt_id(delivery)
+            try: value = json.loads(request('http://127.0.0.1:29090/actuator/simulator/' + attempt))
+            except urllib.error.HTTPError as error:
+                if error.code != 404: raise
+                value = {'calls': 0, 'effects': 0}
+            return attempt, value
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            return dict(pool.map(counts, deliveries))
+
     def snapshot(self, directory, index):
         sample_started = time.time()
         self.assert_apps()
         if shutil.disk_usage(ROOT).free < 1024**3:
             raise RuntimeError('Less than 1 GiB free disk; retain evidence and stop load')
-        def scrape(app):
-            return request(f'http://127.0.0.1:{MANAGEMENT[app]}/actuator/prometheus', self.token if app == 'api' else None)
-        with ThreadPoolExecutor(max_workers=4) as pool:
-            texts = dict(zip(MANAGEMENT, pool.map(scrape, MANAGEMENT)))
+        texts = self.scrape_metrics()
         metrics_time = time.time()
         for app, text in texts.items():
             with gzip.open(directory / f'{index:04}-{app}.prom.gz', 'wt') as output: output.write(text)
@@ -222,7 +238,7 @@ class Runner:
         if before['lag']: raise RuntimeError('Previous phase has backlog')
         env = {key: os.environ[key] for key in ('PATH', 'HOME', 'TMPDIR', 'LANG') if key in os.environ}
         env.update({'POC_RATE': str(rate), 'POC_SECONDS': str(seconds), 'POC_RUN_ID': self.run_id + '-' + label,
-                    'POC_MODE': mode, 'POC_TOKEN': self.token, 'POC_API': 'http://localhost:28080',
+                    'POC_MODE': mode, 'POC_TOKEN': self.token, 'POC_API': self.api_url,
                     'POC_SUMMARY': str(directory / 'k6-summary.json'), 'K6_NO_USAGE_REPORT': 'true'})
         start = time.monotonic()
         start_wall = time.time()
@@ -275,17 +291,9 @@ class Runner:
             for row in records: output.write(json.dumps(row) + '\n')
         starts, results = read_manifest(directory / 'requests.jsonl')
         deliveries = sorted({delivery_id(self.tenant, row['key']) for row in starts.values()})
-        items = read_items('http://localhost:28000', deliveries)
+        items = read_items(self.dynamo_url, deliveries)
         write_json(directory / 'db-items.json', list(items.values()))
-        def counts(delivery):
-            attempt = attempt_id(delivery)
-            try: value = json.loads(request('http://127.0.0.1:29090/actuator/simulator/' + attempt))
-            except urllib.error.HTTPError as error:
-                if error.code != 404: raise
-                value = {'calls': 0, 'effects': 0}
-            return attempt, value
-        with ThreadPoolExecutor(max_workers=8) as pool:
-            provider = dict(pool.map(counts, deliveries))
+        provider = self.provider_counts(deliveries)
         rows, summary = reconcile(starts, results, self.tenant, records, items, provider)
         with (directory / 'reconciliation.jsonl').open('w') as output:
             for row in rows: output.write(json.dumps(row) + '\n')
