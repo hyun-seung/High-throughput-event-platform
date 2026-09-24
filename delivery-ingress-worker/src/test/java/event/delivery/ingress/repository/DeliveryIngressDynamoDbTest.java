@@ -140,6 +140,27 @@ class DeliveryIngressDynamoDbTest {
         return DeliveryEvent.requested(first.deliveryId(), first.tenantId(), first.deliveryType(), first.payload(), time);
     }
 
+    @Test
+    void fallbackChoiceCannotChangeOnSameClientKeyAndLegacyRecordsMeanFalse() {
+        repository.saveOrLoad(first);
+        var changed = DeliveryEvent.requested(first.deliveryId(), first.tenantId(), first.deliveryType(),
+                first.payload(), first.occurredAt(), true);
+        assertThrows(IdempotencyConflictException.class, () -> repository.saveOrLoad(changed));
+        client.updateItem(request -> request.tableName(DELIVERY_STATE).key(key()).updateExpression("REMOVE fallback_allowed"));
+        assertFalse(repository.saveOrLoad(first).fallbackAllowed());
+        assertThrows(IdempotencyConflictException.class, () -> repository.saveOrLoad(changed));
+    }
+
+    @Test
+    void allowedFallbackSurvivesDuplicateAndRetainsOriginalTimestamp() {
+        var allowed = DeliveryEvent.requested(first.deliveryId(), first.tenantId(), first.deliveryType(), first.payload(), first.occurredAt(), true);
+        repository.saveOrLoad(allowed);
+        var duplicate = DeliveryEvent.requested(first.deliveryId(), first.tenantId(), first.deliveryType(), first.payload(), first.occurredAt().plusSeconds(20), true);
+        var actual = repository.saveOrLoad(duplicate).toDispatchRequested();
+        assertTrue(actual.fallbackAllowed());
+        assertEquals(first.occurredAt(), actual.occurredAt());
+    }
+
     private Map<String, AttributeValue> key() {
         return Map.of(PK, AttributeValue.fromS("DELIVERY#" + first.deliveryId()), SK, AttributeValue.fromS("META"));
     }

@@ -23,6 +23,20 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 class DeliveryServiceTest {
 
     @Test
+    void explicitFallbackChoiceIsCarriedToKafkaAndMissingChoiceDefaultsToFalse() {
+        var publisher = new CapturingPublisher(CompletableFuture.completedFuture(null));
+        var service = new DeliveryService(publisher, metrics());
+        var mapper = tools.jackson.databind.json.JsonMapper.builder().build();
+        var legacy = mapper.readValue("{\"deliveryType\":\"SMS\",\"payload\":{}}", DeliveryRequest.class);
+        service.accept(new AuthenticatedUser(10L, "tenant"), "legacy", legacy).join();
+        service.accept(new AuthenticatedUser(10L, "tenant"), "fallback", new DeliveryRequest("SMS", Map.of(), true)).join();
+        assertFalse(publisher.events.get(0).fallbackAllowed());
+        assertTrue(publisher.events.get(1).toDispatchRequested().fallbackAllowed());
+        String previousEvent = mapper.writeValueAsString(publisher.events.get(0)).replace(",\"fallbackAllowed\":false", "");
+        assertFalse(mapper.readValue(previousEvent, DeliveryEvent.class).fallbackAllowed());
+    }
+
+    @Test
     void acceptanceCompletesOnlyAfterKafkaAck() {
         CompletableFuture<SendResult<String, DeliveryEvent>> kafkaResult = new CompletableFuture<>();
         CapturingPublisher publisher = new CapturingPublisher(kafkaResult);

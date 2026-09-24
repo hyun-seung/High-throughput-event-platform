@@ -28,7 +28,16 @@ dispatch:
   lease-duration: ${DISPATCH_LEASE_DURATION:30s}
   primary-ttl: ${DISPATCH_PRIMARY_TTL:3h}
   no-response-retry-delay: ${DISPATCH_NO_RESPONSE_RETRY_DELAY:1s}
+  secondary:
+    provider: ${SECONDARY_PROVIDER:tcp-provider}
+    ttl: ${SECONDARY_TTL:4h}
   redelivery-backoff-ms: ${DISPATCH_REDELIVERY_BACKOFF_MS:1000}
+
+external-tcp:
+  host: ${EXTERNAL_TCP_HOST:localhost}
+  port: ${EXTERNAL_TCP_PORT:8093}
+  connect-timeout: ${EXTERNAL_TCP_CONNECT_TIMEOUT:2s}
+  exchange-timeout: ${EXTERNAL_TCP_EXCHANGE_TIMEOUT:5s}
 
 delivery:
   dynamodb:

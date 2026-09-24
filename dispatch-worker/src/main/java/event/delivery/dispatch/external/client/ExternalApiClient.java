@@ -18,6 +18,7 @@ import java.net.SocketException;
 import java.net.SocketTimeoutException;
 
 @Component
+@org.springframework.context.annotation.Primary
 @RequiredArgsConstructor
 public class ExternalApiClient implements DeliveryProviderClient {
 

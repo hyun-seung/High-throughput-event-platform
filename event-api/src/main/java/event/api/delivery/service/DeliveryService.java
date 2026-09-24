@@ -34,7 +34,8 @@ public class DeliveryService {
                 user.userId(),
                 request.deliveryType(),
                 request.payload(),
-                Instant.now()
+                Instant.now(),
+                request.fallbackAllowed()
         );
 
         try {

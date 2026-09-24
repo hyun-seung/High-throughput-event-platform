@@ -13,8 +13,12 @@ public record DeliveryEvent(
         Map<String, Object> payload,
         Instant occurredAt,
         String correlationId,
-        String causationId
+        String causationId,
+        Boolean fallbackAllowed
 ) {
+    public DeliveryEvent {
+        fallbackAllowed = Boolean.TRUE.equals(fallbackAllowed);
+    }
 
     private static final int SCHEMA_VERSION = 1;
 
@@ -25,6 +29,11 @@ public record DeliveryEvent(
             Map<String, Object> payload,
             Instant occurredAt
     ) {
+        return requested(deliveryId, tenantId, deliveryType, payload, occurredAt, false);
+    }
+
+    public static DeliveryEvent requested(String deliveryId, Long tenantId, String deliveryType,
+                                         Map<String, Object> payload, Instant occurredAt, boolean fallbackAllowed) {
         return new DeliveryEvent(
                 SCHEMA_VERSION,
                 DeliveryIds.eventId(deliveryId, DeliveryEventType.DELIVERY_REQUESTED),
@@ -35,7 +44,8 @@ public record DeliveryEvent(
                 DeliveryPayloads.canonicalize(payload),
                 occurredAt,
                 deliveryId,
-                null
+                null,
+                fallbackAllowed
         );
     }
 
@@ -50,7 +60,8 @@ public record DeliveryEvent(
                 payload,
                 occurredAt,
                 correlationId,
-                eventId
+                eventId,
+                fallbackAllowed
         );
     }
 }

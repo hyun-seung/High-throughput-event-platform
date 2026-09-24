@@ -12,6 +12,13 @@ public record DeliveryRequest(
         String deliveryType,
 
         @NotNull
-        Map<String, Object> payload
+        Map<String, Object> payload,
+        Boolean fallbackAllowed
 ) {
+    public DeliveryRequest {
+        fallbackAllowed = Boolean.TRUE.equals(fallbackAllowed);
+    }
+    public DeliveryRequest(String deliveryType, Map<String, Object> payload) {
+        this(deliveryType, payload, false);
+    }
 }

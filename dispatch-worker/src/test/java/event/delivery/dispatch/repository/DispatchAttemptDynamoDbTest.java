@@ -1,6 +1,9 @@
 package event.delivery.dispatch.repository;
 
 import event.common.delivery.DeliveryEvent;
+import event.common.tcp.TcpFrames;
+import event.common.tcp.TcpDeliveryRequest;
+import event.common.tcp.TcpDeliveryResponse;
 import event.common.delivery.DeliveryIds;
 import event.common.dynamodb.config.DynamoDbTableInitializer;
 import event.delivery.dispatch.config.DispatchProperties;
@@ -12,6 +15,10 @@ import event.delivery.dispatch.model.DispatchClaimStatus;
 import event.delivery.dispatch.port.DeliveryProviderClient;
 import event.delivery.dispatch.port.DispatchAttemptStore;
 import event.delivery.dispatch.service.DispatchService;
+import event.delivery.dispatch.service.SecondaryDispatchService;
+import event.delivery.dispatch.model.SecondaryRoute;
+import event.delivery.dispatch.config.SecondaryDispatchProperties;
+import event.delivery.dispatch.port.SecondaryProviderClient;
 import event.delivery.dispatch.service.DispatchRetryPendingException;
 import event.delivery.dispatch.external.client.ProviderFailureException;
 import org.junit.jupiter.api.*;
@@ -73,6 +80,11 @@ class DispatchAttemptDynamoDbTest {
     private DeliveryEvent event;
     private final List<DeliveryEvent> ownEvents = new ArrayList<>();
     private final AtomicInteger calls = new AtomicInteger();
+    private final AtomicInteger secondaryCalls = new AtomicInteger();
+    private SecondaryProviderClient secondaryClient = (request, key) -> {
+        secondaryCalls.incrementAndGet();
+        return new ProviderDispatchResponse(request.deliveryId(), true, NOW);
+    };
     private final DeliveryProviderClient provider = (request, idempotencyKey) -> {
         calls.incrementAndGet(); // Every invocation has an effect; no provider deduplication.
         return new ProviderDispatchResponse(request.deliveryId(), true, NOW.plusSeconds(1));
@@ -100,6 +112,12 @@ class DispatchAttemptDynamoDbTest {
     @AfterEach
     void cleanUp() {
         for (var ownEvent : ownEvents) {
+            var parent = stored(ownEvent);
+            if (parent.containsKey("secondary_attempt_id")) {
+                client.deleteItem(request -> request.tableName(DELIVERY_STATE).key(Map.of(
+                        PK, AttributeValue.fromS("DELIVERY#" + ownEvent.deliveryId()),
+                        SK, AttributeValue.fromS("ATTEMPT#" + parent.get("secondary_attempt_id").s()))));
+            }
             client.deleteItem(request -> request.tableName(DELIVERY_STATE).key(key(ownEvent)));
         }
     }
@@ -128,6 +146,16 @@ class DispatchAttemptDynamoDbTest {
             @Override
             public DispatchClaim claim(DeliveryEvent request, String attemptId, String provider, Instant now, Instant until, Instant deadline) {
                 return repository.claim(request, attemptId, provider, now, until, deadline);
+            }
+
+            @Override
+            public java.util.Optional<SecondaryRoute> prepareSecondary(DeliveryEvent event, String id, String provider, Duration ttl) {
+                return repository.prepareSecondary(event, id, provider, ttl);
+            }
+
+            @Override
+            public DispatchClaim claimSecondary(DeliveryEvent event, SecondaryRoute route, Instant now, Instant until) {
+                return repository.claimSecondary(event, route, now, until);
             }
 
             @Override
@@ -387,7 +415,7 @@ class DispatchAttemptDynamoDbTest {
             time.set(NOW.plusSeconds(10800));
             return new ProviderDispatchResponse(request.deliveryId(), true, time.get());
         };
-        new DispatchService(repository, late, new DispatchProperties(PROVIDER, Duration.ofSeconds(30)), clock, metrics()).dispatch(event);
+        new DispatchService(repository, late, new DispatchProperties(PROVIDER, Duration.ofSeconds(30)), clock, metrics(), secondary(repository, clock)).dispatch(event);
         service(repository, NOW.plusSeconds(10801)).dispatch(event);
         assertEquals(1, calls.get());
         assertEquals("PRIMARY_EXPIRED", stored(event).get(FAILURE_REASON).s());
@@ -396,6 +424,219 @@ class DispatchAttemptDynamoDbTest {
 
     private DispatchFailureDecision retryAt(Instant due) {
         return new DispatchFailureDecision(DispatchFailureDecision.State.RETRY_SCHEDULED, "RETRY_10S", NOW, due);
+    }
+
+    @Test
+    void primaryFailureHandsOffToSecondaryOnceAndKeepsDecisionBasedDeadline() {
+        allowFallback();
+        service(repository, fallbackProvider(), NOW).dispatch(event);
+        service(new DispatchAttemptRepository(client), fallbackProvider(), NOW.plusSeconds(100)).dispatch(event);
+        assertEquals(1, calls.get());
+        assertEquals(1, secondaryCalls.get());
+        assertEquals("ACCEPTED", storedSecondary().get(STATUS).s());
+        assertEquals(Long.toString(NOW.plusSeconds(14400).toEpochMilli()), storedSecondary().get(DEADLINE_AT).n());
+        assertEquals("2", storedSecondary().get(ROUTE_ORDER).n());
+    }
+
+    @Test
+    void defaultDisallowedAndPermanentRejectionDoNotCallSecondary() {
+        service(repository, fallbackProvider(), NOW).dispatch(event);
+        assertEquals(0, secondaryCalls.get());
+        assertFalse(stored(event).containsKey("secondary_attempt_id"));
+        event = newEvent();
+        allowFallback();
+        service(repository, (request, key) -> {
+            throw new ProviderFailureException(ProviderFailureException.Kind.PERMANENT_REJECTION);
+        }, NOW).dispatch(event);
+        assertEquals(0, secondaryCalls.get());
+        assertFalse(stored(event).containsKey("secondary_attempt_id"));
+    }
+
+    @Test
+    void exhaustedNoResponseImmediatelyStartsSecondaryWithoutWaitingForPrimaryExpiry() {
+        allowFallback();
+        DeliveryProviderClient noResponse = (request, key) -> {
+            calls.incrementAndGet();
+            throw new ProviderFailureException(ProviderFailureException.Kind.NO_RESPONSE);
+        };
+        for (int i = 0; i < 3; i++) {
+            var worker = service(repository, noResponse, NOW.plusSeconds(i));
+            assertThrows(DispatchRetryPendingException.class, () -> worker.dispatch(event));
+        }
+        service(repository, noResponse, NOW.plusSeconds(3)).dispatch(event);
+        assertEquals(4, calls.get());
+        assertEquals(1, secondaryCalls.get());
+        assertEquals(Long.toString(NOW.plusSeconds(14403).toEpochMilli()), storedSecondary().get(DEADLINE_AT).n());
+    }
+
+    @Test
+    void primaryExpiryAnchorsSecondaryAtPrimaryDeadlineAndOverdueSecondaryNeverSends() {
+        allowFallback();
+        service(repository, NOW.plusSeconds(10810)).dispatch(event);
+        assertEquals(0, calls.get());
+        assertEquals(1, secondaryCalls.get());
+        assertEquals(Long.toString(NOW.plusSeconds(25200).toEpochMilli()), storedSecondary().get(DEADLINE_AT).n());
+        event = newEvent();
+        allowFallback();
+        service(repository, NOW.plusSeconds(25200)).dispatch(event);
+        assertEquals(1, secondaryCalls.get());
+        assertEquals("SECONDARY_EXPIRED", storedSecondary().get(FAILURE_REASON).s());
+    }
+
+    @Test
+    void concurrentFallbackReplaysCreateOneSecondaryEffect() throws Exception {
+        allowFallback();
+        var start = new CountDownLatch(1);
+        try (var pool = Executors.newVirtualThreadPerTaskExecutor()) {
+            var tasks = new ArrayList<Future<?>>();
+            for (int i = 0; i < 20; i++) tasks.add(pool.submit(() -> {
+                start.await();
+                try { service(repository, fallbackProvider(), NOW).dispatch(event); }
+                catch (event.delivery.dispatch.service.DispatchAttemptInProgressException expected) { }
+                return null;
+            }));
+            start.countDown();
+            for (var task : tasks) task.get(15, TimeUnit.SECONDS);
+        }
+        service(repository, fallbackProvider(), NOW).dispatch(event);
+        assertEquals(1, calls.get());
+        assertEquals(1, secondaryCalls.get());
+    }
+
+    @Test
+    void lostSecondaryBindingResponseIsRecoveredWithoutChangingProviderOrDeadline() {
+        allowFallback();
+        var lost = mock(DynamoDbClient.class, delegatesTo(client));
+        doAnswer(invocation -> {
+            UpdateItemRequest request = invocation.getArgument(0);
+            var result = client.updateItem(request);
+            if (request.expressionAttributeValues().containsKey(":secondary")) throw SdkClientException.create("binding response lost");
+            return result;
+        }).when(lost).updateItem(any(UpdateItemRequest.class));
+        assertThrows(SdkClientException.class, () -> service(new DispatchAttemptRepository(lost), fallbackProvider(), NOW).dispatch(event));
+        assertEquals(0, secondaryCalls.get());
+        var bound = repository.prepareSecondary(event, attemptId(event), "changed-provider", Duration.ofHours(99)).orElseThrow();
+        assertEquals("tcp-provider", bound.provider());
+        assertEquals(NOW.plusSeconds(14400), bound.deadline());
+        var changedConfiguration = new SecondaryDispatchService(repository, secondaryClient,
+                new SecondaryDispatchProperties("changed-provider", Duration.ofHours(99)),
+                new DispatchProperties(PROVIDER, Duration.ofSeconds(30)), Clock.fixed(NOW, ZoneOffset.UTC), metrics());
+        assertThrows(IllegalStateException.class, () -> changedConfiguration.dispatch(event, attemptId(event)));
+        assertEquals(0, secondaryCalls.get());
+        service(repository, fallbackProvider(), NOW.plusSeconds(10)).dispatch(event);
+        assertEquals(1, calls.get());
+        assertEquals(1, secondaryCalls.get());
+    }
+
+    @Test
+    void secondaryEffectWithoutResultStorageRequiresReviewNotAnotherTcpCall() {
+        allowFallback();
+        var lost = mock(DynamoDbClient.class, delegatesTo(client));
+        doAnswer(invocation -> {
+            UpdateItemRequest request = invocation.getArgument(0);
+            if (request.expressionAttributeValues().containsKey(":accepted")) throw SdkClientException.create("result write failed");
+            return client.updateItem(request);
+        }).when(lost).updateItem(any(UpdateItemRequest.class));
+        assertThrows(SdkClientException.class, () -> service(new DispatchAttemptRepository(lost), fallbackProvider(), NOW).dispatch(event));
+        service(repository, fallbackProvider(), NOW.plusSeconds(31)).dispatch(event);
+        assertEquals(1, calls.get());
+        assertEquals(1, secondaryCalls.get());
+        assertEquals("REVIEW_REQUIRED", storedSecondary().get(STATUS).s());
+    }
+
+    @Test
+    void secondaryNoResponseRetriesStayOnSecondaryRouteAndDeadline() {
+        allowFallback();
+        secondaryClient = (request, key) -> {
+            secondaryCalls.incrementAndGet();
+            throw new ProviderFailureException(ProviderFailureException.Kind.NO_RESPONSE);
+        };
+        for (int i = 0; i < 3; i++) {
+            var worker = service(repository, fallbackProvider(), NOW.plusSeconds(i));
+            assertThrows(DispatchRetryPendingException.class, () -> worker.dispatch(event));
+        }
+        service(repository, fallbackProvider(), NOW.plusSeconds(3)).dispatch(event);
+        service(repository, fallbackProvider(), NOW.plusSeconds(4)).dispatch(event);
+        assertEquals(1, calls.get());
+        assertEquals(4, secondaryCalls.get());
+        assertEquals("RETRY_EXHAUSTED_NO_RESPONSE", storedSecondary().get(FAILURE_REASON).s());
+        assertEquals(Long.toString(NOW.plusSeconds(14400).toEpochMilli()), storedSecondary().get(DEADLINE_AT).n());
+    }
+
+    @Test
+    void primaryHttpAndSecondaryTcpWorkTogetherWithRealSocketsAndDynamoDb() throws Exception {
+        allowFallback();
+        var http = com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress("127.0.0.1", 0), 0);
+        var mapper = JsonMapper.builder().build();
+        http.createContext("/api/v1/deliveries", exchange -> {
+            try (exchange) {
+                exchange.getRequestBody().readAllBytes();
+                calls.incrementAndGet();
+                byte[] reply = mapper.writeValueAsBytes(new ProviderDispatchResponse(event.deliveryId(), false, NOW, "FALLBACK"));
+                exchange.getResponseHeaders().set("Content-Type", "application/json");
+                exchange.sendResponseHeaders(503, reply.length);
+                exchange.getResponseBody().write(reply);
+            }
+        });
+        http.start();
+        try (var tcp = new java.net.ServerSocket(0, 1, java.net.InetAddress.getLoopbackAddress());
+             var pool = Executors.newVirtualThreadPerTaskExecutor();
+             var sender = new event.delivery.dispatch.external.client.TcpProviderClient(
+                     new event.delivery.dispatch.external.config.TcpProviderProperties("localhost", tcp.getLocalPort(), Duration.ofSeconds(2), Duration.ofSeconds(2)), mapper)) {
+            tcp.setSoTimeout(3000);
+            var receiver = pool.submit(() -> {
+                try (var socket = tcp.accept()) {
+                    socket.setSoTimeout(3000);
+                    var request = mapper.readValue(TcpFrames.read(socket.getInputStream()), TcpDeliveryRequest.class);
+                    secondaryCalls.incrementAndGet();
+                    assertEquals(event.deliveryId(), request.deliveryId());
+                    TcpFrames.write(socket.getOutputStream(), mapper.writeValueAsBytes(
+                            new TcpDeliveryResponse(request.deliveryId(), request.attemptId(), true, NOW, "RECEIVED")));
+                }
+                return null;
+            });
+            secondaryClient = sender;
+            var httpClient = new event.delivery.dispatch.external.client.ExternalApiClient(
+                    new event.delivery.dispatch.external.config.ExternalApiClientConfig().externalApiRestClient(
+                            org.springframework.web.client.RestClient.builder(),
+                            new event.delivery.dispatch.external.config.ExternalApiProperties("http://127.0.0.1:" + http.getAddress().getPort(), Duration.ofSeconds(2), Duration.ofSeconds(2))),
+                    new DispatchProperties(PROVIDER, Duration.ofSeconds(30)));
+            service(repository, httpClient, NOW).dispatch(event);
+            service(repository, httpClient, NOW.plusSeconds(1)).dispatch(event);
+            receiver.get(5, TimeUnit.SECONDS);
+            assertEquals(1, calls.get());
+            assertEquals(1, secondaryCalls.get());
+            assertEquals("ACCEPTED", storedSecondary().get(STATUS).s());
+        } finally { http.stop(0); }
+    }
+
+    private void allowFallback() {
+        event = DeliveryEvent.requested(event.deliveryId(), event.tenantId(), event.deliveryType(), event.payload(), event.occurredAt(), true).toDispatchRequested();
+    }
+
+    @Test
+    void legacyPrimaryDeadlineRemainsReadableAfterUpgrade() {
+        var original = claim(event, NOW).attempt();
+        repository.recordFailure(original, retryAt(NOW.plusSeconds(1)));
+        client.updateItem(request -> request.tableName(DELIVERY_STATE).key(key(event))
+                .updateExpression("SET primary_deadline = deadline_at REMOVE deadline_at, route_order"));
+        var resumed = claim(event, NOW.plusSeconds(1));
+        assertEquals(DispatchClaimStatus.CLAIMED, resumed.status());
+        assertEquals(NOW.plusSeconds(10800), resumed.attempt().deadline());
+        assertEquals(1, resumed.attempt().routeOrder());
+    }
+
+    private DeliveryProviderClient fallbackProvider() {
+        return (request, key) -> {
+            calls.incrementAndGet();
+            throw new ProviderFailureException(ProviderFailureException.Kind.FALLBACK_REQUIRED);
+        };
+    }
+
+    private Map<String, AttributeValue> storedSecondary() {
+        var id = stored(event).get("secondary_attempt_id").s();
+        return client.getItem(request -> request.tableName(DELIVERY_STATE).consistentRead(true).key(Map.of(
+                PK, AttributeValue.fromS("DELIVERY#" + event.deliveryId()), SK, AttributeValue.fromS("ATTEMPT#" + id)))).item();
     }
 
     @Test
@@ -471,7 +712,7 @@ class DispatchAttemptDynamoDbTest {
         properties.setPollTimeout(100);
         properties.setShutdownTimeout(5000);
         var service = new DispatchService(new DispatchAttemptRepository(client), sender,
-                new DispatchProperties(PROVIDER, Duration.ofSeconds(30)), clock, metrics());
+                new DispatchProperties(PROVIDER, Duration.ofSeconds(30)), clock, metrics(), secondary(new DispatchAttemptRepository(client), clock));
         var listener = new DispatchRequestConsumer(service);
         properties.setMessageListener((MessageListener<String, DeliveryEvent>) record -> {
             try {
@@ -503,7 +744,7 @@ class DispatchAttemptDynamoDbTest {
 
     private DispatchService service(DispatchAttemptStore store, DeliveryProviderClient sender, Instant now) {
         return new DispatchService(store, sender, new DispatchProperties(PROVIDER, Duration.ofSeconds(30)),
-                Clock.fixed(now, ZoneOffset.UTC), metrics());
+                Clock.fixed(now, ZoneOffset.UTC), metrics(), secondary(store, Clock.fixed(now, ZoneOffset.UTC)));
     }
 
     private DeliveryEvent newEvent() {
@@ -519,7 +760,12 @@ class DispatchAttemptDynamoDbTest {
 
     private DispatchService service(DispatchAttemptStore store, Instant now) {
         return new DispatchService(store, provider, new DispatchProperties(PROVIDER, Duration.ofSeconds(30)),
-                Clock.fixed(now, ZoneOffset.UTC), metrics());
+                Clock.fixed(now, ZoneOffset.UTC), metrics(), secondary(store, Clock.fixed(now, ZoneOffset.UTC)));
+    }
+
+    private SecondaryDispatchService secondary(DispatchAttemptStore store, Clock clock) {
+        return new SecondaryDispatchService(store, secondaryClient, new SecondaryDispatchProperties(null, null),
+                new DispatchProperties(PROVIDER, Duration.ofSeconds(30)), clock, metrics());
     }
 
     private String attemptId(DeliveryEvent request) {

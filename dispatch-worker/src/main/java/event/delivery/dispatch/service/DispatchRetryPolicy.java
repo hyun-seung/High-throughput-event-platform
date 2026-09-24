@@ -17,8 +17,8 @@ public final class DispatchRetryPolicy {
 
     public static DispatchFailureDecision decide(DispatchAttempt attempt, ProviderFailureException.Kind kind,
                                                   Instant now, DispatchProperties properties) {
-        if (!now.isBefore(attempt.primaryDeadline())) {
-            return expired(attempt.primaryDeadline());
+        if (!now.isBefore(attempt.deadline())) {
+            return expired(attempt.deadline(), attempt.routeOrder());
         }
         Duration delay = switch (kind) {
             case RETRY_1S -> Duration.ofSeconds(1);
@@ -33,7 +33,7 @@ public final class DispatchRetryPolicy {
             Instant due = now.plus(delay);
             // Wake at the deadline to record expiry, never send early to squeeze in a retry.
             return new DispatchFailureDecision(RETRY_SCHEDULED, kind.name(), now,
-                    due.isBefore(attempt.primaryDeadline()) ? due : attempt.primaryDeadline());
+                    due.isBefore(attempt.deadline()) ? due : attempt.deadline());
         }
         return new DispatchFailureDecision(switch (kind) {
             case FALLBACK_REQUIRED, PERMANENT_REJECTION -> DECISION_PENDING;
@@ -42,6 +42,10 @@ public final class DispatchRetryPolicy {
     }
 
     public static DispatchFailureDecision expired(Instant deadline) {
-        return new DispatchFailureDecision(DECISION_PENDING, "PRIMARY_EXPIRED", deadline, null);
+        return expired(deadline, 1);
+    }
+
+    public static DispatchFailureDecision expired(Instant deadline, int routeOrder) {
+        return new DispatchFailureDecision(DECISION_PENDING, routeOrder == 2 ? "SECONDARY_EXPIRED" : "PRIMARY_EXPIRED", deadline, null);
     }
 }

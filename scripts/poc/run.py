@@ -145,7 +145,7 @@ class Runner:
                      'REDIS_HOST': 'localhost', 'REDIS_PORT': '26379', 'REDIS_DATABASE': '0',
                      'DB_URL': 'jdbc:postgresql://localhost:25432/delivery', 'DB_USERNAME': 'delivery', 'DB_PASSWORD': 'delivery',
                      'DYNAMODB_ENDPOINT': 'http://localhost:28000', 'EXTERNAL_API_BASE_URL': 'http://localhost:28090',
-                     'SIMULATOR_DEDUPLICATE': 'false', 'SIMULATOR_RESPONSE_DELAY_MILLIS': str(self.args.delay_ms),
+                     'SIMULATOR_TCP_ENABLED': 'false', 'SIMULATOR_DEDUPLICATE': 'false', 'SIMULATOR_RESPONSE_DELAY_MILLIS': str(self.args.delay_ms),
                      'SIMULATOR_MAX_TRACKED_KEYS': '100000',
                      'INGRESS_CONCURRENCY': str(self.args.worker_concurrency),
                      'DISPATCH_CONCURRENCY': str(self.args.worker_concurrency),

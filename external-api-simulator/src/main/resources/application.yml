@@ -21,6 +21,10 @@ management:
         "[http.server.requests]": true
 
 simulator:
+  tcp:
+    enabled: ${SIMULATOR_TCP_ENABLED:true}
+    bind-address: ${SIMULATOR_TCP_BIND_ADDRESS:127.0.0.1}
+    port: ${SIMULATOR_TCP_PORT:8093}
   response-delay-millis: ${SIMULATOR_RESPONSE_DELAY_MILLIS:0}
   deduplicate: ${SIMULATOR_DEDUPLICATE:false}
   max-tracked-keys: ${SIMULATOR_MAX_TRACKED_KEYS:200000}
