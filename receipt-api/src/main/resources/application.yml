@@ -1,0 +1,53 @@
+server:
+  address: 127.0.0.1
+  port: ${RECEIPT_API_PORT:8094}
+  tomcat:
+    connection-timeout: 10s
+
+spring:
+  application:
+    name: receipt-api
+  mvc:
+    async:
+      request-timeout: ${RECEIPT_HTTP_ASYNC_TIMEOUT:20s}
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    admin:
+      fail-fast: true
+    producer:
+      acks: all
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JacksonJsonSerializer
+      properties:
+        "[enable.idempotence]": true
+        "[compression.type]": zstd
+        "[linger.ms]": 5
+        "[spring.json.add.type.headers]": false
+        "[max.block.ms]": ${KAFKA_PUBLISH_MAX_BLOCK_MS:5000}
+        "[request.timeout.ms]": ${KAFKA_PUBLISH_REQUEST_TIMEOUT_MS:5000}
+        "[delivery.timeout.ms]": ${KAFKA_PUBLISH_DELIVERY_TIMEOUT_MS:10000}
+
+receipt:
+  primary-provider: ${DISPATCH_PROVIDER:mock-provider}
+  secondary-provider: ${SECONDARY_PROVIDER:tcp-provider}
+  primary-secret: ${RECEIPT_PRIMARY_SECRET:}
+  secondary-secret: ${RECEIPT_SECONDARY_SECRET:}
+
+management:
+  server:
+    address: 127.0.0.1
+    port: ${RECEIPT_METRICS_PORT:19084}
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      percentiles-histogram:
+        "[http.server.requests]": true
+        "[delivery.stage.duration]": true
