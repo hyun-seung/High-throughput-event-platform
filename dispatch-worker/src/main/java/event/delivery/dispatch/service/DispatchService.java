@@ -47,6 +47,9 @@ public class DispatchService {
             case ALREADY_ACCEPTED -> log.debug(
                     "Completed dispatch skipped. deliveryId={}, attemptId={}", event.deliveryId(), attemptId);
             case IN_PROGRESS -> throw new DispatchAttemptInProgressException(event.deliveryId());
+            case REVIEW_REQUIRED -> log.warn(
+                    "Dispatch requires operational review; provider not called. deliveryId={}, attemptId={}",
+                    event.deliveryId(), attemptId);
             case CLAIMED -> invokeProvider(event, claim, attemptId);
         }
     }

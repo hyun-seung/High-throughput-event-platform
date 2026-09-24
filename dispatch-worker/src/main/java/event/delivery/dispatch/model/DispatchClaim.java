@@ -16,4 +16,8 @@ public record DispatchClaim(
     public static DispatchClaim inProgress() {
         return new DispatchClaim(DispatchClaimStatus.IN_PROGRESS, null);
     }
+
+    public static DispatchClaim reviewRequired() {
+        return new DispatchClaim(DispatchClaimStatus.REVIEW_REQUIRED, null);
+    }
 }
