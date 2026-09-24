@@ -29,6 +29,7 @@
 - [모니터링 동시 실행 성능 검증](docs/20-모니터링-동시-실행-성능-검증.md)
 - [카프카 패치와 성능 재검증](docs/21-카프카-패치와-성능-재검증.md)
 - [100 TPS 일시 적체 구간 분석](docs/22-백-TPS-일시-적체-구간-분석.md)
+- [업체 HTTP 응답 분류와 시험 계약](docs/23-업체-HTTP-응답-분류와-시험-계약.md)
 - [설계 결정과 근거 목록](docs/adr/설계-결정과-근거-목록.md)
 
 ## Grafana 대시보드
@@ -38,7 +39,7 @@
 ## 가장 먼저 할 일
 
 1. 로컬 애플리케이션 readiness 자동 확인과 한 명령 실행을 완성합니다. Maven Wrapper·JDK 21 검사·수동 실행 및 smoke 검증은 추가했습니다.
-2. Provider 호출 결과를 accepted, retryable, permanent, unknown으로 분류합니다.
+2. HTTP 응답 분류는 구현했습니다. 관찰한 실패·무응답을 DB에 저장하고 최대 3회 재시도를 내구성 있게 예약합니다.
 3. 각 단계에 중복 event를 넣고 상태 전이와 외부 호출 횟수를 검증합니다.
 4. Sender timeout 후 결과 불명 상태를 Provider의 멱등키 지원 여부별로 검증합니다.
 5. Retry, Fallback, Receipt 순서로 전달 흐름을 확장합니다.

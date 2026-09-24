@@ -8,11 +8,14 @@ import event.delivery.dispatch.external.dto.ProviderDispatchResponse;
 import event.delivery.dispatch.port.DeliveryProviderClient;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
+import org.springframework.http.HttpStatusCode;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.client.RestClient;
-import org.springframework.web.client.RestClientResponseException;
+import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.ResourceAccessException;
 
-import java.util.Objects;
+import java.net.SocketException;
+import java.net.SocketTimeoutException;
 
 @Component
 @RequiredArgsConstructor
@@ -26,22 +29,42 @@ public class ExternalApiClient implements DeliveryProviderClient {
         ProviderDispatchRequest request = ProviderDispatchRequest.from(event);
 
         try {
-            ProviderDispatchResponse response = externalApiRestClient
+            ResponseEntity<ProviderDispatchResponse> response = externalApiRestClient
                     .post()
                     .uri("/api/v1/deliveries")
                     .header("Idempotency-Key", idempotencyKey)
                     .body(request)
                     .retrieve()
-                    .body(ProviderDispatchResponse.class);
+                    .onStatus(HttpStatusCode::isError, (sent, received) -> { })
+                    .toEntity(ProviderDispatchResponse.class);
 
-            return Objects.requireNonNull(response, "External API response must not be null");
-        } catch (RestClientResponseException failure) {
-            DeliveryAudit.record(event, "provider", "http_error", idempotencyKey, dispatchProperties.provider(),
-                    Integer.toString(failure.getStatusCode().value()));
-            throw failure;
+            return ProviderResponseClassifier.classify(event.deliveryId(), response.getStatusCode().value(), response.getBody());
+        } catch (ProviderFailureException failure) {
+            throw observedFailure(event, idempotencyKey, failure);
         } catch (ResourceAccessException failure) {
-            DeliveryAudit.record(event, "provider", "transport_error", idempotencyKey, dispatchProperties.provider(), "io_error");
-            throw failure;
+            throw observedFailure(event, idempotencyKey,
+                    new ProviderFailureException(ProviderFailureException.Kind.NO_RESPONSE));
+        } catch (RestClientException failure) {
+            throw observedFailure(event, idempotencyKey,
+                    new ProviderFailureException(isTransportFailure(failure)
+                            ? ProviderFailureException.Kind.NO_RESPONSE : ProviderFailureException.Kind.INVALID_RESPONSE));
         }
+    }
+
+    private boolean isTransportFailure(Throwable failure) {
+        // RestClient also wraps I/O during status/body extraction in a plain RestClientException.
+        for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
+            if (cause instanceof ResourceAccessException || cause instanceof SocketTimeoutException
+                    || cause instanceof SocketException) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private ProviderFailureException observedFailure(DeliveryEvent event, String attemptId, ProviderFailureException failure) {
+        String outcome = failure.kind() == ProviderFailureException.Kind.NO_RESPONSE ? "transport_error" : "http_error";
+        DeliveryAudit.record(event, "provider", outcome, attemptId, dispatchProperties.provider(), failure.kind().name());
+        return failure;
     }
 }
