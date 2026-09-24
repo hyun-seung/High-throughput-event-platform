@@ -6,6 +6,7 @@ spring:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     listener:
       ack-mode: record
+      concurrency: ${INGRESS_CONCURRENCY:1}
     consumer:
       auto-offset-reset: earliest
       enable-auto-commit: false
@@ -21,7 +22,7 @@ spring:
       properties:
         "[enable.idempotence]": true
         "[compression.type]": zstd
-        "[linger.ms]": 5
+        "[linger.ms]": ${INGRESS_KAFKA_LINGER_MS:5}
         "[spring.json.add.type.headers]": false
         "[max.block.ms]": ${KAFKA_PUBLISH_MAX_BLOCK_MS:5000}
         "[request.timeout.ms]": ${KAFKA_PUBLISH_REQUEST_TIMEOUT_MS:5000}
