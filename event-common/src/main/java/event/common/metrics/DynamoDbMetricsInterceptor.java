@@ -33,6 +33,7 @@ public final class DynamoDbMetricsInterceptor implements ExecutionInterceptor {
 
     private void finish(String request, String result, ExecutionAttributes attributes) {
         String operation = switch (request) {
+            case "QueryRequest" -> "query";
             case "GetItemRequest" -> "get_item";
             case "PutItemRequest" -> "put_item";
             case "UpdateItemRequest" -> "update_item";

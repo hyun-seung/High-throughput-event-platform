@@ -1,0 +1,449 @@
+{
+  "passed": 7,
+  "uniqueFinalResults": 7,
+  "physicalKafkaRecordsObserved": 7,
+  "cases": [
+    "정상 웹훅 성공의 최종 Kafka 인계",
+    "1차 미수신 만료와 대체 비허용",
+    "1차 만료 후 허용된 TCP 대체 성공",
+    "1차·2차 연속 미수신의 전체 만료",
+    "Worker 중단 후 원래 전체 기한으로 만료",
+    "Attempt가 없는 원본의 명시적 보강 후 만료 복구",
+    "Kafka 발행 거절·JVM 재시작 후 동일 최종 결과 복구"
+  ],
+  "environment": {
+    "runId": "receipt-flow-e8d1768b3f934cb989ccd69044c3ea60",
+    "ports": {
+      "provider": 55741,
+      "tcp": 55742,
+      "receipt": 55743,
+      "dispatch": 55744,
+      "provider_metrics": 55745,
+      "receipt_metrics": 55746,
+      "dispatch_metrics": 55747
+    },
+    "kafka": "localhost:39092",
+    "dynamo": "http://localhost:18000",
+    "topics": [
+      "receipt-flow-e8d1768b3f934cb989ccd69044c3ea60.finalized",
+      "receipt-flow-e8d1768b3f934cb989ccd69044c3ea60.dispatch",
+      "receipt-flow-e8d1768b3f934cb989ccd69044c3ea60.receipts"
+    ],
+    "groups": [
+      "receipt-flow-e8d1768b3f934cb989ccd69044c3ea60.worker",
+      "receipt-flow-e8d1768b3f934cb989ccd69044c3ea60.result"
+    ],
+    "primaryTtlSeconds": 2,
+    "secondaryTtlSeconds": 3,
+    "providerDeduplicate": false,
+    "baseCommit": "a72d7025eda37074fe109a900fc7cea85d3eeedd",
+    "workingTreeDirty": true,
+    "harnessSha256": "271230671e89334619df021681df01592089b4ecd2329bc38759dae050618b0b",
+    "jarSha256": {
+      "receipt-api": "6176c1daf909a76ccf3193b6fbea3c3f5a9aabdec2970e47adcb37760145c0d7",
+      "external-api-simulator": "a745c53c15aa454468a8d0dc1a4ef0ddd7f184200256007d6edfaffb3576c2d2",
+      "dispatch-worker": "73d2c7667a8bf164decff21f58bc0d0019a0ab4abc0a754abcbb559b4e14c7dc"
+    },
+    "lifecyclePollMillis": 100,
+    "lifecycleConcurrency": 2,
+    "exclusiveEmptyIndexRequired": true,
+    "lifecycleHarnessSha256": "9fa5eed0dab49c1f40700df56c6fcc5a296e095e4195221aaadd73250c5f3792"
+  },
+  "tests": {
+    "total": 200,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "eventCommon": 11,
+    "eventApi": 9,
+    "ingress": 19,
+    "dispatch": 120,
+    "receipt": 19,
+    "simulator": 22
+  },
+  "results": [
+    {
+      "name": "정상 웹훅 성공의 최종 Kafka 인계",
+      "result": {
+        "schemaVersion": 1,
+        "eventType": "DeliveryFinalized",
+        "eventId": "1fe6a392-e8d6-3abd-853b-cdd91eb5dc85",
+        "deliveryId": "a8ae6389-e349-4cc9-a0cc-76aaf26e91e7",
+        "tenantId": 999,
+        "deliveryType": "SMS",
+        "outcome": "DELIVERED",
+        "reason": "DELIVERED",
+        "routeOrder": 1,
+        "attemptId": "14fd96a7-91d2-3204-8fb7-8de57c90256e",
+        "provider": "mock-provider",
+        "occurredAt": "2026-09-24T15:31:43.663214Z",
+        "resultAt": "2026-09-24T15:31:43.970452Z",
+        "finalizedAt": "2026-09-24T15:31:44.578602Z",
+        "deadline": "2026-09-24T15:31:45.663Z"
+      },
+      "primaryProvider": {
+        "calls": 1,
+        "effects": 1
+      },
+      "secondaryProvider": null,
+      "outbox": {
+        "publish_state": {
+          "S": "PUBLISHED"
+        },
+        "delivery_id": {
+          "S": "a8ae6389-e349-4cc9-a0cc-76aaf26e91e7"
+        },
+        "result_event": {
+          "S": "{\"schemaVersion\":1,\"eventType\":\"DeliveryFinalized\",\"eventId\":\"1fe6a392-e8d6-3abd-853b-cdd91eb5dc85\",\"deliveryId\":\"a8ae6389-e349-4cc9-a0cc-76aaf26e91e7\",\"tenantId\":999,\"deliveryType\":\"SMS\",\"outcome\":\"DELIVERED\",\"reason\":\"DELIVERED\",\"routeOrder\":1,\"attemptId\":\"14fd96a7-91d2-3204-8fb7-8de57c90256e\",\"provider\":\"mock-provider\",\"occurredAt\":\"2026-09-24T15:31:43.663214Z\",\"resultAt\":\"2026-09-24T15:31:43.970452Z\",\"finalizedAt\":\"2026-09-24T15:31:44.578602Z\",\"deadline\":\"2026-09-24T15:31:45.663Z\"}"
+        },
+        "sk": {
+          "S": "FINAL"
+        },
+        "created_at": {
+          "S": "2026-09-24T15:31:44.578602Z"
+        },
+        "pk": {
+          "S": "DELIVERY#a8ae6389-e349-4cc9-a0cc-76aaf26e91e7"
+        },
+        "published_at": {
+          "S": "2026-09-24T15:31:44.608310Z"
+        }
+      }
+    },
+    {
+      "name": "1차 미수신 만료와 대체 비허용",
+      "result": {
+        "schemaVersion": 1,
+        "eventType": "DeliveryFinalized",
+        "eventId": "577ce342-9357-3020-808a-05f89d58dc2d",
+        "deliveryId": "082d077b-7b60-4b66-8e59-77dd39527d32",
+        "tenantId": 999,
+        "deliveryType": "SMS",
+        "outcome": "EXPIRED",
+        "reason": "PRIMARY_EXPIRED",
+        "routeOrder": 1,
+        "attemptId": "f8a592a9-dde2-3a58-bdca-a4f2e8940c15",
+        "provider": "mock-provider",
+        "occurredAt": "2026-09-24T15:31:44.761772Z",
+        "resultAt": "2026-09-24T15:31:46.761Z",
+        "finalizedAt": "2026-09-24T15:31:46.935954Z",
+        "deadline": "2026-09-24T15:31:46.761Z"
+      },
+      "primaryProvider": {
+        "calls": 1,
+        "effects": 1
+      },
+      "secondaryProvider": null,
+      "outbox": {
+        "publish_state": {
+          "S": "PUBLISHED"
+        },
+        "delivery_id": {
+          "S": "082d077b-7b60-4b66-8e59-77dd39527d32"
+        },
+        "result_event": {
+          "S": "{\"schemaVersion\":1,\"eventType\":\"DeliveryFinalized\",\"eventId\":\"577ce342-9357-3020-808a-05f89d58dc2d\",\"deliveryId\":\"082d077b-7b60-4b66-8e59-77dd39527d32\",\"tenantId\":999,\"deliveryType\":\"SMS\",\"outcome\":\"EXPIRED\",\"reason\":\"PRIMARY_EXPIRED\",\"routeOrder\":1,\"attemptId\":\"f8a592a9-dde2-3a58-bdca-a4f2e8940c15\",\"provider\":\"mock-provider\",\"occurredAt\":\"2026-09-24T15:31:44.761772Z\",\"resultAt\":\"2026-09-24T15:31:46.761Z\",\"finalizedAt\":\"2026-09-24T15:31:46.935954Z\",\"deadline\":\"2026-09-24T15:31:46.761Z\"}"
+        },
+        "sk": {
+          "S": "FINAL"
+        },
+        "created_at": {
+          "S": "2026-09-24T15:31:46.935954Z"
+        },
+        "pk": {
+          "S": "DELIVERY#082d077b-7b60-4b66-8e59-77dd39527d32"
+        },
+        "published_at": {
+          "S": "2026-09-24T15:31:46.951793Z"
+        }
+      }
+    },
+    {
+      "name": "1차 만료 후 허용된 TCP 대체 성공",
+      "result": {
+        "schemaVersion": 1,
+        "eventType": "DeliveryFinalized",
+        "eventId": "8f7af8cc-698f-3956-b17a-755d4415f7b7",
+        "deliveryId": "f8ca8053-086d-4838-9733-3deb538dc851",
+        "tenantId": 999,
+        "deliveryType": "SMS",
+        "outcome": "DELIVERED",
+        "reason": "DELIVERED",
+        "routeOrder": 2,
+        "attemptId": "d52ccfa9-0bd3-32d7-b87a-4cfcc5fe6dff",
+        "provider": "tcp-provider",
+        "occurredAt": "2026-09-24T15:31:46.988091Z",
+        "resultAt": "2026-09-24T15:31:49.251324Z",
+        "finalizedAt": "2026-09-24T15:31:49.458616Z",
+        "deadline": "2026-09-24T15:31:51.988Z"
+      },
+      "primaryProvider": {
+        "calls": 1,
+        "effects": 1
+      },
+      "secondaryProvider": {
+        "calls": 1,
+        "effects": 1
+      },
+      "outbox": {
+        "publish_state": {
+          "S": "PUBLISHED"
+        },
+        "delivery_id": {
+          "S": "f8ca8053-086d-4838-9733-3deb538dc851"
+        },
+        "result_event": {
+          "S": "{\"schemaVersion\":1,\"eventType\":\"DeliveryFinalized\",\"eventId\":\"8f7af8cc-698f-3956-b17a-755d4415f7b7\",\"deliveryId\":\"f8ca8053-086d-4838-9733-3deb538dc851\",\"tenantId\":999,\"deliveryType\":\"SMS\",\"outcome\":\"DELIVERED\",\"reason\":\"DELIVERED\",\"routeOrder\":2,\"attemptId\":\"d52ccfa9-0bd3-32d7-b87a-4cfcc5fe6dff\",\"provider\":\"tcp-provider\",\"occurredAt\":\"2026-09-24T15:31:46.988091Z\",\"resultAt\":\"2026-09-24T15:31:49.251324Z\",\"finalizedAt\":\"2026-09-24T15:31:49.458616Z\",\"deadline\":\"2026-09-24T15:31:51.988Z\"}"
+        },
+        "sk": {
+          "S": "FINAL"
+        },
+        "created_at": {
+          "S": "2026-09-24T15:31:49.458616Z"
+        },
+        "pk": {
+          "S": "DELIVERY#f8ca8053-086d-4838-9733-3deb538dc851"
+        },
+        "published_at": {
+          "S": "2026-09-24T15:31:49.478363Z"
+        }
+      }
+    },
+    {
+      "name": "1차·2차 연속 미수신의 전체 만료",
+      "result": {
+        "schemaVersion": 1,
+        "eventType": "DeliveryFinalized",
+        "eventId": "9cad1ff0-85ba-37a2-bf7f-98be05ae8f00",
+        "deliveryId": "b5386245-cd4e-4c39-b8d7-0c7307e50f56",
+        "tenantId": 999,
+        "deliveryType": "SMS",
+        "outcome": "EXPIRED",
+        "reason": "SECONDARY_EXPIRED",
+        "routeOrder": 2,
+        "attemptId": "00bd49bd-138c-35cc-b920-4e0ad2123c98",
+        "provider": "tcp-provider",
+        "occurredAt": "2026-09-24T15:31:49.540931Z",
+        "resultAt": "2026-09-24T15:31:54.540Z",
+        "finalizedAt": "2026-09-24T15:31:54.634438Z",
+        "deadline": "2026-09-24T15:31:54.540Z"
+      },
+      "primaryProvider": {
+        "calls": 1,
+        "effects": 1
+      },
+      "secondaryProvider": {
+        "calls": 1,
+        "effects": 1
+      },
+      "outbox": {
+        "publish_state": {
+          "S": "PUBLISHED"
+        },
+        "delivery_id": {
+          "S": "b5386245-cd4e-4c39-b8d7-0c7307e50f56"
+        },
+        "result_event": {
+          "S": "{\"schemaVersion\":1,\"eventType\":\"DeliveryFinalized\",\"eventId\":\"9cad1ff0-85ba-37a2-bf7f-98be05ae8f00\",\"deliveryId\":\"b5386245-cd4e-4c39-b8d7-0c7307e50f56\",\"tenantId\":999,\"deliveryType\":\"SMS\",\"outcome\":\"EXPIRED\",\"reason\":\"SECONDARY_EXPIRED\",\"routeOrder\":2,\"attemptId\":\"00bd49bd-138c-35cc-b920-4e0ad2123c98\",\"provider\":\"tcp-provider\",\"occurredAt\":\"2026-09-24T15:31:49.540931Z\",\"resultAt\":\"2026-09-24T15:31:54.540Z\",\"finalizedAt\":\"2026-09-24T15:31:54.634438Z\",\"deadline\":\"2026-09-24T15:31:54.540Z\"}"
+        },
+        "sk": {
+          "S": "FINAL"
+        },
+        "created_at": {
+          "S": "2026-09-24T15:31:54.634438Z"
+        },
+        "pk": {
+          "S": "DELIVERY#b5386245-cd4e-4c39-b8d7-0c7307e50f56"
+        },
+        "published_at": {
+          "S": "2026-09-24T15:31:54.651888Z"
+        }
+      }
+    },
+    {
+      "name": "Worker 중단 후 원래 전체 기한으로 만료",
+      "result": {
+        "schemaVersion": 1,
+        "eventType": "DeliveryFinalized",
+        "eventId": "f6bf3ac7-3003-33a7-a8ea-0e279752990b",
+        "deliveryId": "83cb329c-78bb-4894-8cbb-82876cee602b",
+        "tenantId": 999,
+        "deliveryType": "SMS",
+        "outcome": "EXPIRED",
+        "reason": "SECONDARY_EXPIRED",
+        "routeOrder": 2,
+        "attemptId": "50031256-ee09-3dd6-9693-cf7dbf372c79",
+        "provider": "tcp-provider",
+        "occurredAt": "2026-09-24T15:31:54.746178Z",
+        "resultAt": "2026-09-24T15:31:59.746Z",
+        "finalizedAt": "2026-09-24T15:32:00.473314Z",
+        "deadline": "2026-09-24T15:31:59.746Z"
+      },
+      "primaryProvider": {
+        "calls": 1,
+        "effects": 1
+      },
+      "secondaryProvider": null,
+      "outbox": {
+        "publish_state": {
+          "S": "PUBLISHED"
+        },
+        "delivery_id": {
+          "S": "83cb329c-78bb-4894-8cbb-82876cee602b"
+        },
+        "result_event": {
+          "S": "{\"schemaVersion\":1,\"eventType\":\"DeliveryFinalized\",\"eventId\":\"f6bf3ac7-3003-33a7-a8ea-0e279752990b\",\"deliveryId\":\"83cb329c-78bb-4894-8cbb-82876cee602b\",\"tenantId\":999,\"deliveryType\":\"SMS\",\"outcome\":\"EXPIRED\",\"reason\":\"SECONDARY_EXPIRED\",\"routeOrder\":2,\"attemptId\":\"50031256-ee09-3dd6-9693-cf7dbf372c79\",\"provider\":\"tcp-provider\",\"occurredAt\":\"2026-09-24T15:31:54.746178Z\",\"resultAt\":\"2026-09-24T15:31:59.746Z\",\"finalizedAt\":\"2026-09-24T15:32:00.473314Z\",\"deadline\":\"2026-09-24T15:31:59.746Z\"}"
+        },
+        "sk": {
+          "S": "FINAL"
+        },
+        "created_at": {
+          "S": "2026-09-24T15:32:00.473314Z"
+        },
+        "pk": {
+          "S": "DELIVERY#83cb329c-78bb-4894-8cbb-82876cee602b"
+        },
+        "published_at": {
+          "S": "2026-09-24T15:32:00.490504Z"
+        }
+      }
+    },
+    {
+      "name": "Attempt가 없는 원본의 명시적 보강 후 만료 복구",
+      "result": {
+        "schemaVersion": 1,
+        "eventType": "DeliveryFinalized",
+        "eventId": "c8ddbedf-e85f-37cf-bc82-ff8eefc499b5",
+        "deliveryId": "c033bf54-3ef7-4c41-a84d-210ccdc46a80",
+        "tenantId": 999,
+        "deliveryType": "SMS",
+        "outcome": "EXPIRED",
+        "reason": "SECONDARY_EXPIRED",
+        "routeOrder": 2,
+        "attemptId": "3d0254ec-d288-3cb8-9a5f-9ea840fb6562",
+        "provider": "tcp-provider",
+        "occurredAt": "2026-09-24T15:31:50.588809Z",
+        "resultAt": "2026-09-24T15:31:55.588Z",
+        "finalizedAt": "2026-09-24T15:32:01.031491Z",
+        "deadline": "2026-09-24T15:31:55.588Z"
+      },
+      "primaryProvider": null,
+      "secondaryProvider": null,
+      "outbox": {
+        "publish_state": {
+          "S": "PUBLISHED"
+        },
+        "delivery_id": {
+          "S": "c033bf54-3ef7-4c41-a84d-210ccdc46a80"
+        },
+        "result_event": {
+          "S": "{\"schemaVersion\":1,\"eventType\":\"DeliveryFinalized\",\"eventId\":\"c8ddbedf-e85f-37cf-bc82-ff8eefc499b5\",\"deliveryId\":\"c033bf54-3ef7-4c41-a84d-210ccdc46a80\",\"tenantId\":999,\"deliveryType\":\"SMS\",\"outcome\":\"EXPIRED\",\"reason\":\"SECONDARY_EXPIRED\",\"routeOrder\":2,\"attemptId\":\"3d0254ec-d288-3cb8-9a5f-9ea840fb6562\",\"provider\":\"tcp-provider\",\"occurredAt\":\"2026-09-24T15:31:50.588809Z\",\"resultAt\":\"2026-09-24T15:31:55.588Z\",\"finalizedAt\":\"2026-09-24T15:32:01.031491Z\",\"deadline\":\"2026-09-24T15:31:55.588Z\"}"
+        },
+        "sk": {
+          "S": "FINAL"
+        },
+        "created_at": {
+          "S": "2026-09-24T15:32:01.031491Z"
+        },
+        "pk": {
+          "S": "DELIVERY#c033bf54-3ef7-4c41-a84d-210ccdc46a80"
+        },
+        "published_at": {
+          "S": "2026-09-24T15:32:01.046566Z"
+        }
+      }
+    },
+    {
+      "name": "Kafka 발행 거절·JVM 재시작 후 동일 최종 결과 복구",
+      "result": {
+        "schemaVersion": 1,
+        "eventType": "DeliveryFinalized",
+        "eventId": "f76bd928-c58b-34e5-ad53-871e51be863d",
+        "deliveryId": "55c25329-70f7-4d8f-b167-51a594a9db4a",
+        "tenantId": 999,
+        "deliveryType": "SMS",
+        "outcome": "DELIVERED",
+        "reason": "DELIVERED",
+        "routeOrder": 1,
+        "attemptId": "14150e94-2b69-3209-ba98-ae92bc5adeac",
+        "provider": "mock-provider",
+        "occurredAt": "2026-09-24T15:32:01.145011Z",
+        "resultAt": "2026-09-24T15:32:01.279824Z",
+        "finalizedAt": "2026-09-24T15:32:01.402687Z",
+        "deadline": "2026-09-24T15:32:03.145Z"
+      },
+      "primaryProvider": {
+        "calls": 1,
+        "effects": 1
+      },
+      "secondaryProvider": null,
+      "outbox": {
+        "publish_state": {
+          "S": "PUBLISHED"
+        },
+        "delivery_id": {
+          "S": "55c25329-70f7-4d8f-b167-51a594a9db4a"
+        },
+        "result_event": {
+          "S": "{\"schemaVersion\":1,\"eventType\":\"DeliveryFinalized\",\"eventId\":\"f76bd928-c58b-34e5-ad53-871e51be863d\",\"deliveryId\":\"55c25329-70f7-4d8f-b167-51a594a9db4a\",\"tenantId\":999,\"deliveryType\":\"SMS\",\"outcome\":\"DELIVERED\",\"reason\":\"DELIVERED\",\"routeOrder\":1,\"attemptId\":\"14150e94-2b69-3209-ba98-ae92bc5adeac\",\"provider\":\"mock-provider\",\"occurredAt\":\"2026-09-24T15:32:01.145011Z\",\"resultAt\":\"2026-09-24T15:32:01.279824Z\",\"finalizedAt\":\"2026-09-24T15:32:01.402687Z\",\"deadline\":\"2026-09-24T15:32:03.145Z\"}"
+        },
+        "sk": {
+          "S": "FINAL"
+        },
+        "created_at": {
+          "S": "2026-09-24T15:32:01.402687Z"
+        },
+        "pk": {
+          "S": "DELIVERY#55c25329-70f7-4d8f-b167-51a594a9db4a"
+        },
+        "published_at": {
+          "S": "2026-09-24T15:32:04.450067Z"
+        }
+      }
+    }
+  ],
+  "pendingBeforeRestart": {
+    "publish_state": {
+      "S": "PENDING"
+    },
+    "lifecycle_bucket": {
+      "S": "lifecycle-v1-6"
+    },
+    "delivery_id": {
+      "S": "55c25329-70f7-4d8f-b167-51a594a9db4a"
+    },
+    "result_event": {
+      "S": "{\"schemaVersion\":1,\"eventType\":\"DeliveryFinalized\",\"eventId\":\"f76bd928-c58b-34e5-ad53-871e51be863d\",\"deliveryId\":\"55c25329-70f7-4d8f-b167-51a594a9db4a\",\"tenantId\":999,\"deliveryType\":\"SMS\",\"outcome\":\"DELIVERED\",\"reason\":\"DELIVERED\",\"routeOrder\":1,\"attemptId\":\"14150e94-2b69-3209-ba98-ae92bc5adeac\",\"provider\":\"mock-provider\",\"occurredAt\":\"2026-09-24T15:32:01.145011Z\",\"resultAt\":\"2026-09-24T15:32:01.279824Z\",\"finalizedAt\":\"2026-09-24T15:32:01.402687Z\",\"deadline\":\"2026-09-24T15:32:03.145Z\"}"
+    },
+    "sk": {
+      "S": "FINAL"
+    },
+    "created_at": {
+      "S": "2026-09-24T15:32:01.402687Z"
+    },
+    "pk": {
+      "S": "DELIVERY#55c25329-70f7-4d8f-b167-51a594a9db4a"
+    },
+    "lifecycle_due": {
+      "N": "0"
+    }
+  },
+  "cleanup": {
+    "errors": []
+  },
+  "rawEvidenceSha256": {
+    "cleanup.json": "339acc3b09add3c3d0e689adf17878a1bd264d3a3f00fccce7db538630e20066",
+    "dispatch-restarted.log": "505a59ab486889e4769066ba569e7d8cf50e4cfbec82a3abe5f1063115a86996",
+    "dispatch.log": "ca790b56f063cfad0877cc0ce7e15770dabcd208b6c0343efbfe97cf8561a336",
+    "dispatch.prom": "3ec9ed57d02c56f7f00985dfdd8e00d497ab27d746c845f0267a79a2f6813aae",
+    "environment.json": "5c47a7354a85493c00dba99283665223346afbbbaef948fd4540291e621f88fe",
+    "final-kafka-records.json": "10e6ec7c64ad64c12fe954315e12702a44f803e2d5235861c4ec41219c911c00",
+    "final-results.json": "3842e9e45b11d78fe7c4b44406b5bc7a8861ccbd32255aa6db25e798b063efd3",
+    "pending-before-restart.json": "1850ef5561b11a69748dad60ed816ee445024a856a2f1a690a27254f2d1be2ed",
+    "provider.log": "9c6c1581e8b92ef7596e96cf025e4605005e069ed071d8596a65022a02c533cf",
+    "provider.prom": "3f1255bb5c0ef6f99debc2bdf3f869634edd9138341aece4de95b7550edfd93b",
+    "receipt.log": "feb405a9729899994c85726ef83c234c311abd4b69c6cb121dbed9b9436d4262",
+    "receipt.prom": "553357a1939f7160194e75504b7f4c02c29cddfcef0856f976fbba33b71b9701",
+    "summary.json": "884d6c0960b062157a477f6ac571bdf30bfc914d8dada44b3bc261d7e18b2a26"
+  }
+}

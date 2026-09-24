@@ -1,6 +1,7 @@
 package event.common.dynamodb.config;
 
 import lombok.RequiredArgsConstructor;
+import event.common.lifecycle.LifecycleIndex;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
@@ -34,12 +35,15 @@ public class DynamoDbTableInitializer implements ApplicationRunner {
                 .tableName(DELIVERY_STATE)
                 .attributeDefinitions(
                         AttributeDefinition.builder().attributeName(PK).attributeType(ScalarAttributeType.S).build(),
-                        AttributeDefinition.builder().attributeName(SK).attributeType(ScalarAttributeType.S).build()
+                        AttributeDefinition.builder().attributeName(SK).attributeType(ScalarAttributeType.S).build(),
+                        AttributeDefinition.builder().attributeName(LifecycleIndex.BUCKET).attributeType(ScalarAttributeType.S).build(),
+                        AttributeDefinition.builder().attributeName(LifecycleIndex.DUE).attributeType(ScalarAttributeType.N).build()
                 )
                 .keySchema(
                         KeySchemaElement.builder().attributeName(PK).keyType(KeyType.HASH).build(),
                         KeySchemaElement.builder().attributeName(SK).keyType(KeyType.RANGE).build()
                 )
+                .globalSecondaryIndexes(LifecycleIndex.definition())
                 .billingMode(BillingMode.PAY_PER_REQUEST)
                 .build();
 

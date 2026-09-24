@@ -1,6 +1,7 @@
 package event.delivery.dispatch.repository;
 
 import event.common.delivery.DeliveryEvent;
+import event.common.lifecycle.LifecycleIndex;
 import event.common.delivery.DeliveryIds;
 import event.delivery.dispatch.model.DispatchAttempt;
 import event.delivery.dispatch.model.DispatchClaim;
@@ -112,7 +113,8 @@ public class DispatchAttemptRepository implements DispatchAttemptStore {
                 Map.entry(":zero", number(0)),
                 Map.entry(":one", number(1)),
                 Map.entry(":deadline", number(deadline.toEpochMilli())),
-                Map.entry(":route", number(routeOrder))
+                Map.entry(":route", number(routeOrder)),
+                Map.entry(":bucket", text(LifecycleIndex.bucket(event.deliveryId())))
         );
 
         UpdateItemRequest request = UpdateItemRequest.builder()
@@ -123,7 +125,8 @@ public class DispatchAttemptRepository implements DispatchAttemptStore {
                         + "#eventId = :eventId, #provider = :provider, #status = :processing, "
                         + "#leaseUntil = :leaseUntil, #createdAt = if_not_exists(#createdAt, :now), "
                         + "#updatedAt = :now, #version = if_not_exists(#version, :zero) + :one, "
-                        + "#retryCount = :zero, #deadline = :deadline, #route = :route")
+                        + "#retryCount = :zero, #deadline = :deadline, #route = :route, "
+                        + "lifecycle_bucket = :bucket, lifecycle_due = :deadline")
                 .expressionAttributeNames(names)
                 .expressionAttributeValues(values)
                 .returnValues(ReturnValue.ALL_NEW)
@@ -207,7 +210,9 @@ public class DispatchAttemptRepository implements DispatchAttemptStore {
         var values = new HashMap<>(Map.of(":processing", text(PROCESSING), ":version", number(attempt.version()),
                 ":state", text(decision.state().name()), ":reason", text(decision.reason()),
                 ":observed", text(decision.observedAt().toString())));
-        String update = "SET #status = :state, #reason = :reason, #observed = :observed, #updated = :observed";
+        values.put(":lifecycleDue", number(decision.state() == DispatchFailureDecision.State.DECISION_PENDING ? 0
+                : decision.nextAttemptAt() != null ? decision.nextAttemptAt().toEpochMilli() : attempt.deadline().toEpochMilli()));
+        String update = "SET lifecycle_due = :lifecycleDue, #status = :state, #reason = :reason, #observed = :observed, #updated = :observed";
         if (decision.state() == DispatchFailureDecision.State.REVIEW_REQUIRED) {
             names.put("#reviewReason", REVIEW_REASON);
             update += ", #reviewReason = :reason";
@@ -279,7 +284,7 @@ public class DispatchAttemptRepository implements DispatchAttemptStore {
             dynamoDbClient.updateItem(UpdateItemRequest.builder().tableName(DELIVERY_STATE).key(key)
                     .conditionExpression("#status = :scheduled AND #version = :version AND #deadline <= :nowMillis")
                     .updateExpression("SET #status = :pending, #reason = :expired, #observed = :at, "
-                            + "#updated = :at, #version = #version + :one REMOVE #next")
+                            + "#updated = :at, #version = #version + :one, lifecycle_due = :nowMillis REMOVE #next")
                     .expressionAttributeNames(Map.of("#status", STATUS, "#version", VERSION, "#deadline", deadlineAttribute,
                             "#reason", FAILURE_REASON, "#observed", FAILURE_OBSERVED_AT, "#updated", UPDATED_AT,
                             "#next", NEXT_ATTEMPT_AT))
@@ -296,7 +301,7 @@ public class DispatchAttemptRepository implements DispatchAttemptStore {
                 .conditionExpression("#status = :scheduled AND #version = :version AND #next <= :nowMillis "
                         + "AND #deadline > :nowMillis AND #count < :max")
                 .updateExpression("SET #status = :processing, #version = #version + :one, #count = #count + :one, "
-                        + "#lease = :lease, #updated = :now REMOVE #next")
+                        + "#lease = :lease, #updated = :now, lifecycle_due = #deadline REMOVE #next")
                 .expressionAttributeNames(Map.of("#status", STATUS, "#version", VERSION, "#next", NEXT_ATTEMPT_AT,
                         "#deadline", deadlineAttribute, "#count", RETRY_COUNT, "#lease", LEASE_UNTIL, "#updated", UPDATED_AT))
                 .expressionAttributeValues(Map.of(":scheduled", text(RETRY_SCHEDULED), ":version", number(version),

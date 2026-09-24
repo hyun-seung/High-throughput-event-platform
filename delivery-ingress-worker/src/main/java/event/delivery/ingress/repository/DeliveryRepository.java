@@ -1,6 +1,7 @@
 package event.delivery.ingress.repository;
 
 import event.common.delivery.DeliveryEvent;
+import event.common.lifecycle.LifecycleIndex;
 import event.common.delivery.DeliveryPayloads;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
@@ -95,6 +96,7 @@ public class DeliveryRepository {
         Map<String, AttributeValue> item = new HashMap<>();
 
         item.putAll(key(event.deliveryId()));
+        LifecycleIndex.add(item, event.deliveryId(), 0);
         item.put(DELIVERY_ID, AttributeValue.fromS(event.deliveryId()));
         item.put(EVENT_ID, AttributeValue.fromS(event.eventId()));
         item.put(EVENT_TYPE, AttributeValue.fromS(event.eventType().name()));

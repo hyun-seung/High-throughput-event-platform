@@ -100,6 +100,7 @@ class Run:
         java = str(Path(os.environ['JAVA_HOME']) / 'bin/java')
         modules = {'receipt': 'receipt-api', 'provider': 'external-api-simulator', 'dispatch': 'dispatch-worker'}
         hashes = {}
+        self.child_env = env
         for name, module in modules.items():
             jar = ROOT / module / 'target' / (module + '-1.0-SNAPSHOT.jar')
             hashes[module] = hashlib.sha256(jar.read_bytes()).hexdigest()
@@ -108,6 +109,7 @@ class Run:
             if name == 'receipt': opts += [f'--receipt.topic={self.receipts}', '--receipt.partitions=1']
             if name == 'dispatch': opts += [f'--dispatch.requests.topic={self.topic}', f'--dispatch.requests.group={self.group}',
                                            f'--dispatch.receipts.topic={self.receipts}', f'--dispatch.receipts.group={self.receipt_group}']
+            opts += self.extra_options(name)
             self.apps[name] = subprocess.Popen([java, '-Xms64m', '-Xmx256m', '-jar', str(jar)] + opts,
                                               cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT)
         self.write('environment.json', {'runId': self.run_id, 'ports': self.ports, 'kafka': self.args.kafka,
@@ -128,6 +130,9 @@ class Run:
         for topic, group in ((self.topic, self.group), (self.receipts, self.receipt_group)):
             probe = Consumer({'bootstrap.servers': self.args.kafka, 'broker.address.family': 'v4', 'group.id': group, 'enable.auto.commit': False})
             self.probes.append((topic, probe))  # committed() reads only, never subscribe/join
+
+    def extra_options(self, name):
+        return []
 
     def alive(self):
         for name, process in self.apps.items():
