@@ -28,6 +28,7 @@
         <module>delivery-ingress-worker</module>
         <module>dispatch-worker</module>
         <module>external-api-simulator</module>
+        <module>receipt-api</module>
     </modules>
 
     <properties>
