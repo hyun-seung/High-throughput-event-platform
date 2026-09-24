@@ -21,7 +21,7 @@ def run():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--rate',type=int,default=20)
     p.add_argument('--seconds',type=int,default=30)
-    p.add_argument('--errors',action='store_true',help='One explicit provider 500, then REVIEW_REQUIRED after lease expiry')
+    p.add_argument('--errors',action='store_true',help='One explicit provider 500, durably recorded as REVIEW_REQUIRED')
     args=p.parse_args()
     if not 1<=args.rate<=100 or not 1<=args.seconds<=120:p.error('rate 1..100 and seconds 1..120 required')
     _,auth=call('/api/v1/auth/token',{'username':'local-user','password':'local-password'})

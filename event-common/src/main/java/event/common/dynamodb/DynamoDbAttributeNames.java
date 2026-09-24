@@ -20,6 +20,11 @@ public final class DynamoDbAttributeNames {
     public static final String VERSION = "version";
     public static final String PROVIDER_PROCESSED_AT = "provider_processed_at";
     public static final String REVIEW_REASON = "review_reason";
+    public static final String RETRY_COUNT = "retry_count";
+    public static final String NEXT_ATTEMPT_AT = "next_attempt_at";
+    public static final String PRIMARY_DEADLINE = "primary_deadline";
+    public static final String FAILURE_REASON = "failure_reason";
+    public static final String FAILURE_OBSERVED_AT = "failure_observed_at";
     public static final String CREATED_AT = "created_at";
     public static final String UPDATED_AT = "updated_at";
 

@@ -20,4 +20,12 @@ public record DispatchClaim(
     public static DispatchClaim reviewRequired() {
         return new DispatchClaim(DispatchClaimStatus.REVIEW_REQUIRED, null);
     }
+
+    public static DispatchClaim retryWait() {
+        return new DispatchClaim(DispatchClaimStatus.RETRY_WAIT, null);
+    }
+
+    public static DispatchClaim decisionPending() {
+        return new DispatchClaim(DispatchClaimStatus.DECISION_PENDING, null);
+    }
 }

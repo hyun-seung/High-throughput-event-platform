@@ -40,7 +40,7 @@ bash scripts/monitoring.sh logs dispatch
 bash scripts/monitoring.sh stop
 ```
 
-최초 이미지 다운로드 시간은 별도다. `up` 완료는 컨테이너 생성 완료이며 전체 업무 준비 완료를 보장하지 않는다. `status`와 Grafana 수집 상태를 확인한다. 생성된 요청 중 매 10번째는 직전 요청과 같은 키를 써서 중복 차단을 보여 준다. `--errors`는 현재 구현상 lease 만료 후 운영 확인으로 남는 시험 데이터이며 자동 업무 복구를 구현한 것이 아니다. 이 기록은 환경의 DB에 유지된다.
+최초 이미지 다운로드 시간은 별도다. `up` 완료는 컨테이너 생성 완료이며 전체 업무 준비 완료를 보장하지 않는다. `status`와 Grafana 수집 상태를 확인한다. 생성된 요청 중 매 10번째는 직전 요청과 같은 키를 써서 중복 차단을 보여 준다. `--errors`는 의도적 업체 500을 만드는 시험 데이터다. 초기 버전은 lease 만료 후 운영 확인으로 남겼고, 실패 저장 구현 이후 새 빌드에서는 HTTP_ERROR 사유로 즉시 운영 확인에 저장한다. 자동 업무 복구를 구현한 것은 아니다. 이 기록은 환경의 DB에 유지된다.
 
 Compose project는 `platform-monitoring`이며 기존 개발·PoC 환경과 DB, Kafka, Redis, 로그 볼륨을 분리한다. `.env`는 읽지 않고 전용 포트를 사용한다. Grafana `13000`, Prometheus `19099`, 테스트 API `38080`, Kafka `39092`, Redis `36379`, PostgreSQL `35432`, DynamoDB Local `38000`은 **127.0.0.1에만 공개**한다. 앱 관리 포트·Loki·Alloy·exporter는 Docker 내부 통신만 허용한다.
 
