@@ -1,9 +1,11 @@
 """Send bounded, explicitly synthetic traffic to the isolated monitoring environment."""
 import argparse
+import fcntl
 from concurrent.futures import ThreadPoolExecutor
 import json
 import time
 import uuid
+from pathlib import Path
 from urllib.request import Request, build_opener, ProxyHandler
 
 HTTP=build_opener(ProxyHandler({}))
@@ -15,7 +17,7 @@ def call(path,payload,token=None,key=None):
     with HTTP.open(Request(BASE+path,json.dumps(payload).encode(),headers),timeout=15) as response:
         return response.status,json.load(response)
 
-def main():
+def run():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--rate',type=int,default=20)
     p.add_argument('--seconds',type=int,default=30)
@@ -43,5 +45,12 @@ def main():
     if args.errors:
         status,data=call('/api/v1/deliveries',{'deliveryType':'EMAIL','payload':{'message':'explicit failure demo','forceFail':True}},token,run+'-forced-failure')
         print(json.dumps({'intentionalProviderFailure':True,'status':status,'deliveryId':data['data']['deliveryId']},ensure_ascii=False))
+
+def main():
+    directory=Path(__file__).resolve().parents[2]/'.monitoring'
+    directory.mkdir(exist_ok=True)
+    with (directory/'benchmark.lock').open('w') as lock:
+        fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        run()
 
 if __name__=='__main__':main()

@@ -29,6 +29,11 @@ case "${1:-help}" in
   stop) "${compose[@]}" stop ;;
   logs) "${compose[@]}" logs --tail=80 "${2:-grafana}" ;;
   demo) shift; exec python3 scripts/monitoring/demo.py "$@" ;;
+  benchmark)
+    shift
+    [[ -x .poc-tools/venv/bin/python ]] || { echo 'Run python3 scripts/poc/setup.py first.' >&2; exit 1; }
+    exec .poc-tools/venv/bin/python scripts/monitoring/benchmark.py "$@"
+    ;;
   verify) exec python3 scripts/monitoring/verify.py ;;
-  *) echo 'Usage: bash scripts/monitoring.sh <up|status|stop|logs SERVICE|demo|verify>' ;;
+  *) echo 'Usage: bash scripts/monitoring.sh <up|status|stop|logs SERVICE|demo|benchmark|verify>' ;;
 esac

@@ -144,6 +144,23 @@ Redis 시험은 기존 개발 환경이 아닌 `platform-monitoring-redis-1`만 
 
 ## 7. 설정 변경과 후속 작업
 
+### 모니터링을 켠 상태의 성능 검증
+
+`demo`는 화면 확인용이다. 요청별 정합성까지 검사하려면 기존 PoC 도구 설치 후 아래 명령을 사용한다.
+
+```bash
+python3 scripts/poc/setup.py
+bash scripts/monitoring.sh benchmark --suite smoke
+# 소량 → 10 TPS 1분 워밍업 → 100 TPS 20초 중복 → 50/100 TPS 각 3분
+bash scripts/monitoring.sh benchmark --suite baseline
+```
+
+이미 실행 중인 `platform-monitoring`에 연결하며 앱·DB·수집 서버를 재시작하거나 정책을 바꾸지 않는다. 고유 시험 ID를 쓰고 실행 전후 offset 범위와 해당 ID의 DB·업체 기록을 대조한다. 기존 데모 데이터는 유지되며 시뮬레이터 관리 횟수 조회는 입력·배출 이후에만 수행한다. API 인증·Redis 제한은 계속 적용되고 시험 입력은 데모 고객의 quota를 소비한다.
+
+관리 포트를 추가 공개하지 않는다. collector 내부에서 읽기 전용으로 앱 지표·시뮬레이터 횟수를 조회하며 토큰은 stdin으로 전달하고 증거 파일에는 저장하지 않는다. 실제 실행 중인 컨테이너 image ID와 JAR 해시, 동시성·linger 설정을 남긴다. `.poc-results/<실행 ID>/`의 요청별 대조·부하·구간/자원 파일 형식과 중단 기준은 [PoC 문서](15-격리된-성능-PoC-실행과-결과-대조.md)와 동일하다.
+
+`demo`와 `benchmark`의 동시 실행은 파일 lock으로 차단한다. 시험 중 수동 API 제출이나 서비스 재기동도 하지 않는다. 예상 밖 Kafka ID·재시작·적체 증가·DLT·운영 확인·수집 장애가 발견되면 후속 입력률 증가를 중단한다. 종료해도 Grafana와 앱은 계속 실행된다. 별도 수집·Docker stats 비용이 시험 부하에 포함되며, 모니터링을 끈 대조군이 없으므로 **이 실행만으로 모니터링 오버헤드를 계산하지 않는다.**
+
 화면 원본은 `scripts/monitoring/generate_dashboards.py`, 생성 JSON은 `monitoring/grafana/dashboards/`다. 생성기를 고친 뒤 `python3 scripts/monitoring/generate_dashboards.py`를 실행하고 JSON도 함께 커밋한다. Grafana는 파일 provisioning으로 읽으며 UI 변경을 저장하는 용도로 쓰지 않는다.
 
 경보는 Prometheus 규칙 평가와 대시보드 표시까지 구현했다. 현재 임계값(lag 100건 1분, 최장 대기 30초 등)은 로컬 시험용이며 운영 SLO가 아니다. Slack·메일·문자 발송, Alertmanager 연동, 경보 담당자·반복 억제는 아직 없다.
