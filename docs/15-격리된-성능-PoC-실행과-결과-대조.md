@@ -21,6 +21,13 @@ python3 scripts/poc/setup.py
 
 # 소량 검증 → 10 TPS 1분 워밍업 → 10/50/100 TPS 각 3분
 .poc-tools/venv/bin/python scripts/poc/run.py --suite baseline
+
+# 동일 조건 재측정 → 두 Worker 동시성만 변경 → Ingress linger만 변경
+# 각 실행은 소량 검증, 10 TPS 1분 워밍업, 100 TPS 20초 중복 입력,
+# 50/100 TPS 각 3분을 포함한다. 실패하면 해당 실행의 후속 단계만 중단한다.
+.poc-tools/venv/bin/python scripts/poc/run.py --suite comparison --worker-concurrency 1 --ingress-linger-ms 5
+.poc-tools/venv/bin/python scripts/poc/run.py --suite comparison --worker-concurrency 3 --ingress-linger-ms 5
+.poc-tools/venv/bin/python scripts/poc/run.py --suite comparison --worker-concurrency 3 --ingress-linger-ms 0
 ```
 
 `--delay-ms 50` 또는 `200`으로 시뮬레이터의 처리 후 응답 지연을 바꿀 수 있다. 앱이 받는 값은 `0~60000ms`이며 실제 발송 read timeout보다 크면 정상 기준선이 실패할 수 있다. 적체 해소 관찰은 기본 300초, `--drain-seconds 2~300`으로 변경한다. 시작 조건이 맞지 않거나 어느 단계가 실패하면 이후 부하 증가는 중단한다.
@@ -38,6 +45,10 @@ k6는 공식 릴리스의 checksum manifest 자체와 플랫폼별 압축 파일
 | API / Ingress / Dispatch / 시뮬레이터 관리 | 29080 / 29081 / 29082 / 29090 |
 
 각 앱은 한 개, Kafka 파티션 3개·복제 1, Worker consumer 동시성 기본 1이며 JVM heap은 앱당 `-Xms128m -Xmx512m`이다. 컨테이너 자원 제한은 Compose 기본값이며 호스트 자원을 공유한다. 이 로컬 결과는 운영 AWS DynamoDB·다중 AZ 내구성이나 서버별 독립 성능을 의미하지 않는다.
+
+`--worker-concurrency 1~3`은 두 Worker의 `INGRESS_CONCURRENCY`·`DISPATCH_CONCURRENCY`에 적용한다. `--ingress-linger-ms 0|5`는 Ingress Producer의 `INGRESS_KAFKA_LINGER_MS`만 바꾼다. API Producer 설정은 유지한다. 기본값은 기존 조건인 1/5이며 실제 선택 값은 `environment.json`에 남긴다. 파티션별 순차 처리, RECORD ack, 후속 발행 ack 대기, DynamoDB 조건부 저장은 유지한다. 앱 시작 로그의 consumer별 partition 할당과 Kafka 지표로 설정 적용을 확인한다.
+
+동시성 3은 listener container 세 개로 파티션을 나눠 처리하는 설정이다. 같은 key는 같은 partition에서 처리되며, 동시성 자체가 외부 멱등성을 대신하지 않는다. [Spring Kafka 동시 처리 공식 문서](https://docs.spring.io/spring-kafka/reference/kafka/receiving-messages/message-listener-container.html). `linger.ms`는 작은 배치를 모으는 대기 상한이다. 0이 모든 부하에서 유리하다고 가정하지 않고 순차 ack 대기 구조에서 비교한다. [Kafka Producer 공식 문서](https://kafka.apache.org/40/configuration/producer-configs/).
 
 시험 DB에만 `local-user`를 준비한다. 해당 시험 고객의 Redis 정책은 TPS 2000·burst 2000·월 Quota 1,000,000으로 설정하고 전후 값을 저장한다. 인증과 제한 기능은 켜둔다. 종료 시 정책 필드를 원복하며 사용량 counter는 보존한다. 강제 종료로 원복하지 못했으면 `policy.json`과 `policy-restored.json`을 확인한다. 운영 고객 정책은 수정하지 않는다.
 

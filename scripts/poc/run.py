@@ -112,6 +112,9 @@ class Runner:
                     'pythonPackages': subprocess.check_output([sys.executable, '-m', 'pip', 'freeze'], text=True).splitlines(),
                     'ports': PORTS, 'composeProject': 'platform-poc', 'heapPerApp': '-Xms128m -Xmx512m',
                     'simulatorDelayMillis': self.args.delay_ms, 'simulatorDeduplicate': False,
+                    'workerConcurrency': self.args.worker_concurrency,
+                    'ingressLingerMillis': self.args.ingress_linger_ms,
+                    'workerAckMode': 'RECORD',
                     'suite': self.args.suite, 'jarsSha256': {app: hashlib.sha256(path.read_bytes()).hexdigest() for app, path in jars.items()},
                     'harnessSha256': {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in Path(__file__).parent.glob('*') if path.is_file()}}
         if platform.system() == 'Darwin':
@@ -142,6 +145,9 @@ class Runner:
                      'DYNAMODB_ENDPOINT': 'http://localhost:28000', 'EXTERNAL_API_BASE_URL': 'http://localhost:28090',
                      'SIMULATOR_DEDUPLICATE': 'false', 'SIMULATOR_RESPONSE_DELAY_MILLIS': str(self.args.delay_ms),
                      'SIMULATOR_MAX_TRACKED_KEYS': '100000',
+                     'INGRESS_CONCURRENCY': str(self.args.worker_concurrency),
+                     'DISPATCH_CONCURRENCY': str(self.args.worker_concurrency),
+                     'INGRESS_KAFKA_LINGER_MS': str(self.args.ingress_linger_ms),
                      'JWT_SECRET': 'bG9jYWwtZGV2ZWxvcG1lbnQtb25seS1zZWNyZXQtYXQtbGVhc3QtMzItYnl0ZXMtbG9uZw=='})
         for app in ('simulator', 'ingress', 'dispatch', 'api'):
             log = (self.directory / f'{app}.log').open('w')
@@ -159,7 +165,8 @@ class Runner:
                     request(f'http://127.0.0.1:{MANAGEMENT[app]}/actuator/prometheus', self.token if app == 'api' else None)
                 self.probe = KafkaProbe('localhost:29092')
                 # A web health endpoint alone does not prove Kafka assignment.
-                if all('partitions assigned:' in (self.directory / f'{app}.log').read_text() for app in ('ingress', 'dispatch')):
+                if all((self.directory / f'{app}.log').read_text().count('partitions assigned:')
+                       >= self.args.worker_concurrency for app in ('ingress', 'dispatch')):
                     break
                 self.probe.close()
                 self.probe = None
@@ -334,7 +341,9 @@ def main():
         raise KeyboardInterrupt(f'Signal {signum}')
     signal.signal(signal.SIGTERM, interrupted)
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--suite', choices=['smoke', 'baseline'], default='smoke')
+    parser.add_argument('--suite', choices=['smoke', 'baseline', 'comparison'], default='smoke')
+    parser.add_argument('--worker-concurrency', type=int, choices=[1, 2, 3], default=1)
+    parser.add_argument('--ingress-linger-ms', type=int, choices=[0, 5], default=5)
     parser.add_argument('--delay-ms', type=int, default=0)
     parser.add_argument('--drain-seconds', type=int, default=300)
     args = parser.parse_args()
@@ -350,6 +359,10 @@ def main():
             if args.suite == 'baseline':
                 runner.phase('warmup', 10, 60)
                 for rate in (10, 50, 100): runner.phase(f'baseline-{rate}', rate, 180)
+            elif args.suite == 'comparison':
+                runner.phase('warmup', 10, 60)
+                runner.phase('duplicate-load', 100, 20, 'duplicate')
+                for rate in (50, 100): runner.phase(f'comparison-{rate}', rate, 180)
             print(f'COMPLETE: {runner.directory}', flush=True)
         except BaseException as error:
             write_json(runner.directory / 'failure.json', {'type': type(error).__name__, 'message': str(error)})
