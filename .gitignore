@@ -41,3 +41,7 @@ build/
 
 ### Mac OS ###
 .DS_Store
+# Local PoC tools and generated evidence
+.poc-tools/
+.poc-results/
+__pycache__/
