@@ -6,6 +6,8 @@ import external.api.simulator.delivery.dto.ProviderDispatchRequest;
 import external.api.simulator.delivery.service.SimulatorLedger;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
@@ -19,6 +21,31 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class SimulatorLedgerTest {
     private final ProviderDispatchRequest request = new ProviderDispatchRequest("delivery-1", 1L, "EMAIL", Map.of(), Instant.now());
+
+    @ParameterizedTest
+    @CsvSource({"RETRY_1S,429", "RETRY_10S,429", "FALLBACK,503", "REJECTED,400"})
+    void selectedFailureHasNoEffectAndNextSuccessfulCallStillWorks(String code, int status) {
+        var properties = new SimulatorProperties(0, true, 1);
+        var ledger = new SimulatorLedger(properties, new SimpleMeterRegistry());
+        var controller = new DeliveryProviderController(ledger, properties);
+        var failed = new ProviderDispatchRequest("delivery-1", 1L, "EMAIL", Map.of("simulatorResultCode", code), Instant.now());
+        var response = controller.receive("key", failed);
+        assertEquals(status, response.getStatusCode().value());
+        assertEquals(code, response.getBody().code());
+        assertFalse(response.getBody().accepted());
+        assertEquals(Map.of("calls", 1L, "effects", 0L), ledger.counts("key"));
+        assertTrue(controller.receive("key", request).getBody().accepted());
+        assertEquals(Map.of("calls", 2L, "effects", 1L), ledger.counts("key"));
+    }
+
+    @Test
+    void invalidScenarioCannotCreateAnEffectOrConsumeTrackingCapacity() {
+        var ledger = new SimulatorLedger(new SimulatorProperties(0, false, 1), new SimpleMeterRegistry());
+        var invalid = new ProviderDispatchRequest("delivery-1", 1L, "EMAIL", Map.of("simulatorResultCode", "unexpected"), Instant.now());
+        assertEquals(400, assertThrows(ResponseStatusException.class, () -> ledger.receive("invalid", invalid)).getStatusCode().value());
+        assertTrue(ledger.receive("valid", request).accepted());
+        assertEquals(1, ledger.summary().get("trackedKeys"));
+    }
 
     @Test
     void disabledDeduplicationMakesEveryConcurrentCallVisibleAsAnEffect() throws Exception {

@@ -6,6 +6,7 @@ import event.common.metrics.DeliveryMetrics;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import event.delivery.dispatch.config.DispatchProperties;
 import event.delivery.dispatch.external.dto.ProviderDispatchResponse;
+import event.delivery.dispatch.external.client.ProviderFailureException;
 import event.delivery.dispatch.model.DispatchAttempt;
 import event.delivery.dispatch.model.DispatchClaim;
 import event.delivery.dispatch.port.DeliveryProviderClient;
@@ -137,6 +138,17 @@ class DispatchServiceTest {
     }
 
     @Test
+    void classifiedFailureEscapesWithoutAcceptanceOrAnotherProviderCall() {
+        attemptStore.nextClaim = DispatchClaim.claimed(new DispatchAttempt(event.deliveryId(), attemptId, PROVIDER, 1));
+        providerClient.failure = new ProviderFailureException(ProviderFailureException.Kind.RETRY_1S);
+        var failure = assertThrows(ProviderFailureException.class, () -> dispatchService.dispatch(event));
+        assertEquals(ProviderFailureException.Kind.RETRY_1S, failure.kind());
+        assertEquals(1, providerClient.callCount);
+        assertFalse(attemptStore.acceptedRecorded);
+        assertEquals(0, outcome("dispatch_accepted"));
+    }
+
+    @Test
     void failedReviewHandoffEscapesWithoutCallingProvider() {
         attemptStore.claimFailure = new IllegalStateException("review state write unconfirmed");
 
@@ -184,11 +196,13 @@ class DispatchServiceTest {
         private int callCount;
         private String lastIdempotencyKey;
         private ProviderDispatchResponse nextResponse;
+        private ProviderFailureException failure;
 
         @Override
         public ProviderDispatchResponse send(DeliveryEvent event, String idempotencyKey) {
             callCount++;
             lastIdempotencyKey = idempotencyKey;
+            if (failure != null) throw failure;
             return nextResponse;
         }
     }

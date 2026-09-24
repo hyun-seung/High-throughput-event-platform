@@ -13,6 +13,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Semaphore;
 
@@ -20,6 +21,7 @@ import java.util.concurrent.Semaphore;
 @Service
 @EnableConfigurationProperties(SimulatorProperties.class)
 public class SimulatorLedger {
+    private static final Set<String> RESULT_CODES = Set.of("ACCEPTED", "RETRY_1S", "RETRY_10S", "FALLBACK", "REJECTED");
     private final SimulatorProperties properties;
     private final ConcurrentHashMap<String, Entry> entries = new ConcurrentHashMap<>();
     private final Semaphore capacity;
@@ -46,6 +48,10 @@ public class SimulatorLedger {
                 || request.deliveryId().length() > 256 || request.payload() == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid simulator request");
         }
+        Object selectedCode = request.payload().getOrDefault("simulatorResultCode", "ACCEPTED");
+        if (!(selectedCode instanceof String code) || !RESULT_CODES.contains(code)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid simulator result code");
+        }
         Entry entry = entries.computeIfAbsent(key, ignored -> {
             if (!capacity.tryAcquire()) {
                 capacityRejections.increment();
@@ -58,6 +64,10 @@ public class SimulatorLedger {
             if (Boolean.TRUE.equals(request.payload().get("forceFail"))) {
                 forcedFailures.increment();
                 return new ProviderDispatchResponse(request.deliveryId(), false, Instant.now());
+            }
+            if (!"ACCEPTED".equals(code)) {
+                forcedFailures.increment();
+                return new ProviderDispatchResponse(request.deliveryId(), false, Instant.now(), code);
             }
             if (properties.deduplicate() && entry.firstResponse != null) {
                 deduplicated.increment();

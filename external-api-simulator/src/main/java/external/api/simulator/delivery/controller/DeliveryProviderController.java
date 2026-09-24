@@ -41,6 +41,12 @@ public class DeliveryProviderController {
             Thread.currentThread().interrupt();
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
         }
-        return ResponseEntity.status(response.accepted() ? HttpStatus.OK : HttpStatus.INTERNAL_SERVER_ERROR).body(response);
+        HttpStatus status = response.accepted() ? HttpStatus.OK : switch (response.code() == null ? "" : response.code()) {
+            case "RETRY_1S", "RETRY_10S" -> HttpStatus.TOO_MANY_REQUESTS;
+            case "FALLBACK" -> HttpStatus.SERVICE_UNAVAILABLE;
+            case "REJECTED" -> HttpStatus.BAD_REQUEST;
+            default -> HttpStatus.INTERNAL_SERVER_ERROR;
+        };
+        return ResponseEntity.status(status).body(response);
     }
 }

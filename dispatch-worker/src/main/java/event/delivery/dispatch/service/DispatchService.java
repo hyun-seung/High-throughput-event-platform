@@ -74,7 +74,7 @@ public class DispatchService {
     private void invokeProvider(DeliveryEvent event, DispatchClaim claim, String attemptId) {
         ProviderDispatchResponse response = metrics.measure(DeliveryMetrics.Stage.DISPATCH_HTTP, () -> {
             ProviderDispatchResponse received = deliveryProviderClient.send(event, attemptId);
-            if (!received.accepted()) {
+            if (!Boolean.TRUE.equals(received.accepted())) {
                 throw new IllegalStateException("Provider did not accept dispatch. attemptId=" + attemptId);
             }
             return received;
