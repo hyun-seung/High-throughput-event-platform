@@ -1,0 +1,501 @@
+{
+  "uid": "delivery-customers",
+  "title": "발송 관제 · 고객",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": false,
+  "tags": [
+    "delivery-platform"
+  ],
+  "timezone": "browser",
+  "refresh": "10s",
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "고객별 영향도 · 로그 기반",
+      "type": "text",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 3
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "고객 ID는 Loki 로그 필드로만 저장하며 Prometheus label에는 추가하지 않습니다. 표의 건수는 **선택 구간의 로그 관측 횟수**로, 고유 발송 수·과금 수·유실 판정이 아닙니다. 미해결 상태 원장 조회와 고객 SLA는 후속 구현입니다."
+      }
+    },
+    {
+      "id": 2,
+      "title": "고객별 API 접수 관측 TOP 10",
+      "type": "table",
+      "gridPos": {
+        "x": 0,
+        "y": 3,
+        "w": 12,
+        "h": 8
+      },
+      "description": "",
+      "datasource": {
+        "type": "loki",
+        "uid": "platform-loki"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "데이터 없음",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 80
+              },
+              {
+                "color": "red",
+                "value": 100
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "topk(10, sum by (tenantId) (count_over_time({service=~\"api|ingress|dispatch\",zone=\"local\"} | json tenantId=\"tenantId\",stage=\"stage\",outcome=\"outcome\" | stage=\"api\" | outcome=\"accepted\" [$__range])))",
+          "queryType": "instant"
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {
+            "mode": "columns"
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "renameByName": {
+              "Value #A": "관측 횟수",
+              "tenantId": "고객 ID",
+              "provider": "업체",
+              "stage": "구간",
+              "code": "코드",
+              "outcome": "분류"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "고객별 업체 접수 저장 관측 TOP 10",
+      "type": "table",
+      "gridPos": {
+        "x": 12,
+        "y": 3,
+        "w": 12,
+        "h": 8
+      },
+      "description": "",
+      "datasource": {
+        "type": "loki",
+        "uid": "platform-loki"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "데이터 없음",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 80
+              },
+              {
+                "color": "red",
+                "value": 100
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "topk(10, sum by (tenantId) (count_over_time({service=~\"api|ingress|dispatch\",zone=\"local\"} | json tenantId=\"tenantId\",stage=\"stage\",outcome=\"outcome\" | stage=\"dispatch\" | outcome=\"accepted\" [$__range])))",
+          "queryType": "instant"
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {
+            "mode": "columns"
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "renameByName": {
+              "Value #A": "관측 횟수",
+              "tenantId": "고객 ID",
+              "provider": "업체",
+              "stage": "구간",
+              "code": "코드",
+              "outcome": "분류"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "고객별 중복 차단 관측 TOP 10",
+      "type": "table",
+      "gridPos": {
+        "x": 0,
+        "y": 11,
+        "w": 12,
+        "h": 8
+      },
+      "description": "",
+      "datasource": {
+        "type": "loki",
+        "uid": "platform-loki"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "데이터 없음",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 80
+              },
+              {
+                "color": "red",
+                "value": 100
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "topk(10, sum by (tenantId) (count_over_time({service=~\"api|ingress|dispatch\",zone=\"local\"} | json tenantId=\"tenantId\",stage=\"stage\",outcome=\"outcome\" | stage=\"dispatch\" | outcome=\"duplicate\" [$__range])))",
+          "queryType": "instant"
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {
+            "mode": "columns"
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "renameByName": {
+              "Value #A": "관측 횟수",
+              "tenantId": "고객 ID",
+              "provider": "업체",
+              "stage": "구간",
+              "code": "코드",
+              "outcome": "분류"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "고객별 운영 확인 관측 TOP 10",
+      "type": "table",
+      "gridPos": {
+        "x": 12,
+        "y": 11,
+        "w": 12,
+        "h": 8
+      },
+      "description": "",
+      "datasource": {
+        "type": "loki",
+        "uid": "platform-loki"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "데이터 없음",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 80
+              },
+              {
+                "color": "red",
+                "value": 100
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "topk(10, sum by (tenantId) (count_over_time({service=~\"api|ingress|dispatch\",zone=\"local\"} | json tenantId=\"tenantId\",stage=\"stage\",outcome=\"outcome\" | stage=\"dispatch\" | outcome=\"review_required\" [$__range])))",
+          "queryType": "instant"
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {
+            "mode": "columns"
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "renameByName": {
+              "Value #A": "관측 횟수",
+              "tenantId": "고객 ID",
+              "provider": "업체",
+              "stage": "구간",
+              "code": "코드",
+              "outcome": "분류"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "선택 고객의 최근 처리 기록",
+      "type": "logs",
+      "gridPos": {
+        "x": 0,
+        "y": 19,
+        "w": 24,
+        "h": 10
+      },
+      "description": "",
+      "datasource": {
+        "type": "loki",
+        "uid": "platform-loki"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "데이터 없음",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 80
+              },
+              {
+                "color": "red",
+                "value": 100
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{service=~\"api|ingress|dispatch\",zone=\"local\"} | json | tenantId=\"$tenant\" | line_format \"{{.stage}} · {{.outcome}} | deliveryId={{.deliveryId}} | tenant={{.tenantId}} | attempt={{.attemptId}} | {{.provider}} {{.code}}\"",
+          "queryType": "range",
+          "maxLines": 200
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": true,
+        "enableLogDetails": true,
+        "sortOrder": "Descending",
+        "dedupStrategy": "none"
+      }
+    },
+    {
+      "id": 7,
+      "title": "고객 SLA · 최종 결과",
+      "type": "text",
+      "gridPos": {
+        "x": 0,
+        "y": 29,
+        "w": 24,
+        "h": 3
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "결과 지연 3분·폴백·최종 전달 실패·누락 등 PPT의 고객 SLA 항목은 아직 해당 상태를 계산할 원장이 없습니다. 현재 로그 건수나 API 오류를 최종 결과로 대체하지 않습니다."
+      }
+    }
+  ],
+  "links": [
+    {
+      "title": "통합 관제",
+      "url": "/d/delivery-overview",
+      "type": "link",
+      "keepTime": true,
+      "includeVars": true
+    },
+    {
+      "title": "서비스",
+      "url": "/d/delivery-services",
+      "type": "link",
+      "keepTime": true,
+      "includeVars": true
+    },
+    {
+      "title": "외부 업체",
+      "url": "/d/delivery-providers",
+      "type": "link",
+      "keepTime": true,
+      "includeVars": true
+    },
+    {
+      "title": "고객",
+      "url": "/d/delivery-customers",
+      "type": "link",
+      "keepTime": true,
+      "includeVars": true
+    },
+    {
+      "title": "오류코드",
+      "url": "/d/delivery-errors",
+      "type": "link",
+      "keepTime": true,
+      "includeVars": true
+    },
+    {
+      "title": "인프라",
+      "url": "/d/delivery-infra",
+      "type": "link",
+      "keepTime": true,
+      "includeVars": true
+    },
+    {
+      "title": "메시지 추적",
+      "url": "/d/delivery-trace",
+      "type": "link",
+      "keepTime": true,
+      "includeVars": true
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "tenant",
+        "label": "고객 ID",
+        "type": "textbox",
+        "query": "1",
+        "current": {
+          "text": "1",
+          "value": "1"
+        }
+      }
+    ]
+  },
+  "annotations": {
+    "list": [
+      {
+        "name": "Annotations & Alerts",
+        "type": "dashboard",
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(255, 96, 96, 1)"
+      }
+    ]
+  }
+}

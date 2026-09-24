@@ -1,0 +1,65 @@
+groups:
+  - name: delivery-local
+    rules:
+      - alert: MonitoringTargetDown
+        expr: up == 0
+        for: 30s
+        labels: {severity: critical}
+        annotations:
+          summary: '수집 대상 응답 없음: {{ $labels.job }}'
+      - alert: KafkaObservationUnavailable
+        expr: platform_kafka_probe_up == 0
+        for: 30s
+        labels: {severity: critical}
+        annotations:
+          summary: Kafka offset 관측 실패 또는 오래된 관측
+      - alert: DeliveryBacklog
+        expr: sum(platform_kafka_committed_lag) > 100
+        for: 1m
+        labels: {severity: warning}
+        annotations:
+          summary: 처리 대기 100건 초과가 1분 지속
+      - alert: DeliveryOldestPending
+        expr: max(platform_kafka_oldest_uncommitted_age_seconds) > 30
+        for: 30s
+        labels: {severity: warning}
+        annotations:
+          summary: 가장 오래된 Kafka 대기가 30초 초과
+      - alert: DeliveryDurableHandoffFailed
+        expr: sum(increase(delivery_outcomes_total{outcome="ingress_dlt_failed"}[5m])) > 0
+        labels: {severity: critical}
+        annotations:
+          summary: DLT 인계 실패 관측
+      - alert: DeliveryNeedsReview
+        expr: sum(increase(delivery_outcomes_total{outcome="dispatch_review"}[5m])) > 0
+        labels: {severity: warning}
+        annotations:
+          summary: 운영 확인 상태 관측 (고유 미해결 건수가 아님)
+      - alert: DeliveryDynamoDbErrors
+        expr: sum(increase(delivery_dynamodb_duration_seconds_count{result="failure"}[5m])) > 0
+        labels: {severity: warning}
+        annotations:
+          summary: DynamoDB SDK 작업 실패
+      - alert: DeliveryAcceptanceLatency
+        expr: histogram_quantile(0.95, sum by (le) (rate(delivery_acceptance_latency_seconds_bucket{application="dispatch-worker"}[2m]))) > 1
+        for: 1m
+        labels: {severity: warning}
+        annotations:
+          summary: 업체 접수 저장 지연 p95가 1초 초과
+      - alert: RedisBackendUnavailable
+        expr: redis_up == 0
+        for: 30s
+        labels: {severity: critical}
+        annotations:
+          summary: Redis 연결 실패 (요청 제한 우회 여부 확인)
+      - alert: PostgresBackendUnavailable
+        expr: pg_up == 0
+        for: 30s
+        labels: {severity: critical}
+        annotations:
+          summary: PostgreSQL 연결 실패
+      - alert: DeliveryLimitsBypassed
+        expr: sum(increase(delivery_admission_duration_seconds_count{outcome="redis_unavailable_bypass"}[5m])) > 0
+        labels: {severity: warning}
+        annotations:
+          summary: Redis 장애로 TPS·Quota 제한을 우회한 요청 관측

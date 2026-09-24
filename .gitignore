@@ -45,3 +45,6 @@ build/
 .poc-tools/
 .poc-results/
 __pycache__/
+
+# Local monitoring secrets and verification evidence
+.monitoring/

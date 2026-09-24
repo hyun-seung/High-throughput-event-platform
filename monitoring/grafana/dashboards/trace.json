@@ -1,0 +1,189 @@
+{
+  "uid": "delivery-trace",
+  "title": "발송 관제 · 메시지 추적",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": false,
+  "tags": [
+    "delivery-platform"
+  ],
+  "timezone": "browser",
+  "refresh": "10s",
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "메시지 단계별 상세 · Loki",
+      "type": "text",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 4
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "상단에 deliveryId를 입력하면 해당 메시지의 API 접수·Ingress 인계·Dispatch 접수·중복 차단·오류를 조회합니다. 로그를 펼치면 tenantId, attemptId, provider, code가 보입니다.\n\n이 목록은 관측 로그이며 현재 DB 상태 목록이 아닙니다. 로그 부재를 발송 유실로 판정하지 않습니다. 본문·토큰·고객 메시지 내용은 기록하지 않습니다."
+      }
+    },
+    {
+      "id": 2,
+      "title": "메시지 처리 기록",
+      "type": "logs",
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 24,
+        "h": 18
+      },
+      "description": "",
+      "datasource": {
+        "type": "loki",
+        "uid": "platform-loki"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "데이터 없음",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 80
+              },
+              {
+                "color": "red",
+                "value": 100
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{service=~\"api|ingress|dispatch\",zone=\"local\"} |= \"$delivery\" | json | line_format \"{{.stage}} · {{.outcome}} | deliveryId={{.deliveryId}} | tenant={{.tenantId}} | attempt={{.attemptId}} | {{.provider}} {{.code}}\"",
+          "queryType": "range",
+          "maxLines": 200
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": true,
+        "enableLogDetails": true,
+        "sortOrder": "Descending",
+        "dedupStrategy": "none"
+      }
+    },
+    {
+      "id": 3,
+      "title": "후속 단계",
+      "type": "text",
+      "gridPos": {
+        "x": 0,
+        "y": 22,
+        "w": 24,
+        "h": 3
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "결과 웹훅·TCP 2차·만료·고객 통지 단계는 업무 구현 후 같은 ID로 연결합니다. 운영자가 실제 상태를 조회·조치하는 API는 별도 구현이 필요합니다."
+      }
+    }
+  ],
+  "links": [
+    {
+      "title": "통합 관제",
+      "url": "/d/delivery-overview",
+      "type": "link",
+      "keepTime": true,
+      "includeVars": true
+    },
+    {
+      "title": "서비스",
+      "url": "/d/delivery-services",
+      "type": "link",
+      "keepTime": true,
+      "includeVars": true
+    },
+    {
+      "title": "외부 업체",
+      "url": "/d/delivery-providers",
+      "type": "link",
+      "keepTime": true,
+      "includeVars": true
+    },
+    {
+      "title": "고객",
+      "url": "/d/delivery-customers",
+      "type": "link",
+      "keepTime": true,
+      "includeVars": true
+    },
+    {
+      "title": "오류코드",
+      "url": "/d/delivery-errors",
+      "type": "link",
+      "keepTime": true,
+      "includeVars": true
+    },
+    {
+      "title": "인프라",
+      "url": "/d/delivery-infra",
+      "type": "link",
+      "keepTime": true,
+      "includeVars": true
+    },
+    {
+      "title": "메시지 추적",
+      "url": "/d/delivery-trace",
+      "type": "link",
+      "keepTime": true,
+      "includeVars": true
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "delivery",
+        "label": "메시지 ID (빈 값은 전체)",
+        "type": "textbox",
+        "query": "",
+        "current": {
+          "text": "",
+          "value": ""
+        }
+      }
+    ]
+  },
+  "annotations": {
+    "list": [
+      {
+        "name": "Annotations & Alerts",
+        "type": "dashboard",
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(255, 96, 96, 1)"
+      }
+    ]
+  }
+}

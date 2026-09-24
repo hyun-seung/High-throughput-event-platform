@@ -1,0 +1,176 @@
+# Only used with the root compose.yml and project platform-monitoring.
+x-app: &app
+  image: eclipse-temurin:21.0.7_6-jre
+  restart: unless-stopped
+  working_dir: /app
+  command: ["java", "-Xms128m", "-Xmx512m", "-jar", "/app/app.jar"]
+x-env: &app-env
+  SPRING_PROFILES_ACTIVE: dev
+  SERVER_ADDRESS: 0.0.0.0
+  MANAGEMENT_SERVER_ADDRESS: 0.0.0.0
+  KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+  DYNAMODB_ENDPOINT: http://dynamodb-local:8000
+  REDIS_HOST: redis
+  REDIS_PORT: 6379
+  DB_URL: jdbc:postgresql://postgres:5432/delivery
+  DB_USERNAME: delivery
+  DB_PASSWORD: delivery
+  EXTERNAL_API_BASE_URL: http://simulator:8090
+  INGRESS_CONCURRENCY: 3
+  DISPATCH_CONCURRENCY: 3
+  INGRESS_KAFKA_LINGER_MS: 5
+  LOGGING_STRUCTURED_FORMAT_FILE: logstash
+  LOGGING_LOGBACK_ROLLINGPOLICY_MAX_FILE_SIZE: 10MB
+  LOGGING_LOGBACK_ROLLINGPOLICY_MAX_HISTORY: 7
+  LOGGING_LOGBACK_ROLLINGPOLICY_TOTAL_SIZE_CAP: 100MB
+  JWT_SECRET: bG9jYWwtZGV2ZWxvcG1lbnQtb25seS1zZWNyZXQtYXQtbGVhc3QtMzItYnl0ZXMtbG9uZw==
+services:
+  db-init:
+    image: postgres:17-alpine
+    depends_on:
+      postgres: {condition: service_healthy}
+    environment:
+      PGPASSWORD: delivery
+    command: ["psql", "-h", "postgres", "-U", "delivery", "-d", "delivery", "-v", "ON_ERROR_STOP=1", "-f", "/init.sql"]
+    volumes:
+      - ./scripts/local-init.sql:/init.sql:ro
+  policy-init:
+    image: redis:7.4-alpine
+    depends_on:
+      redis: {condition: service_healthy}
+    command: ["redis-cli", "-h", "redis", "HSET", "request-control:{user:1}:policy", "blocked", "false", "tpsEnabled", "true", "requestsPerSecond", "2000", "burstCapacity", "2000", "quotaEnabled", "true", "monthlyLimit", "1000000"]
+  api:
+    <<: *app
+    environment:
+      <<: *app-env
+      SERVER_PORT: 8080
+      MANAGEMENT_SERVER_PORT: 19080
+      LOGGING_FILE_NAME: /logs/api.log
+    volumes:
+      - ${MONITOR_API_JAR:-./event-api/target/event-api-1.0-SNAPSHOT.jar}:/app/app.jar:ro
+      - monitoring-logs:/logs
+    depends_on:
+      kafka: {condition: service_healthy}
+      dynamodb-local: {condition: service_healthy}
+      db-init: {condition: service_completed_successfully}
+      policy-init: {condition: service_completed_successfully}
+    ports: ["127.0.0.1:38080:8080"]
+  ingress:
+    <<: *app
+    environment:
+      <<: *app-env
+      SERVER_PORT: 8091
+      MANAGEMENT_SERVER_PORT: 19081
+      LOGGING_FILE_NAME: /logs/ingress.log
+    volumes:
+      - ${MONITOR_INGRESS_JAR:-./delivery-ingress-worker/target/delivery-ingress-worker-1.0-SNAPSHOT.jar}:/app/app.jar:ro
+      - monitoring-logs:/logs
+    depends_on:
+      kafka: {condition: service_healthy}
+      dynamodb-local: {condition: service_healthy}
+      db-init: {condition: service_completed_successfully}
+      policy-init: {condition: service_completed_successfully}
+  dispatch:
+    <<: *app
+    environment:
+      <<: *app-env
+      SERVER_PORT: 8092
+      MANAGEMENT_SERVER_PORT: 19082
+      LOGGING_FILE_NAME: /logs/dispatch.log
+    volumes:
+      - ${MONITOR_DISPATCH_JAR:-./dispatch-worker/target/dispatch-worker-1.0-SNAPSHOT.jar}:/app/app.jar:ro
+      - monitoring-logs:/logs
+    depends_on:
+      kafka: {condition: service_healthy}
+      dynamodb-local: {condition: service_healthy}
+      db-init: {condition: service_completed_successfully}
+      policy-init: {condition: service_completed_successfully}
+  simulator:
+    <<: *app
+    environment:
+      <<: *app-env
+      SERVER_PORT: 8090
+      MANAGEMENT_SERVER_PORT: 19090
+      LOGGING_FILE_NAME: /logs/simulator.log
+    volumes:
+      - ${MONITOR_SIMULATOR_JAR:-./external-api-simulator/target/external-api-simulator-1.0-SNAPSHOT.jar}:/app/app.jar:ro
+      - monitoring-logs:/logs
+    depends_on:
+      kafka: {condition: service_healthy}
+      dynamodb-local: {condition: service_healthy}
+      db-init: {condition: service_completed_successfully}
+      policy-init: {condition: service_completed_successfully}
+  collector:
+    build:
+      context: .
+      dockerfile: monitoring/collector/Dockerfile
+    restart: unless-stopped
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    depends_on: [api, ingress, dispatch]
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.92.0
+    environment:
+      REDIS_ADDR: redis://redis:6379
+    depends_on: [redis]
+  postgres-exporter:
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.20.1
+    environment:
+      DATA_SOURCE_NAME: postgresql://delivery:delivery@postgres:5432/delivery?sslmode=disable
+    depends_on: [postgres]
+  prometheus:
+    image: prom/prometheus:v3.14.0
+    restart: unless-stopped
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.path=/prometheus", "--storage.tsdb.retention.time=7d", "--storage.tsdb.retention.size=1GB"]
+    ports: ["127.0.0.1:19099:9090"]
+    volumes:
+      - ./monitoring/prometheus:/etc/prometheus:ro
+      - monitoring-prometheus:/prometheus
+  loki:
+    image: grafana/loki:3.7.7
+    restart: unless-stopped
+    command: ["-config.file=/etc/loki/loki.yml"]
+    volumes:
+      - ./monitoring/loki:/etc/loki:ro
+      - monitoring-loki:/loki
+  alloy:
+    image: grafana/alloy:v1.19.2
+    restart: unless-stopped
+    command: ["run", "--server.http.listen-addr=0.0.0.0:12345", "--storage.path=/var/lib/alloy", "/etc/alloy/config.alloy"]
+    volumes:
+      - ./monitoring/alloy:/etc/alloy:ro
+      - monitoring-logs:/logs:ro
+      - monitoring-alloy:/var/lib/alloy
+    depends_on: [loki]
+  grafana:
+    image: grafana/grafana:13.2.2
+    restart: unless-stopped
+    ports: ["127.0.0.1:13000:3000"]
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_AUTH_BASIC_ENABLED: "false"
+      GF_USERS_DEFAULT_THEME: dark
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_admin
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/overview.json
+      GF_PLUGINS_PREINSTALL_DISABLED: "true"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+    secrets: [grafana_admin]
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - monitoring-grafana:/var/lib/grafana
+    depends_on: [prometheus, loki]
+secrets:
+  grafana_admin:
+    file: ./.monitoring/grafana-admin
+volumes:
+  monitoring-logs:
+  monitoring-prometheus:
+  monitoring-loki:
+  monitoring-alloy:
+  monitoring-grafana:
