@@ -1,0 +1,396 @@
+{
+  "runId": "20260924T100423Z-67c09df1",
+  "codeCommit": "8cd1d890a370a27a0f581bbd51ff7132fcc3763b",
+  "workingTreeDirty": false,
+  "environment": {
+    "platform": "macOS-26.3.1-arm64-arm-64bit-Mach-O",
+    "logicalCpus": 10,
+    "hostMemoryBytes": 17179869184,
+    "heapPerApp": "-Xms128m -Xmx512m",
+    "k6": "k6 v1.8.1 (commit/73b044f9f9, go1.26.5, darwin/arm64)",
+    "pythonPackages": [
+      "boto3==1.43.101",
+      "botocore==1.43.101",
+      "confluent-kafka==2.15.1",
+      "jmespath==1.1.0",
+      "python-dateutil==2.9.0.post0",
+      "s3transfer==0.19.2",
+      "six==1.17.0",
+      "urllib3==2.8.0"
+    ],
+    "jarsSha256": {
+      "api": "a958fb5bda3adff3e03e220afcba29141cd47b14bf781ff6af1317141383e8b2",
+      "ingress": "661e6ea3d9675a045ac96496db44dfd364105195143c4d4d5138a3f12c7ade93",
+      "dispatch": "c2999dad26ae7cf38e92e4c4ca17263285ac0a1e642bd258ae04783e5d8d9087",
+      "simulator": "41a3696cc698656d803960a537fa7085bbb8e399cad89faf48b535e920953e09"
+    },
+    "harnessSha256": {
+      "run.py": "f348bf854e109569914973df28a62964f5829159b37c89c3ee0a7b87997dc818",
+      "requirements.txt": "8803e66f3e962ba30760df1103afa20cc3ec2aeeceb9e41e1824e2b0177fbd19",
+      "load.js": "54af50203c2e90d4c0bafee0398364a6d164fd744812396c12ffbd2959240a54",
+      "setup.py": "3b19bafab6c647954f7164ff5966794b452e18b67aab0649d2055587bd4ee497",
+      "test_evidence.py": "17c22ba85e001cc9ca44b9b114ae7bb5ccbdbc63a03eb5d8113abfd48717bf45",
+      "evidence.py": "ae3681e2506a53817bc5a84a2a969e32347c4897f567d2c8f1732c08ad8c1c64"
+    }
+  },
+  "rawEvidenceDirectory": ".poc-results/20260924T100423Z-67c09df1",
+  "scope": "API to first HTTP provider acceptance persisted; not final recipient delivery",
+  "phases": [
+    {
+      "uniqueRequests": 10,
+      "submitted": 10,
+      "responses": 10,
+      "httpStatuses": {
+        "202": 10
+      },
+      "unanswered": 0,
+      "states": {
+        "ACCEPTED": 10
+      },
+      "problemRequests": 0,
+      "unexpectedKafkaIds": [],
+      "persistedTimestampLatencyMs": {
+        "p50": 882.0025,
+        "p95": 1502.11805,
+        "p99": 1521.95081
+      },
+      "consistent": true,
+      "label": "smoke-unique",
+      "rate": 5,
+      "seconds": 2,
+      "mode": "unique",
+      "plannedRequests": 10,
+      "k6ExitCode": 0,
+      "droppedIterations": 0,
+      "completedIterations": 10,
+      "aborted": null,
+      "drained": true,
+      "maxLag": 0,
+      "oldestUncommittedAgeSeconds": 0,
+      "drainObservationSeconds": 3.2503579170443118,
+      "completionWindowSeconds": 5.369541916996241,
+      "metricsWindowSeconds": 7.717012882232666,
+      "persistedAcceptancesPerWindowSecond": 1.295838189284819,
+      "httpDurationMs": {
+        "avg": 278.7654,
+        "min": 13.571,
+        "med": 79.279,
+        "max": 941.862,
+        "p(50)": 79.279,
+        "p(95)": 852.1886999999999,
+        "p(99)": 923.92734
+      },
+      "bodyBytes": 1009,
+      "pass": true
+    },
+    {
+      "uniqueRequests": 6,
+      "submitted": 11,
+      "responses": 11,
+      "httpStatuses": {
+        "202": 11
+      },
+      "unanswered": 0,
+      "states": {
+        "ACCEPTED": 6
+      },
+      "problemRequests": 0,
+      "unexpectedKafkaIds": [],
+      "persistedTimestampLatencyMs": {
+        "p50": 54.5975,
+        "p95": 63.499750000000006,
+        "p99": 65.77755
+      },
+      "consistent": true,
+      "label": "smoke-duplicate",
+      "rate": 5,
+      "seconds": 2,
+      "mode": "duplicate",
+      "plannedRequests": 10,
+      "k6ExitCode": 0,
+      "droppedIterations": 0,
+      "completedIterations": 11,
+      "aborted": null,
+      "drained": true,
+      "maxLag": 9,
+      "oldestUncommittedAgeSeconds": 2.5426599979400635,
+      "drainObservationSeconds": 12.032199459034018,
+      "completionWindowSeconds": 16.95228045899421,
+      "metricsWindowSeconds": 19.227931022644043,
+      "persistedAcceptancesPerWindowSecond": 0.31204605388556966,
+      "httpDurationMs": {
+        "max": 31.153,
+        "p(50)": 20.057,
+        "p(95)": 27.5205,
+        "p(99)": 30.426499999999997,
+        "avg": 20.30245454545454,
+        "min": 14.77,
+        "med": 20.057
+      },
+      "bodyBytes": 1009,
+      "pass": true
+    },
+    {
+      "uniqueRequests": 600,
+      "submitted": 600,
+      "responses": 600,
+      "httpStatuses": {
+        "202": 600
+      },
+      "unanswered": 0,
+      "states": {
+        "ACCEPTED": 600
+      },
+      "problemRequests": 0,
+      "unexpectedKafkaIds": [],
+      "persistedTimestampLatencyMs": {
+        "p50": 38.254000000000005,
+        "p95": 46.347599999999986,
+        "p99": 54.465689999999995
+      },
+      "consistent": true,
+      "label": "warmup",
+      "rate": 10,
+      "seconds": 60,
+      "mode": "unique",
+      "plannedRequests": 600,
+      "k6ExitCode": 0,
+      "droppedIterations": 0,
+      "completedIterations": 600,
+      "aborted": null,
+      "drained": true,
+      "maxLag": 15,
+      "oldestUncommittedAgeSeconds": 1.8111860752105713,
+      "drainObservationSeconds": 11.954906291910447,
+      "completionWindowSeconds": 74.1805271669291,
+      "metricsWindowSeconds": 76.81046915054321,
+      "persistedAcceptancesPerWindowSecond": 7.81143516808941,
+      "httpDurationMs": {
+        "p(95)": 16.925849999999997,
+        "p(99)": 20.920169999999978,
+        "avg": 13.764445000000014,
+        "min": 8.765,
+        "med": 13.546,
+        "max": 47.216,
+        "p(50)": 13.546
+      },
+      "bodyBytes": 1009,
+      "pass": true
+    },
+    {
+      "uniqueRequests": 1801,
+      "submitted": 1801,
+      "responses": 1801,
+      "httpStatuses": {
+        "202": 1801
+      },
+      "unanswered": 0,
+      "states": {
+        "ACCEPTED": 1801
+      },
+      "problemRequests": 0,
+      "unexpectedKafkaIds": [],
+      "persistedTimestampLatencyMs": {
+        "p50": 35.076,
+        "p95": 42.285999999999994,
+        "p99": 51.436
+      },
+      "consistent": true,
+      "label": "baseline-10",
+      "rate": 10,
+      "seconds": 180,
+      "mode": "unique",
+      "plannedRequests": 1800,
+      "k6ExitCode": 0,
+      "droppedIterations": 0,
+      "completedIterations": 1801,
+      "aborted": null,
+      "drained": true,
+      "maxLag": 21,
+      "oldestUncommittedAgeSeconds": 2.203165054321289,
+      "drainObservationSeconds": 12.010761375073344,
+      "completionWindowSeconds": 196.62240041606128,
+      "metricsWindowSeconds": 199.2893350124359,
+      "persistedAcceptancesPerWindowSecond": 9.037111794706,
+      "httpDurationMs": {
+        "max": 64.753,
+        "p(50)": 11.997,
+        "p(95)": 14.89,
+        "p(99)": 20.562,
+        "avg": 12.221213770127733,
+        "min": 7.696,
+        "med": 11.997
+      },
+      "bodyBytes": 1009,
+      "pass": true
+    },
+    {
+      "uniqueRequests": 9001,
+      "submitted": 9001,
+      "responses": 9001,
+      "httpStatuses": {
+        "202": 9001
+      },
+      "unanswered": 0,
+      "states": {
+        "ACCEPTED": 9001
+      },
+      "problemRequests": 0,
+      "unexpectedKafkaIds": [],
+      "persistedTimestampLatencyMs": {
+        "p50": 23.383999999999997,
+        "p95": 54.478,
+        "p99": 135.877
+      },
+      "consistent": true,
+      "label": "baseline-50",
+      "rate": 50,
+      "seconds": 180,
+      "mode": "unique",
+      "plannedRequests": 9000,
+      "k6ExitCode": 0,
+      "droppedIterations": 0,
+      "completedIterations": 9001,
+      "aborted": null,
+      "drained": true,
+      "maxLag": 34,
+      "oldestUncommittedAgeSeconds": 0.6677489280700684,
+      "drainObservationSeconds": 12.276791332988068,
+      "completionWindowSeconds": 192.5568399169715,
+      "metricsWindowSeconds": 192.379047870636,
+      "persistedAcceptancesPerWindowSecond": 46.78783942237131,
+      "httpDurationMs": {
+        "p(99)": 13.628,
+        "avg": 8.09038829018999,
+        "min": 5.687,
+        "med": 7.846,
+        "max": 66.536,
+        "p(50)": 7.846,
+        "p(95)": 9.644
+      },
+      "bodyBytes": 1009,
+      "pass": true
+    },
+    {
+      "uniqueRequests": 3579,
+      "submitted": 3579,
+      "responses": 3578,
+      "httpStatuses": {
+        "202": 3578
+      },
+      "unanswered": 1,
+      "states": {
+        "ACCEPTED": 3579
+      },
+      "problemRequests": 1,
+      "unexpectedKafkaIds": [],
+      "persistedTimestampLatencyMs": {
+        "p50": 12150.130000000001,
+        "p95": 26181.4792,
+        "p99": 28234.332239999996
+      },
+      "consistent": false,
+      "label": "baseline-100",
+      "rate": 100,
+      "seconds": 180,
+      "mode": "unique",
+      "plannedRequests": 18000,
+      "k6ExitCode": 105,
+      "droppedIterations": 0,
+      "completedIterations": 3578,
+      "aborted": "Sustained increasing backlog for six samples",
+      "drained": true,
+      "maxLag": 1517,
+      "oldestUncommittedAgeSeconds": 28.423243045806885,
+      "drainObservationSeconds": 39.528155625099316,
+      "completionWindowSeconds": 75.48647683404852,
+      "metricsWindowSeconds": 75.08154702186584,
+      "persistedAcceptancesPerWindowSecond": 47.66817070188625,
+      "httpDurationMs": {
+        "p(99)": 11.811119999999999,
+        "avg": 7.485007825600878,
+        "min": 4.612,
+        "med": 7.2305,
+        "max": 47.654,
+        "p(50)": 7.2305,
+        "p(95)": 8.8769
+      },
+      "bodyBytes": 1009,
+      "pass": false
+    }
+  ],
+  "analysis": [
+    {
+      "phase": "baseline-10",
+      "maxLagByTopic": {
+        "delivery.requested.v1": 11,
+        "delivery.dispatch-requested.v1": 14
+      },
+      "stageMeanMs": {
+        "ingress_process": 15.465202380344254,
+        "ingress_store": 8.16372423209328,
+        "ingress_publish": 7.282340803997779,
+        "dispatch_process": 15.670190111604665,
+        "dispatch_claim": 6.858783992781786,
+        "dispatch_http": 3.088013981676846,
+        "dispatch_store": 5.647227318711827
+      },
+      "lastCommitLatencyAvgMs": {
+        "ingress": 6.473244147157191,
+        "dispatch": 6.685
+      }
+    },
+    {
+      "phase": "baseline-50",
+      "maxLagByTopic": {
+        "delivery.requested.v1": 28,
+        "delivery.dispatch-requested.v1": 18
+      },
+      "stageMeanMs": {
+        "ingress_process": 10.863165437395844,
+        "ingress_store": 4.5201437379180085,
+        "ingress_publish": 6.338033266748138,
+        "dispatch_process": 10.431281484279523,
+        "dispatch_claim": 4.388495692367515,
+        "dispatch_http": 1.8041805057215865,
+        "dispatch_store": 4.216341323964004
+      },
+      "lastCommitLatencyAvgMs": {
+        "ingress": 5.963987995998666,
+        "dispatch": 5.952952952952953
+      }
+    },
+    {
+      "phase": "baseline-100",
+      "maxLagByTopic": {
+        "delivery.requested.v1": 1487,
+        "delivery.dispatch-requested.v1": 116
+      },
+      "stageMeanMs": {
+        "ingress_process": 11.202411253981557,
+        "ingress_store": 4.971708851075721,
+        "ingress_publish": 6.228031646828725,
+        "dispatch_process": 10.014008200335292,
+        "dispatch_claim": 4.192367827605477,
+        "dispatch_http": 1.6713413545683145,
+        "dispatch_store": 4.140983663593181
+      },
+      "lastCommitLatencyAvgMs": {
+        "ingress": 5.79547359597653,
+        "dispatch": 5.922604079351774
+      }
+    }
+  ],
+  "policyRestored": {
+    "restored": true,
+    "usageCountersPreserved": true
+  },
+  "artifactSha256": {
+    "baseline-10/result.json": "c8b5b668b72ecadd36304d1a443be4751044e537854e9c590ab627e75b1da5c9",
+    "baseline-100/result.json": "e97e6a0c8653c669f617cff4e3602233449fe5f4b5076ab465548adaeee505d2",
+    "baseline-50/result.json": "1a34f7bf1516b1198df9570434ca3c01a978734bc8e4080efe67d9fb9399ac3a",
+    "smoke-duplicate/result.json": "f803a71f674657f97b321e68d2052bbaafeda7b7074d2b0c8c40443b4ad02aa4",
+    "smoke-unique/result.json": "407c7ad96dbe307e10d315c64931bb1525ab4f12ff09420018b88c1f3849ac0e",
+    "warmup/result.json": "9373aff659e31ebd47332c362853910f52f45b3892c242bc558702eb6592fc48"
+  }
+}
