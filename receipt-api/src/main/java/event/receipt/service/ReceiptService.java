@@ -27,7 +27,7 @@ public class ReceiptService {
 
     public CompletableFuture<ReceiptAccepted> accept(String provider, ReceiptRequest request) {
         var event = ReceiptEvent.received(request.receiptId(), request.deliveryId(), request.attemptId(), provider,
-                properties.routeOrder(provider), request.outcome(), request.code(), request.occurredAt(), clock.instant());
+                properties.routeOrder(provider), request.outcome(), request.code(), request.occurredAt(), clock.instant(), request.invocation());
         try {
             return metrics.measureAsync(DeliveryMetrics.Stage.RECEIPT_PUBLISH, () -> publisher.publish(event))
                     .handle((ignored, failure) -> {

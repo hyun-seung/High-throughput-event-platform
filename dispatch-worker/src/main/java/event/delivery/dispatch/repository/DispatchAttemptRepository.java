@@ -235,7 +235,7 @@ public class DispatchAttemptRepository implements DispatchAttemptStore {
                     .item();
 
             AttributeValue status = item.get(STATUS);
-            if (status != null && ACCEPTED.equals(status.s())) {
+            if (status != null && (ACCEPTED.equals(status.s()) || "DELIVERED".equals(status.s()))) {
                 return DispatchClaim.alreadyAccepted();
             }
             if (status != null && REVIEW_REQUIRED.equals(status.s())) {

@@ -10,16 +10,21 @@ public record ProviderDispatchRequest(
         Long tenantId,
         String deliveryType,
         Map<String, Object> payload,
-        Instant occurredAt
+        Instant occurredAt,
+        Integer invocation
 ) {
 
     public static ProviderDispatchRequest from(DeliveryEvent event) {
+        return from(event, 1);
+    }
+
+    public static ProviderDispatchRequest from(DeliveryEvent event, int invocation) {
         return new ProviderDispatchRequest(
                 event.deliveryId(),
                 event.tenantId(),
                 event.deliveryType(),
                 event.payload(),
-                event.occurredAt()
+                event.occurredAt(), invocation
         );
     }
 }

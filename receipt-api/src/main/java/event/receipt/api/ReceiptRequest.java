@@ -13,7 +13,8 @@ public record ReceiptRequest(
         @NotNull @Pattern(regexp = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}") String attemptId,
         @NotNull ReceiptOutcome outcome,
         @NotNull @Pattern(regexp = "[A-Z][A-Z0-9_]{0,63}") String code,
-        @NotNull Instant occurredAt) {
+        @NotNull Instant occurredAt,
+        @jakarta.validation.constraints.Min(1) @jakarta.validation.constraints.Max(4) Integer invocation) {
     @AssertTrue(message = "Receipt outcome and code must describe a final provider result")
     public boolean isConsistent() {
         if (outcome == null || code == null) return true; // Individual constraints report missing fields.

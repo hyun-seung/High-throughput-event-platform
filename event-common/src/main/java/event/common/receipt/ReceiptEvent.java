@@ -8,13 +8,19 @@ import java.util.UUID;
 public record ReceiptEvent(String eventId, String eventType, int schemaVersion,
                            String receiptId, String deliveryId, String attemptId,
                            String provider, int routeOrder, ReceiptOutcome outcome, String code,
-                           Instant occurredAt, Instant receivedAt) {
+                           Instant occurredAt, Instant receivedAt, Integer invocation) {
     public static ReceiptEvent received(String receiptId, String deliveryId, String attemptId,
                                         String provider, int routeOrder, ReceiptOutcome outcome, String code,
                                         Instant occurredAt, Instant receivedAt) {
+        return received(receiptId, deliveryId, attemptId, provider, routeOrder, outcome, code, occurredAt, receivedAt, null);
+    }
+
+    public static ReceiptEvent received(String receiptId, String deliveryId, String attemptId,
+                                        String provider, int routeOrder, ReceiptOutcome outcome, String code,
+                                        Instant occurredAt, Instant receivedAt, Integer invocation) {
         String id = UUID.nameUUIDFromBytes(("receipt:" + provider + ":" + receiptId)
                 .getBytes(StandardCharsets.UTF_8)).toString();
         return new ReceiptEvent(id, "DeliveryReceiptReceived", 1, receiptId, deliveryId, attemptId,
-                provider, routeOrder, outcome, code, occurredAt, receivedAt);
+                provider, routeOrder, outcome, code, occurredAt, receivedAt, invocation);
     }
 }

@@ -27,7 +27,12 @@ public class ExternalApiClient implements DeliveryProviderClient {
 
     @Override
     public ProviderDispatchResponse send(DeliveryEvent event, String idempotencyKey) {
-        ProviderDispatchRequest request = ProviderDispatchRequest.from(event);
+        return send(event, idempotencyKey, 1);
+    }
+
+    @Override
+    public ProviderDispatchResponse send(DeliveryEvent event, String idempotencyKey, int invocation) {
+        ProviderDispatchRequest request = ProviderDispatchRequest.from(event, invocation);
 
         try {
             ResponseEntity<ProviderDispatchResponse> response = externalApiRestClient

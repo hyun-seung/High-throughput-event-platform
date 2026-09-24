@@ -63,7 +63,7 @@ public class SecondaryDispatchService {
         }
         final ProviderDispatchResponse response;
         try {
-            response = metrics.measure(DeliveryMetrics.Stage.DISPATCH_TCP, () -> client.send(event, route.attemptId()));
+            response = metrics.measure(DeliveryMetrics.Stage.DISPATCH_TCP, () -> client.send(event, route.attemptId(), attempt.retryCount() + 1));
             if (!Boolean.TRUE.equals(response.accepted())) throw new ProviderFailureException(ProviderFailureException.Kind.INVALID_RESPONSE);
         } catch (ProviderFailureException failure) {
             persistFailure(event, attempt, DispatchRetryPolicy.decide(attempt, failure.kind(), dispatchClock.instant(), dispatchProperties));
