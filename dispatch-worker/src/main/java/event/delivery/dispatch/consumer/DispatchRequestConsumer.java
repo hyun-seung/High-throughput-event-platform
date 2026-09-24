@@ -17,8 +17,8 @@ public class DispatchRequestConsumer {
     private final DispatchService dispatchService;
 
     @KafkaListener(
-            topics = DeliveryTopics.DISPATCH_REQUESTED,
-            groupId = "delivery-dispatch-worker"
+            topics = "${dispatch.requests.topic:" + DeliveryTopics.DISPATCH_REQUESTED + "}",
+            groupId = "${dispatch.requests.group:delivery-dispatch-worker}"
     )
     public void consume(DeliveryEvent event) {
         if (event.eventType() != DeliveryEventType.DISPATCH_REQUESTED) {

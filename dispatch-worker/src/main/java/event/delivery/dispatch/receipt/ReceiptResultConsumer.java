@@ -11,6 +11,6 @@ public class ReceiptResultConsumer {
     public ReceiptResultConsumer(ReceiptResultService service) { this.service = service; }
 
     @KafkaListener(topics = "${dispatch.receipts.topic:" + DeliveryTopics.RECEIPT_RECEIVED + "}",
-            groupId = "delivery-receipt-result-worker", containerFactory = "receiptListenerContainerFactory")
+            groupId = "${dispatch.receipts.group:delivery-receipt-result-worker}", containerFactory = "receiptListenerContainerFactory")
     public void consume(ReceiptEvent receipt) { service.process(receipt); }
 }

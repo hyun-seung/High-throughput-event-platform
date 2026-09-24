@@ -1,0 +1,649 @@
+{
+  "passed": 12,
+  "acknowledgedWebhooks": 25.0,
+  "receiptTopicRecords": 25,
+  "cases": [
+    "중복 웹훅과 Dispatch 재전달의 추가 발송 없음",
+    "실패 웹훅의 허용된 TCP 대체 발송",
+    "대체 발송 비허용 요청",
+    "1차 재시도와 이전 회차 중복의 뒤늦은 도착",
+    "HTTP 실패 후 TCP 발송 및 2차 웹훅 재시도",
+    "1차 재시도 3회 소진 후 추가 호출 없음",
+    "TCP 접수 응답 유실 후 웹훅 성공으로 수렴",
+    "지연 웹훅의 접수 상태에서 성공 전이",
+    "1차 접수 응답보다 먼저 온 성공 웹훅",
+    "2차 접수 응답보다 먼저 온 성공 웹훅",
+    "웹훅 미발송은 ACCEPTED 유지",
+    "만료 후 웹훅의 상태·marker 미변경"
+  ],
+  "scope": "Dispatch-to-Attempt; excludes customer API, periodic expiry, customer notification",
+  "environment": {
+    "runId": "receipt-flow-f4e676347d8d47a8ae4d77d2f46a1cf9",
+    "ports": {
+      "provider": 54369,
+      "tcp": 54370,
+      "receipt": 54371,
+      "dispatch": 54372,
+      "provider_metrics": 54373,
+      "receipt_metrics": 54374,
+      "dispatch_metrics": 54375
+    },
+    "kafka": "localhost:39092",
+    "dynamo": "http://localhost:18000",
+    "topics": [
+      "receipt-flow-f4e676347d8d47a8ae4d77d2f46a1cf9.dispatch",
+      "receipt-flow-f4e676347d8d47a8ae4d77d2f46a1cf9.receipts"
+    ],
+    "groups": [
+      "receipt-flow-f4e676347d8d47a8ae4d77d2f46a1cf9.worker",
+      "receipt-flow-f4e676347d8d47a8ae4d77d2f46a1cf9.result"
+    ],
+    "primaryTtlSeconds": 20,
+    "secondaryTtlSeconds": 30,
+    "providerDeduplicate": false,
+    "baseCommit": "978f44e34806b4d5b1f1c19a2762654cdf76bc01",
+    "workingTreeDirty": true,
+    "harnessSha256": "d9de001d10b6bd15537885c129b5506a3193e8c9573b7b9c8feae3a165c02cbe",
+    "jarSha256": {
+      "receipt-api": "795d6e13c88e7c2bf3d08991f555c4f3edc8880a71251acc858130756df7b7cb",
+      "external-api-simulator": "2975e7119d08ef8393b527ed74ea18f0b7d7b280456c5fdb3803c3620ec7a8ab",
+      "dispatch-worker": "cafc269933f070a114e0d09bb257cf12bdf5fd5f440a2af9a280b47d7d8947d8"
+    }
+  },
+  "tests": {
+    "total": 180,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "eventCommon": 11,
+    "eventApi": 9,
+    "ingress": 19,
+    "dispatch": 100,
+    "receipt": 19,
+    "simulator": 22
+  },
+  "results": [
+    {
+      "name": "중복 웹훅과 Dispatch 재전달의 추가 발송 없음",
+      "deliveryId": "43aec7af-fae0-4d59-9fdc-4788206c8d19",
+      "primaryProvider": {
+        "calls": 1,
+        "effects": 1
+      },
+      "secondaryProvider": null,
+      "offsets": {
+        "receipt-flow-f4e676347d8d47a8ae4d77d2f46a1cf9.dispatch": {
+          "committed": 2,
+          "end": 2
+        },
+        "receipt-flow-f4e676347d8d47a8ae4d77d2f46a1cf9.receipts": {
+          "committed": 3,
+          "end": 3
+        }
+      },
+      "primary": {
+        "receipt_event_id": {
+          "S": "dc08f367-7c48-3c85-9d76-12f240e86052"
+        },
+        "deadline_at": {
+          "N": "1790261807599"
+        },
+        "receipt_invocation": {
+          "N": "1"
+        },
+        "version": {
+          "N": "2"
+        },
+        "retry_count": {
+          "N": "0"
+        },
+        "status": {
+          "S": "DELIVERED"
+        }
+      },
+      "secondary": {}
+    },
+    {
+      "name": "실패 웹훅의 허용된 TCP 대체 발송",
+      "deliveryId": "d608172f-a300-45bc-a67a-9dae9bb71b29",
+      "primaryProvider": {
+        "calls": 1,
+        "effects": 1
+      },
+      "secondaryProvider": {
+        "calls": 1,
+        "effects": 1
+      },
+      "offsets": {
+        "receipt-flow-f4e676347d8d47a8ae4d77d2f46a1cf9.dispatch": {
+          "committed": 3,
+          "end": 3
+        },
+        "receipt-flow-f4e676347d8d47a8ae4d77d2f46a1cf9.receipts": {
+          "committed": 7,
+          "end": 7
+        }
+      },
+      "primary": {
+        "receipt_event_id": {
+          "S": "c2490cd1-5aea-3c87-b80d-4ecc6283a454"
+        },
+        "deadline_at": {
+          "N": "1790261809455"
+        },
+        "receipt_invocation": {
+          "N": "1"
+        },
+        "failure_reason": {
+          "S": "FALLBACK_REQUIRED"
+        },
+        "version": {
+          "N": "2"
+        },
+        "retry_count": {
+          "N": "0"
+        },
+        "status": {
+          "S": "DECISION_PENDING"
+        }
+      },
+      "secondary": {
+        "receipt_event_id": {
+          "S": "e66e9397-9f0f-3fef-9fae-6c2f171e92fe"
+        },
+        "deadline_at": {
+          "N": "1790261819590"
+        },
+        "receipt_invocation": {
+          "N": "1"
+        },
+        "version": {
+          "N": "2"
+        },
+        "retry_count": {
+          "N": "0"
+        },
+        "status": {
+          "S": "DELIVERED"
+        }
+      }
+    },
+    {
+      "name": "대체 발송 비허용 요청",
+      "deliveryId": "b6fd4395-10ad-4874-9497-e22fe7f1721e",
+      "primaryProvider": {
+        "calls": 1,
+        "effects": 1
+      },
+      "secondaryProvider": null,
+      "offsets": {
+        "receipt-flow-f4e676347d8d47a8ae4d77d2f46a1cf9.dispatch": {
+          "committed": 4,
+          "end": 4
+        },
+        "receipt-flow-f4e676347d8d47a8ae4d77d2f46a1cf9.receipts": {
+          "committed": 8,
+          "end": 8
+        }
+      },
+      "primary": {
+        "receipt_event_id": {
+          "S": "e47d3055-f59e-3a5e-a011-20e25a5f6ca2"
+        },
+        "deadline_at": {
+          "N": "1790261810510"
+        },
+        "receipt_invocation": {
+          "N": "1"
+        },
+        "failure_reason": {
+          "S": "FALLBACK_REQUIRED"
+        },
+        "version": {
+          "N": "2"
+        },
+        "retry_count": {
+          "N": "0"
+        },
+        "status": {
+          "S": "DECISION_PENDING"
+        }
+      },
+      "secondary": {}
+    },
+    {
+      "name": "1차 재시도와 이전 회차 중복의 뒤늦은 도착",
+      "deliveryId": "259152a9-97d4-4a1e-a7bd-48608c824801",
+      "primaryProvider": {
+        "calls": 2,
+        "effects": 2
+      },
+      "secondaryProvider": null,
+      "offsets": {
+        "receipt-flow-f4e676347d8d47a8ae4d77d2f46a1cf9.dispatch": {
+          "committed": 5,
+          "end": 5
+        },
+        "receipt-flow-f4e676347d8d47a8ae4d77d2f46a1cf9.receipts": {
+          "committed": 14,
+          "end": 14
+        }
+      },
+      "primary": {
+        "receipt_event_id": {
+          "S": "7d5ab377-d766-3377-9b98-772b8e2e039c"
+        },
+        "deadline_at": {
+          "N": "1790261810754"
+        },
+        "receipt_invocation": {
+          "N": "2"
+        },
+        "failure_reason": {
+          "S": "RETRY_1S"
+        },
+        "version": {
+          "N": "4"
+        },
+        "retry_count": {
+          "N": "1"
+        },
+        "status": {
+          "S": "DELIVERED"
+        }
+      },
+      "secondary": {}
+    },
+    {
+      "name": "HTTP 실패 후 TCP 발송 및 2차 웹훅 재시도",
+      "deliveryId": "e182ea95-8057-4d56-8867-6c903630afb6",
+      "primaryProvider": {
+        "calls": 1,
+        "effects": 0
+      },
+      "secondaryProvider": {
+        "calls": 2,
+        "effects": 2
+      },
+      "offsets": {
+        "receipt-flow-f4e676347d8d47a8ae4d77d2f46a1cf9.dispatch": {
+          "committed": 6,
+          "end": 6
+        },
+        "receipt-flow-f4e676347d8d47a8ae4d77d2f46a1cf9.receipts": {
+          "committed": 16,
+          "end": 16
+        }
+      },
+      "primary": {
+        "deadline_at": {
+          "N": "1790261814046"
+        },
+        "failure_reason": {
+          "S": "FALLBACK_REQUIRED"
+        },
+        "version": {
+          "N": "1"
+        },
+        "retry_count": {
+          "N": "0"
+        },
+        "status": {
+          "S": "DECISION_PENDING"
+        }
+      },
+      "secondary": {
+        "receipt_event_id": {
+          "S": "c23d9cb5-ea87-34e9-b470-566c7fb0af92"
+        },
+        "deadline_at": {
+          "N": "1790261824073"
+        },
+        "receipt_invocation": {
+          "N": "2"
+        },
+        "failure_reason": {
+          "S": "RETRY_1S"
+        },
+        "version": {
+          "N": "4"
+        },
+        "retry_count": {
+          "N": "1"
+        },
+        "status": {
+          "S": "DELIVERED"
+        }
+      }
+    },
+    {
+      "name": "1차 재시도 3회 소진 후 추가 호출 없음",
+      "deliveryId": "3cc620bb-5472-4a94-b68e-d79920a74b34",
+      "primaryProvider": {
+        "calls": 4,
+        "effects": 4
+      },
+      "secondaryProvider": null,
+      "offsets": {
+        "receipt-flow-f4e676347d8d47a8ae4d77d2f46a1cf9.dispatch": {
+          "committed": 7,
+          "end": 7
+        },
+        "receipt-flow-f4e676347d8d47a8ae4d77d2f46a1cf9.receipts": {
+          "committed": 20,
+          "end": 20
+        }
+      },
+      "primary": {
+        "receipt_event_id": {
+          "S": "b1e2c455-96b9-35da-aef7-c1af2017a308"
+        },
+        "deadline_at": {
+          "N": "1790261815527"
+        },
+        "receipt_invocation": {
+          "N": "4"
+        },
+        "failure_reason": {
+          "S": "RETRY_EXHAUSTED_RETRY_1S"
+        },
+        "version": {
+          "N": "8"
+        },
+        "retry_count": {
+          "N": "3"
+        },
+        "status": {
+          "S": "DECISION_PENDING"
+        }
+      },
+      "secondary": {}
+    },
+    {
+      "name": "TCP 접수 응답 유실 후 웹훅 성공으로 수렴",
+      "deliveryId": "2edd2cea-3927-45a4-a9c8-38714d029b72",
+      "primaryProvider": {
+        "calls": 1,
+        "effects": 0
+      },
+      "secondaryProvider": {
+        "calls": 1,
+        "effects": 1
+      },
+      "offsets": {
+        "receipt-flow-f4e676347d8d47a8ae4d77d2f46a1cf9.dispatch": {
+          "committed": 8,
+          "end": 8
+        },
+        "receipt-flow-f4e676347d8d47a8ae4d77d2f46a1cf9.receipts": {
+          "committed": 21,
+          "end": 21
+        }
+      },
+      "primary": {
+        "deadline_at": {
+          "N": "1790261819299"
+        },
+        "failure_reason": {
+          "S": "FALLBACK_REQUIRED"
+        },
+        "version": {
+          "N": "1"
+        },
+        "retry_count": {
+          "N": "0"
+        },
+        "status": {
+          "S": "DECISION_PENDING"
+        }
+      },
+      "secondary": {
+        "receipt_event_id": {
+          "S": "ced8fa93-3746-36fb-a37c-a92db0d54942"
+        },
+        "deadline_at": {
+          "N": "1790261829321"
+        },
+        "receipt_invocation": {
+          "N": "1"
+        },
+        "failure_reason": {
+          "S": "NO_RESPONSE"
+        },
+        "version": {
+          "N": "2"
+        },
+        "retry_count": {
+          "N": "0"
+        },
+        "status": {
+          "S": "DELIVERED"
+        }
+      }
+    },
+    {
+      "name": "지연 웹훅의 접수 상태에서 성공 전이",
+      "deliveryId": "ae59f1bd-9635-47e8-a3c7-ad6549a5b138",
+      "primaryProvider": {
+        "calls": 1,
+        "effects": 1
+      },
+      "secondaryProvider": null,
+      "offsets": {
+        "receipt-flow-f4e676347d8d47a8ae4d77d2f46a1cf9.dispatch": {
+          "committed": 9,
+          "end": 9
+        },
+        "receipt-flow-f4e676347d8d47a8ae4d77d2f46a1cf9.receipts": {
+          "committed": 22,
+          "end": 22
+        }
+      },
+      "primary": {
+        "receipt_event_id": {
+          "S": "20fd6f8b-f483-34d1-8574-3b3c84b8d6c2"
+        },
+        "deadline_at": {
+          "N": "1790261819865"
+        },
+        "receipt_invocation": {
+          "N": "1"
+        },
+        "version": {
+          "N": "2"
+        },
+        "retry_count": {
+          "N": "0"
+        },
+        "status": {
+          "S": "DELIVERED"
+        }
+      },
+      "secondary": {}
+    },
+    {
+      "name": "1차 접수 응답보다 먼저 온 성공 웹훅",
+      "deliveryId": "ade05460-aadd-428e-9a5c-2630c58be00a",
+      "primaryProvider": {
+        "calls": 1,
+        "effects": 1
+      },
+      "secondaryProvider": null,
+      "offsets": {
+        "receipt-flow-f4e676347d8d47a8ae4d77d2f46a1cf9.dispatch": {
+          "committed": 10,
+          "end": 10
+        },
+        "receipt-flow-f4e676347d8d47a8ae4d77d2f46a1cf9.receipts": {
+          "committed": 23,
+          "end": 23
+        }
+      },
+      "primary": {
+        "receipt_event_id": {
+          "S": "051d75e9-5847-3d45-a851-0691ea625694"
+        },
+        "deadline_at": {
+          "N": "1790261821552"
+        },
+        "receipt_invocation": {
+          "N": "1"
+        },
+        "version": {
+          "N": "2"
+        },
+        "retry_count": {
+          "N": "0"
+        },
+        "status": {
+          "S": "DELIVERED"
+        }
+      },
+      "secondary": {},
+      "deliveredBeforeResponseSeconds": 0.115
+    },
+    {
+      "name": "2차 접수 응답보다 먼저 온 성공 웹훅",
+      "deliveryId": "ca32a63a-17fd-43ee-8434-2079461b3d93",
+      "primaryProvider": {
+        "calls": 1,
+        "effects": 0
+      },
+      "secondaryProvider": {
+        "calls": 1,
+        "effects": 1
+      },
+      "offsets": {
+        "receipt-flow-f4e676347d8d47a8ae4d77d2f46a1cf9.dispatch": {
+          "committed": 11,
+          "end": 11
+        },
+        "receipt-flow-f4e676347d8d47a8ae4d77d2f46a1cf9.receipts": {
+          "committed": 24,
+          "end": 24
+        }
+      },
+      "primary": {
+        "deadline_at": {
+          "N": "1790261825883"
+        },
+        "failure_reason": {
+          "S": "FALLBACK_REQUIRED"
+        },
+        "version": {
+          "N": "1"
+        },
+        "retry_count": {
+          "N": "0"
+        },
+        "status": {
+          "S": "DECISION_PENDING"
+        }
+      },
+      "secondary": {
+        "receipt_event_id": {
+          "S": "38e1b794-4ffc-399b-998c-925841ba4dff"
+        },
+        "deadline_at": {
+          "N": "1790261835901"
+        },
+        "receipt_invocation": {
+          "N": "1"
+        },
+        "version": {
+          "N": "2"
+        },
+        "retry_count": {
+          "N": "0"
+        },
+        "status": {
+          "S": "DELIVERED"
+        }
+      },
+      "deliveredBeforeResponseSeconds": 0.112
+    },
+    {
+      "name": "웹훅 미발송은 ACCEPTED 유지",
+      "deliveryId": "4e0d97f8-af34-4fb9-b181-7487b37167b9",
+      "primaryProvider": {
+        "calls": 1,
+        "effects": 1
+      },
+      "secondaryProvider": null,
+      "offsets": {
+        "receipt-flow-f4e676347d8d47a8ae4d77d2f46a1cf9.dispatch": {
+          "committed": 12,
+          "end": 12
+        },
+        "receipt-flow-f4e676347d8d47a8ae4d77d2f46a1cf9.receipts": {
+          "committed": 24,
+          "end": 24
+        }
+      },
+      "primary": {
+        "deadline_at": {
+          "N": "1790261830233"
+        },
+        "version": {
+          "N": "1"
+        },
+        "retry_count": {
+          "N": "0"
+        },
+        "status": {
+          "S": "ACCEPTED"
+        }
+      },
+      "secondary": {}
+    },
+    {
+      "name": "만료 후 웹훅의 상태·marker 미변경",
+      "deliveryId": "4107576d-e99c-4545-96af-e10ab6c428de",
+      "primaryProvider": {
+        "calls": 1,
+        "effects": 1
+      },
+      "secondaryProvider": null,
+      "offsets": {
+        "receipt-flow-f4e676347d8d47a8ae4d77d2f46a1cf9.dispatch": {
+          "committed": 13,
+          "end": 13
+        },
+        "receipt-flow-f4e676347d8d47a8ae4d77d2f46a1cf9.receipts": {
+          "committed": 25,
+          "end": 25
+        }
+      },
+      "primary": {
+        "deadline_at": {
+          "N": "1790261813380"
+        },
+        "version": {
+          "N": "1"
+        },
+        "retry_count": {
+          "N": "0"
+        },
+        "status": {
+          "S": "ACCEPTED"
+        }
+      },
+      "secondary": {}
+    }
+  ],
+  "cleanup": {
+    "errors": []
+  },
+  "rawEvidenceSha256": {
+    "cleanup.json": "339acc3b09add3c3d0e689adf17878a1bd264d3a3f00fccce7db538630e20066",
+    "dispatch.log": "47d2fae5b1a605dd3ad95a8bfe6de4694c84bdfc352524ae32a3aa3a05e60218",
+    "dispatch.prom": "49bacf1e5cd35715a70ad035dd4861bb568c3082c1475aac4d0a12de067ef6bf",
+    "environment.json": "30f95d8f62fba2e5843bbd863528098b758feaaf3dabab4c26748d93f0fadb5c",
+    "provider.log": "fc2eb0deba17e41f80e9e72b2cbed9eb5e0782862ad36e93a67a304153059004",
+    "provider.prom": "6eec44d2ae44e4c6ed5416ffe5438934ee412770a5a7ef613338a738bb7652e1",
+    "receipt.log": "609bd4fea641c487dc18900a450cbbce16c8fc5ffe888e89e7c224b39ce0653a",
+    "receipt.prom": "cd0bfa197ed013d07ac446dc6b13b3bef810d6142bc164e9816abe772206881d",
+    "results.json": "85cc4beb9d8e939694785576d820c83de234d2489e3eb08f9b2db3cb1aec72fa",
+    "summary.json": "435bf4256519a13a763d575a08ca497c37a410e7865b32753d785d81269da61f"
+  }
+}

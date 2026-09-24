@@ -27,7 +27,7 @@ class SimulatorLedgerTest {
     void selectedFailureHasNoEffectAndNextSuccessfulCallStillWorks(String code, int status) {
         var properties = new SimulatorProperties(0, true, 1);
         var ledger = new SimulatorLedger(properties, new SimpleMeterRegistry());
-        var controller = new DeliveryProviderController(ledger, properties);
+        var controller = new DeliveryProviderController(ledger, properties, org.mockito.Mockito.mock(external.api.simulator.receipt.SimulatorReceiptSender.class));
         var failed = new ProviderDispatchRequest("delivery-1", 1L, "EMAIL", Map.of("simulatorResultCode", code), Instant.now());
         var response = controller.receive("key", failed);
         assertEquals(status, response.getStatusCode().value());
@@ -105,7 +105,7 @@ class SimulatorLedgerTest {
     void configuredResponseDelayOccursAfterRecordingEffect() throws Exception {
         var properties = new SimulatorProperties(200, false, 10);
         var ledger = new SimulatorLedger(properties, new SimpleMeterRegistry());
-        var controller = new DeliveryProviderController(ledger, properties);
+        var controller = new DeliveryProviderController(ledger, properties, org.mockito.Mockito.mock(external.api.simulator.receipt.SimulatorReceiptSender.class));
         long start = System.nanoTime();
         assertTrue(controller.receive("key", request).getBody().accepted());
         assertTrue(System.nanoTime() - start >= 200_000_000L);

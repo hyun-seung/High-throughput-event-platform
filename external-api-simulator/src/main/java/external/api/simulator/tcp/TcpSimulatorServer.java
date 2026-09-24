@@ -5,6 +5,7 @@ import event.common.tcp.TcpDeliveryResponse;
 import event.common.tcp.TcpFrames;
 import external.api.simulator.delivery.dto.ProviderDispatchRequest;
 import external.api.simulator.delivery.service.SimulatorLedger;
+import external.api.simulator.receipt.SimulatorReceiptSender;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.SmartLifecycle;
 import org.springframework.stereotype.Component;
@@ -30,6 +31,7 @@ public class TcpSimulatorServer implements SmartLifecycle, AutoCloseable {
     private final TcpSimulatorProperties properties;
     private final SimulatorLedger ledger;
     private final JsonMapper mapper;
+    private final SimulatorReceiptSender receipts;
     private final Set<Socket> active = ConcurrentHashMap.newKeySet();
     private final Semaphore capacity;
     private volatile boolean running;
@@ -37,10 +39,12 @@ public class TcpSimulatorServer implements SmartLifecycle, AutoCloseable {
     private ExecutorService workers;
     private ScheduledExecutorService timeouts;
 
-    public TcpSimulatorServer(TcpSimulatorProperties properties, SimulatorLedger ledger, JsonMapper mapper) {
+    public TcpSimulatorServer(TcpSimulatorProperties properties, SimulatorLedger ledger, JsonMapper mapper,
+                              SimulatorReceiptSender receipts) {
         this.properties = properties;
         this.ledger = ledger;
         this.mapper = mapper;
+        this.receipts = receipts;
         capacity = new Semaphore(properties.maxConnections());
     }
 
@@ -93,14 +97,21 @@ public class TcpSimulatorServer implements SmartLifecycle, AutoCloseable {
             // First-provider failure scenarios must not accidentally reject the alternative provider.
             payload.remove("forceFail");
             payload.put("simulatorResultCode", payload.getOrDefault("simulatorTcpResultCode", "ACCEPTED"));
-            var received = ledger.receive("tcp:" + request.attemptId(), new ProviderDispatchRequest(request.deliveryId(),
-                    request.tenantId(), request.deliveryType(), payload, request.occurredAt(), request.invocation()));
+            var providerRequest = new ProviderDispatchRequest(request.deliveryId(),
+                    request.tenantId(), request.deliveryType(), payload, request.occurredAt(), request.invocation());
+            var receipt = receipts.plan(true, request.attemptId(), providerRequest);
+            var received = ledger.receive("tcp:" + request.attemptId(), providerRequest);
+            if (received.accepted()) receipts.accepted(receipt);
             if (mode.equals("close-after-effect")) return;
+            SimulatorReceiptSender.delayResponse(receipt);
             var response = new TcpDeliveryResponse(received.deliveryId(), mode.equals("wrong-attempt") ? "unrelated" : request.attemptId(),
                     received.accepted(), received.processedAt(), received.accepted() ? "RECEIVED" : received.code());
             TcpFrames.write(socket.getOutputStream(), mapper.writeValueAsBytes(response));
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
         } catch (IOException | RuntimeException ignored) {
-            // Malformed/closed connections produce no receipt. Never log payloads or raw parser exceptions.
+            // A connection closed after acceptance may already have queued a receipt.
+            // Never log payloads or raw parser exceptions.
         } finally {
             if (timeout != null) timeout.cancel(false);
             active.remove(socket);

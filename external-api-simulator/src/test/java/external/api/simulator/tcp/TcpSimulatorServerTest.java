@@ -5,6 +5,7 @@ import event.common.tcp.TcpDeliveryRequest;
 import event.common.tcp.TcpDeliveryResponse;
 import external.api.simulator.delivery.config.SimulatorProperties;
 import external.api.simulator.delivery.service.SimulatorLedger;
+import external.api.simulator.receipt.SimulatorReceiptSender;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.json.JsonMapper;
@@ -53,7 +54,8 @@ class TcpSimulatorServerTest {
     }
 
     private TcpSimulatorServer start() {
-        var server = new TcpSimulatorServer(new TcpSimulatorProperties(true, "127.0.0.1", 0, 10, 2000), ledger, mapper);
+        var server = new TcpSimulatorServer(new TcpSimulatorProperties(true, "127.0.0.1", 0, 10, 2000), ledger, mapper,
+                org.mockito.Mockito.mock(SimulatorReceiptSender.class));
         server.start();
         return server;
     }
