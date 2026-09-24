@@ -8,6 +8,10 @@ public record DispatchAttempt(
         String provider,
         long version,
         int retryCount,
-        Instant primaryDeadline
+        Instant deadline,
+        int routeOrder
 ) {
+    public DispatchAttempt(String deliveryId, String attemptId, String provider, long version, int retryCount, Instant deadline) {
+        this(deliveryId, attemptId, provider, version, retryCount, deadline, 1);
+    }
 }

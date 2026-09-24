@@ -16,7 +16,7 @@
   "panels": [
     {
       "id": 1,
-      "title": "1차 HTTP 업체 · 시뮬레이터",
+      "title": "HTTP 1차 · TCP 2차 시뮬레이터",
       "type": "text",
       "gridPos": {
         "x": 0,
@@ -26,7 +26,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "현재 연결 업체는 **mock-provider** 하나입니다. SKT/KT/LGU 이름이나 실적을 임의로 만들지 않습니다. 실제 업체와 결과 웹훅이 연결되면 업체별 분해를 확장합니다."
+        "content": "1차 mock-provider, 2차 tcp-provider 개발 계약입니다. TCP 지표는 새 앱 빌드를 적용한 뒤 수집됩니다. 업체 접수는 최종 전달 성공이 아닙니다."
       }
     },
     {
@@ -842,7 +842,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "결과 웹훅 지연·미수신·TCP 2차 발송은 미구현입니다. 시뮬레이터 calls/effects 차이는 정상 성공률과 다르며 강제 실패도 함께 확인해야 합니다. Provider 성공 후 결과 저장 전 장애는 운영 확인 대상입니다."
+        "content": "허용 요청의 TCP 2차 접수와 재시도를 구현했습니다. 결과 웹훅·주기 만료·고객 통지는 미구현입니다. 시뮬레이터 calls/effects 차이는 정상 성공률과 다르며 강제 실패도 함께 확인해야 합니다. Provider 성공 후 결과 저장 전 장애는 운영 확인 대상입니다."
       }
     },
     {
@@ -890,7 +890,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "{service=~\"api|ingress|dispatch\",zone=\"local\"} | json | stage=~\"provider|dispatch\" | outcome!= \"accepted\" | line_format \"{{.stage}} · {{.outcome}} | deliveryId={{.deliveryId}} | tenant={{.tenantId}} | attempt={{.attemptId}} | {{.provider}} {{.code}}\"",
+          "expr": "{service=~\"api|ingress|dispatch\",zone=\"local\"} | json | stage=~\"provider|dispatch|secondary\" | outcome!= \"accepted\" | line_format \"{{.stage}} · {{.outcome}} | deliveryId={{.deliveryId}} | tenant={{.tenantId}} | attempt={{.attemptId}} | {{.provider}} {{.code}}\"",
           "queryType": "range",
           "maxLines": 200
         }
@@ -904,6 +904,378 @@
         "enableLogDetails": true,
         "sortOrder": "Descending",
         "dedupStrategy": "none"
+      }
+    },
+    {
+      "id": 13,
+      "title": "TCP 시도 TPS",
+      "type": "stat",
+      "gridPos": {
+        "x": 0,
+        "y": 34,
+        "w": 6,
+        "h": 5
+      },
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "platform-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "noValue": "데이터 없음",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 80
+              },
+              {
+                "color": "red",
+                "value": 100
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "관측 없음",
+                  "color": "gray"
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "nan",
+                "result": {
+                  "text": "관측 없음",
+                  "color": "gray"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(delivery_stage_duration_seconds_count{stage=\"dispatch_tcp\"}[$__rate_interval]))",
+          "legendFormat": "{{stage}}",
+          "range": false,
+          "instant": true,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "text": {
+          "valueSize": 32,
+          "titleSize": 14
+        }
+      }
+    },
+    {
+      "id": 14,
+      "title": "TCP 접수 저장 TPS",
+      "type": "stat",
+      "gridPos": {
+        "x": 6,
+        "y": 34,
+        "w": 6,
+        "h": 5
+      },
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "platform-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "noValue": "데이터 없음",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 80
+              },
+              {
+                "color": "red",
+                "value": 100
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "관측 없음",
+                  "color": "gray"
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "nan",
+                "result": {
+                  "text": "관측 없음",
+                  "color": "gray"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(delivery_outcomes_total{outcome=\"secondary_accepted\"}[$__rate_interval]))",
+          "legendFormat": "{{stage}}",
+          "range": false,
+          "instant": true,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "text": {
+          "valueSize": 32,
+          "titleSize": 14
+        }
+      }
+    },
+    {
+      "id": 15,
+      "title": "TCP 응답 p95",
+      "type": "stat",
+      "gridPos": {
+        "x": 12,
+        "y": 34,
+        "w": 6,
+        "h": 5
+      },
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "platform-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "noValue": "데이터 없음",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 80
+              },
+              {
+                "color": "red",
+                "value": 100
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "관측 없음",
+                  "color": "gray"
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "nan",
+                "result": {
+                  "text": "관측 없음",
+                  "color": "gray"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(delivery_stage_duration_seconds_bucket{stage=\"dispatch_tcp\"}[$__rate_interval])))",
+          "legendFormat": "{{stage}}",
+          "range": false,
+          "instant": true,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "text": {
+          "valueSize": 32,
+          "titleSize": 14
+        }
+      }
+    },
+    {
+      "id": 16,
+      "title": "전체 재시도 예약 관측",
+      "type": "stat",
+      "gridPos": {
+        "x": 18,
+        "y": 34,
+        "w": 6,
+        "h": 5
+      },
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "platform-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "데이터 없음",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 80
+              },
+              {
+                "color": "red",
+                "value": 100
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "관측 없음",
+                  "color": "gray"
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "nan",
+                "result": {
+                  "text": "관측 없음",
+                  "color": "gray"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(delivery_outcomes_total{outcome=\"dispatch_retry_scheduled\"}[$__range]))",
+          "legendFormat": "{{stage}}",
+          "range": false,
+          "instant": true,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "text": {
+          "valueSize": 32,
+          "titleSize": 14
+        }
       }
     }
   ],

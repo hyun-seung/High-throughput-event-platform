@@ -1,9 +1,11 @@
 package event.delivery.dispatch.repository;
 
 import event.common.delivery.DeliveryEvent;
+import event.common.delivery.DeliveryIds;
 import event.delivery.dispatch.model.DispatchAttempt;
 import event.delivery.dispatch.model.DispatchClaim;
 import event.delivery.dispatch.model.DispatchFailureDecision;
+import event.delivery.dispatch.model.SecondaryRoute;
 import event.delivery.dispatch.service.DispatchRetryPolicy;
 import event.delivery.dispatch.port.DispatchAttemptStore;
 import lombok.RequiredArgsConstructor;
@@ -17,12 +19,17 @@ import software.amazon.awssdk.services.dynamodb.model.UpdateItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.UpdateItemResponse;
 
 import java.time.Instant;
+import java.time.Duration;
+import java.util.Optional;
+import java.util.Set;
 import java.util.Map;
 import java.util.HashMap;
 
 import static event.common.dynamodb.DynamoDbAttributeNames.RETRY_COUNT;
 import static event.common.dynamodb.DynamoDbAttributeNames.NEXT_ATTEMPT_AT;
 import static event.common.dynamodb.DynamoDbAttributeNames.PRIMARY_DEADLINE;
+import static event.common.dynamodb.DynamoDbAttributeNames.DEADLINE_AT;
+import static event.common.dynamodb.DynamoDbAttributeNames.ROUTE_ORDER;
 import static event.common.dynamodb.DynamoDbAttributeNames.FAILURE_REASON;
 import static event.common.dynamodb.DynamoDbAttributeNames.FAILURE_OBSERVED_AT;
 
@@ -52,6 +59,10 @@ public class DispatchAttemptRepository implements DispatchAttemptStore {
     private static final String REVIEW_REQUIRED = "REVIEW_REQUIRED";
     private static final String RETRY_SCHEDULED = "RETRY_SCHEDULED";
     private static final String DECISION_PENDING = "DECISION_PENDING";
+    private static final String SECONDARY_ATTEMPT = "secondary_attempt_id";
+    private static final String SECONDARY_PROVIDER = "secondary_provider";
+    private static final String SECONDARY_DEADLINE = "secondary_deadline";
+    private static final Set<String> FALLBACK_REASONS = Set.of("FALLBACK_REQUIRED", "PRIMARY_EXPIRED", "RETRY_EXHAUSTED_NO_RESPONSE");
 
     private final DynamoDbClient dynamoDbClient;
 
@@ -64,6 +75,16 @@ public class DispatchAttemptRepository implements DispatchAttemptStore {
             Instant leaseUntil,
             Instant primaryDeadline
     ) {
+        return claimRoute(event, attemptId, provider, now, leaseUntil, primaryDeadline, 1);
+    }
+
+    @Override
+    public DispatchClaim claimSecondary(DeliveryEvent event, SecondaryRoute route, Instant now, Instant leaseUntil) {
+        return claimRoute(event, route.attemptId(), route.provider(), now, leaseUntil, route.deadline(), 2);
+    }
+
+    private DispatchClaim claimRoute(DeliveryEvent event, String attemptId, String provider, Instant now,
+                                     Instant leaseUntil, Instant deadline, int routeOrder) {
         Map<String, AttributeValue> key = key(event.deliveryId(), attemptId);
         Map<String, String> names = Map.ofEntries(
                 Map.entry("#pk", PK),
@@ -77,7 +98,8 @@ public class DispatchAttemptRepository implements DispatchAttemptStore {
                 Map.entry("#updatedAt", UPDATED_AT),
                 Map.entry("#version", VERSION),
                 Map.entry("#retryCount", RETRY_COUNT),
-                Map.entry("#deadline", PRIMARY_DEADLINE)
+                Map.entry("#deadline", DEADLINE_AT),
+                Map.entry("#route", ROUTE_ORDER)
         );
         Map<String, AttributeValue> values = Map.ofEntries(
                 Map.entry(":attemptId", text(attemptId)),
@@ -89,7 +111,8 @@ public class DispatchAttemptRepository implements DispatchAttemptStore {
                 Map.entry(":now", text(now.toString())),
                 Map.entry(":zero", number(0)),
                 Map.entry(":one", number(1)),
-                Map.entry(":deadline", number(primaryDeadline.toEpochMilli()))
+                Map.entry(":deadline", number(deadline.toEpochMilli())),
+                Map.entry(":route", number(routeOrder))
         );
 
         UpdateItemRequest request = UpdateItemRequest.builder()
@@ -100,7 +123,7 @@ public class DispatchAttemptRepository implements DispatchAttemptStore {
                         + "#eventId = :eventId, #provider = :provider, #status = :processing, "
                         + "#leaseUntil = :leaseUntil, #createdAt = if_not_exists(#createdAt, :now), "
                         + "#updatedAt = :now, #version = if_not_exists(#version, :zero) + :one, "
-                        + "#retryCount = :zero, #deadline = :deadline")
+                        + "#retryCount = :zero, #deadline = :deadline, #route = :route")
                 .expressionAttributeNames(names)
                 .expressionAttributeValues(values)
                 .returnValues(ReturnValue.ALL_NEW)
@@ -112,6 +135,41 @@ public class DispatchAttemptRepository implements DispatchAttemptStore {
         } catch (ConditionalCheckFailedException e) {
             return existingClaim(key, now, leaseUntil);
         }
+    }
+
+    @Override
+    public Optional<SecondaryRoute> prepareSecondary(DeliveryEvent event, String primaryAttemptId, String provider, Duration ttl) {
+        if (!event.fallbackAllowed()) return Optional.empty();
+        var key = key(event.deliveryId(), primaryAttemptId);
+        for (int retry = 0; retry < 2; retry++) {
+            var item = dynamoDbClient.getItem(GetItemRequest.builder().tableName(DELIVERY_STATE).key(key)
+                    .consistentRead(true).build()).item();
+            if (item.isEmpty() || !DECISION_PENDING.equals(item.get(STATUS).s())) {
+                throw new IllegalStateException("Primary decision must be durable before secondary dispatch");
+            }
+            if (!FALLBACK_REASONS.contains(item.get(FAILURE_REASON).s())) return Optional.empty();
+            if (item.containsKey(SECONDARY_ATTEMPT)) {
+                return Optional.of(new SecondaryRoute(item.get(SECONDARY_ATTEMPT).s(), item.get(SECONDARY_PROVIDER).s(),
+                        Instant.ofEpochMilli(Long.parseLong(item.get(SECONDARY_DEADLINE).n()))));
+            }
+            if (provider.equals(item.get(PROVIDER).s())) throw new IllegalArgumentException("Secondary provider must differ from primary");
+            var route = new SecondaryRoute(DeliveryIds.attemptId(event.deliveryId(), provider, 2, 1), provider,
+                    Instant.parse(item.get(FAILURE_OBSERVED_AT).s()).plus(ttl));
+            try {
+                dynamoDbClient.updateItem(UpdateItemRequest.builder().tableName(DELIVERY_STATE).key(key)
+                        .conditionExpression("#status = :pending AND #version = :version AND attribute_not_exists(#secondary)")
+                        .updateExpression("SET #secondary = :secondary, #provider = :provider, #deadline = :deadline")
+                        .expressionAttributeNames(Map.of("#status", STATUS, "#version", VERSION, "#secondary", SECONDARY_ATTEMPT,
+                                "#provider", SECONDARY_PROVIDER, "#deadline", SECONDARY_DEADLINE))
+                        .expressionAttributeValues(Map.of(":pending", text(DECISION_PENDING), ":version", item.get(VERSION),
+                                ":secondary", text(route.attemptId()), ":provider", text(route.provider()),
+                                ":deadline", number(route.deadline().toEpochMilli()))).build());
+                return Optional.of(route);
+            } catch (ConditionalCheckFailedException changed) {
+                // Another worker may have bound a route; always use its persisted provider and deadline.
+            }
+        }
+        throw new IllegalStateException("Secondary route changed during handoff; retry resolution");
     }
 
     @Override
@@ -214,19 +272,20 @@ public class DispatchAttemptRepository implements DispatchAttemptStore {
 
     private DispatchClaim claimScheduled(Map<String, AttributeValue> key, Map<String, AttributeValue> item,
                                           Instant now, Instant leaseUntil) {
-        long deadline = Long.parseLong(item.get(PRIMARY_DEADLINE).n());
+        String deadlineAttribute = item.containsKey(DEADLINE_AT) ? DEADLINE_AT : PRIMARY_DEADLINE;
+        long deadline = Long.parseLong(item.get(deadlineAttribute).n());
         long version = Long.parseLong(item.get(VERSION).n());
         if (now.toEpochMilli() >= deadline) {
             dynamoDbClient.updateItem(UpdateItemRequest.builder().tableName(DELIVERY_STATE).key(key)
                     .conditionExpression("#status = :scheduled AND #version = :version AND #deadline <= :nowMillis")
                     .updateExpression("SET #status = :pending, #reason = :expired, #observed = :at, "
                             + "#updated = :at, #version = #version + :one REMOVE #next")
-                    .expressionAttributeNames(Map.of("#status", STATUS, "#version", VERSION, "#deadline", PRIMARY_DEADLINE,
+                    .expressionAttributeNames(Map.of("#status", STATUS, "#version", VERSION, "#deadline", deadlineAttribute,
                             "#reason", FAILURE_REASON, "#observed", FAILURE_OBSERVED_AT, "#updated", UPDATED_AT,
                             "#next", NEXT_ATTEMPT_AT))
                     .expressionAttributeValues(Map.of(":scheduled", text(RETRY_SCHEDULED), ":version", number(version),
                             ":nowMillis", number(now.toEpochMilli()), ":pending", text(DECISION_PENDING),
-                            ":expired", text("PRIMARY_EXPIRED"), ":at", text(Instant.ofEpochMilli(deadline).toString()),
+                            ":expired", text(routeOrder(item) == 2 ? "SECONDARY_EXPIRED" : "PRIMARY_EXPIRED"), ":at", text(Instant.ofEpochMilli(deadline).toString()),
                             ":one", number(1))).build());
             return DispatchClaim.decisionPending();
         }
@@ -239,7 +298,7 @@ public class DispatchAttemptRepository implements DispatchAttemptStore {
                 .updateExpression("SET #status = :processing, #version = #version + :one, #count = #count + :one, "
                         + "#lease = :lease, #updated = :now REMOVE #next")
                 .expressionAttributeNames(Map.of("#status", STATUS, "#version", VERSION, "#next", NEXT_ATTEMPT_AT,
-                        "#deadline", PRIMARY_DEADLINE, "#count", RETRY_COUNT, "#lease", LEASE_UNTIL, "#updated", UPDATED_AT))
+                        "#deadline", deadlineAttribute, "#count", RETRY_COUNT, "#lease", LEASE_UNTIL, "#updated", UPDATED_AT))
                 .expressionAttributeValues(Map.of(":scheduled", text(RETRY_SCHEDULED), ":version", number(version),
                         ":nowMillis", number(now.toEpochMilli()), ":max", number(DispatchRetryPolicy.MAX_RETRIES),
                         ":processing", text(PROCESSING), ":one", number(1), ":lease", number(leaseUntil.toEpochMilli()),
@@ -251,7 +310,12 @@ public class DispatchAttemptRepository implements DispatchAttemptStore {
     private DispatchAttempt attempt(Map<String, AttributeValue> item) {
         return new DispatchAttempt(item.get(DELIVERY_ID).s(), item.get(ATTEMPT_ID).s(), item.get(PROVIDER).s(),
                 Long.parseLong(item.get(VERSION).n()), Integer.parseInt(item.get(RETRY_COUNT).n()),
-                Instant.ofEpochMilli(Long.parseLong(item.get(PRIMARY_DEADLINE).n())));
+                Instant.ofEpochMilli(Long.parseLong(item.get(item.containsKey(DEADLINE_AT) ? DEADLINE_AT : PRIMARY_DEADLINE).n())),
+                routeOrder(item));
+    }
+
+    private int routeOrder(Map<String, AttributeValue> item) {
+        return item.containsKey(ROUTE_ORDER) ? Integer.parseInt(item.get(ROUTE_ORDER).n()) : 1;
     }
 
     private void markReviewRequired(Map<String, AttributeValue> key, long version, Instant now) {

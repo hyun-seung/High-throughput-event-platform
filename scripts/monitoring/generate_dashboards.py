@@ -80,7 +80,7 @@ active_alerts='count(ALERTS{alertstate="firing"}) or vector(0)'
 base_logs='{service=~"api|ingress|dispatch",zone="local"}'
 
 d=Dashboard('overview','통합 관제')
-d.text('발송 플랫폼 통합 관제','**LOCAL · HTTP 1차 접수 경로**　10초 새로고침 · 상태와 지표는 관측 시점 기준\n\n업체 접수는 최종 전달 완료와 다릅니다. [메시지 ID로 추적](/d/delivery-trace) · [서비스 상세](/d/delivery-services) · [인프라 상세](/d/delivery-infra)',0,0,24,3)
+d.text('발송 플랫폼 통합 관제','**LOCAL · 업체 접수 경로**　10초 새로고침 · 상태와 지표는 관측 시점 기준\n\n업체 접수는 최종 전달 완료와 다릅니다. [메시지 ID로 추적](/d/delivery-trace) · [서비스 상세](/d/delivery-services) · [인프라 상세](/d/delivery-infra)',0,0,24,3)
 for i,(title,expr,unit,desc) in enumerate([
  ('인입 TPS',api,'reqps','인증 API의 전체 제출 요청. 재요청·거절도 포함'),('HTTP 업체 접수 성공률',http_success,'percent','실제 업체 호출 구간의 성공 비율. 최종 전달 성공률이 아님. 호출이 없으면 데이터 없음'),
  ('접수 저장 지연 p95',latency,'s','최초 인입부터 신규 업체 접수 결과 DB 저장 직후'),('Kafka 최대 파티션 Lag','max(platform_kafka_committed_lag)','short','Worker group의 committed offset 기준'),
@@ -90,7 +90,7 @@ d.text('메시지 E2E 단계 · 상세 화면으로 이동','현재 구현된 1~
 for i,(name,expr) in enumerate([('① API 인입',api),('② 원본 저장',total('delivery_outcomes_total','outcome="ingress_forwarded"')),('③ 큐 처리 대기','sum(platform_kafka_committed_lag)'),('④ HTTP 접수',accepted)]):
  d.panel(name,expr,i*3,9,3,4,'stat','short' if i==2 else 'reqps',links=jump('infra' if i==2 else 'trace'))
 for i,name in enumerate(['⑤ 결과 수신','⑥ 결과·폴백 처리','⑦ 최종화·정리','⑧ 고객 통지']):d.text(name,'**미구현**\n\n업무 연결 후 표시',12+i*3,9,3,4)
-d.text('내부 채널 · 2차 발송','**현재 인입:** 인증 HTTP API\n\n**미연결:** 내부 업무 채널\n\n**미구현:** TCP 2차, 결과 웹훅, 만료·재시도, 고객 결과 통지\n\n과금 기능은 현재 요구 범위에 없습니다.',0,13,6,9)
+d.text('내부 채널 · 2차 발송','**현재 인입:** 인증 HTTP API\n\n**미연결:** 내부 업무 채널\n\n**구현:** HTTP 재시도·허용 요청의 TCP 2차 (새 앱 빌드 적용 필요)\n\n**미구현:** 결과 웹훅, 주기 만료, 고객 결과 통지\n\n과금 기능은 현재 요구 범위에 없습니다.',0,13,6,9)
 d.panel('입력과 실제 접수 저장 처리량',api,6,13,18,9,unit='reqps',legend='API 입력')
 d.panels[-1]['targets'].append({'refId':'B','expr':accepted,'legendFormat':'신규 업체 접수 저장','range':True})
 d.panel('단계별 평균 처리 시간',f'sum by (stage) ({r(STAGE+"_sum")}) / sum by (stage) ({r(STAGE+"_count")})',0,22,12,8,unit='s')
@@ -123,7 +123,7 @@ p['options']={'showValue':'auto','mergeValues':True,'rowHeight':0.8,'legend':{'d
 d.save()
 
 d=Dashboard('providers','외부 업체')
-d.text('1차 HTTP 업체 · 시뮬레이터','현재 연결 업체는 **mock-provider** 하나입니다. SKT/KT/LGU 이름이나 실적을 임의로 만들지 않습니다. 실제 업체와 결과 웹훅이 연결되면 업체별 분해를 확장합니다.',0,0)
+d.text('HTTP 1차 · TCP 2차 시뮬레이터','1차 mock-provider, 2차 tcp-provider 개발 계약입니다. TCP 지표는 새 앱 빌드를 적용한 뒤 수집됩니다. 업체 접수는 최종 전달 성공이 아닙니다.',0,0)
 for i,(title,expr,unit) in enumerate([('HTTP 시도 TPS',total(STAGE+'_count','stage="dispatch_http"'),'reqps'),('접수 성공률',http_success,'percent'),('HTTP p95',quant(STAGE,'stage="dispatch_http"'),'s'),('운영 확인 관측',f'sum(increase(delivery_outcomes_total{{outcome="dispatch_review"}}[{RANGE}]))','short')]):d.panel(title,expr,i*6,3,6,4,'stat',unit)
 d.panel('HTTP p50 / p95 / p99',quant(STAGE,'stage="dispatch_http"',.5),0,7,12,9,unit='s',legend='p50')
 for key,q in [('B',.95),('C',.99)]:d.panels[-1]['targets'].append({'refId':key,'expr':quant(STAGE,'stage="dispatch_http"',q),'legendFormat':f'p{int(q*100)}','range':True})
@@ -132,8 +132,12 @@ d.panels[-1]['targets'].append({'refId':'B','expr':r('simulator_effects_total'),
 d.panel('내부 중복 차단',f'sum(increase(delivery_outcomes_total{{outcome="dispatch_duplicate"}}[{RANGE}]))',0,16,8,5,'stat')
 d.panel('시뮬레이터 외부 중복 제거',f'sum(increase(simulator_deduplicated_total[{RANGE}]))',8,16,8,5,'stat')
 d.panel('시뮬레이터 용량 거절',f'sum(increase(simulator_capacity_rejections_total[{RANGE}]))',16,16,8,5,'stat')
-d.text('결과 수신 · 폴백 · 외부 멱등성','결과 웹훅 지연·미수신·TCP 2차 발송은 미구현입니다. 시뮬레이터 calls/effects 차이는 정상 성공률과 다르며 강제 실패도 함께 확인해야 합니다. Provider 성공 후 결과 저장 전 장애는 운영 확인 대상입니다.',0,21,24,3)
-d.logs('업체 오류 및 운영 확인',base_logs+' | json | stage=~"provider|dispatch" | outcome!= "accepted"',0,24)
+d.text('결과 수신 · 폴백 · 외부 멱등성','허용 요청의 TCP 2차 접수와 재시도를 구현했습니다. 결과 웹훅·주기 만료·고객 통지는 미구현입니다. 시뮬레이터 calls/effects 차이는 정상 성공률과 다르며 강제 실패도 함께 확인해야 합니다. Provider 성공 후 결과 저장 전 장애는 운영 확인 대상입니다.',0,21,24,3)
+d.logs('업체 오류 및 운영 확인',base_logs+' | json | stage=~"provider|dispatch|secondary" | outcome!= "accepted"',0,24)
+d.panel('TCP 시도 TPS',total(STAGE+'_count','stage="dispatch_tcp"'),0,34,6,5,'stat','reqps')
+d.panel('TCP 접수 저장 TPS',total('delivery_outcomes_total','outcome="secondary_accepted"'),6,34,6,5,'stat','reqps')
+d.panel('TCP 응답 p95',quant(STAGE,'stage="dispatch_tcp"'),12,34,6,5,'stat','s')
+d.panel('전체 재시도 예약 관측',f'sum(increase(delivery_outcomes_total{{outcome="dispatch_retry_scheduled"}}[{RANGE}]))',18,34,6,5,'stat')
 d.save()
 
 d=Dashboard('customers','고객')

@@ -23,6 +23,7 @@ import static event.common.dynamodb.DynamoDbAttributeNames.EVENT_ID;
 import static event.common.dynamodb.DynamoDbAttributeNames.EVENT_TYPE;
 import static event.common.dynamodb.DynamoDbAttributeNames.OCCURRED_AT;
 import static event.common.dynamodb.DynamoDbAttributeNames.PAYLOAD;
+import static event.common.dynamodb.DynamoDbAttributeNames.FALLBACK_ALLOWED;
 import static event.common.dynamodb.DynamoDbAttributeNames.PK;
 import static event.common.dynamodb.DynamoDbAttributeNames.SK;
 import static event.common.dynamodb.DynamoDbAttributeNames.STATUS;
@@ -74,6 +75,7 @@ public class DeliveryRepository {
         boolean sameRequest = value(existing, EVENT_ID).equals(event.eventId())
                 && value(existing, TENANT_ID).equals(String.valueOf(event.tenantId()))
                 && value(existing, DELIVERY_TYPE).equals(event.deliveryType())
+                && Boolean.TRUE.equals(existing.getOrDefault(FALLBACK_ALLOWED, AttributeValue.fromBool(false)).bool()) == event.fallbackAllowed()
                 && value(existing, PAYLOAD).equals(serializePayload(event.payload()));
 
         if (!sameRequest) {
@@ -85,7 +87,7 @@ public class DeliveryRepository {
         return new DeliveryEvent(
                 event.schemaVersion(), event.eventId(), event.eventType(), event.deliveryId(),
                 event.tenantId(), event.deliveryType(), event.payload(), originalOccurredAt,
-                event.correlationId(), event.causationId());
+                event.correlationId(), event.causationId(), event.fallbackAllowed());
     }
 
     private Map<String, AttributeValue> toItem(DeliveryEvent event) {
@@ -99,6 +101,7 @@ public class DeliveryRepository {
         item.put(TENANT_ID, AttributeValue.fromN(String.valueOf(event.tenantId())));
         item.put(DELIVERY_TYPE, AttributeValue.fromS(event.deliveryType()));
         item.put(PAYLOAD, AttributeValue.fromS(serializePayload(event.payload())));
+        item.put(FALLBACK_ALLOWED, AttributeValue.fromBool(event.fallbackAllowed()));
         item.put(OCCURRED_AT, AttributeValue.fromS(event.occurredAt().toString()));
         item.put(STATUS, AttributeValue.fromS(ACCEPTED));
         item.put(CREATED_AT, AttributeValue.fromS(now.toString()));

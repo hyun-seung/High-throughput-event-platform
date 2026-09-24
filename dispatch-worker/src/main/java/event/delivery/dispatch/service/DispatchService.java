@@ -31,6 +31,7 @@ public class DispatchService {
     private final DispatchProperties dispatchProperties;
     private final Clock dispatchClock;
     private final DeliveryMetrics metrics;
+    private final SecondaryDispatchService secondaryDispatch;
 
     public void dispatch(DeliveryEvent event) {
         metrics.measure(DeliveryMetrics.Stage.DISPATCH_PROCESS, () -> process(event));
@@ -70,6 +71,7 @@ public class DispatchService {
             case DECISION_PENDING -> {
                 DeliveryAudit.record(event, "dispatch", "decision_pending", attemptId, dispatchProperties.provider(), "pending_next_stage");
                 metrics.outcome(DeliveryMetrics.Outcome.DISPATCH_DECISION_PENDING);
+                secondaryDispatch.dispatch(event, attemptId);
             }
             case REVIEW_REQUIRED -> {
                 DeliveryAudit.record(event, "dispatch", "review_required", attemptId, dispatchProperties.provider(), "result_unknown");
@@ -83,8 +85,8 @@ public class DispatchService {
     }
 
     private void invokeProvider(DeliveryEvent event, DispatchClaim claim, String attemptId) {
-        if (!dispatchClock.instant().isBefore(claim.attempt().primaryDeadline())) {
-            persistFailure(event, claim, attemptId, DispatchRetryPolicy.expired(claim.attempt().primaryDeadline()));
+        if (!dispatchClock.instant().isBefore(claim.attempt().deadline())) {
+            persistFailure(event, claim, attemptId, DispatchRetryPolicy.expired(claim.attempt().deadline()));
             return;
         }
         final ProviderDispatchResponse response;
@@ -102,8 +104,8 @@ public class DispatchService {
             return;
         }
 
-        if (!dispatchClock.instant().isBefore(claim.attempt().primaryDeadline())) {
-            persistFailure(event, claim, attemptId, DispatchRetryPolicy.expired(claim.attempt().primaryDeadline()));
+        if (!dispatchClock.instant().isBefore(claim.attempt().deadline())) {
+            persistFailure(event, claim, attemptId, DispatchRetryPolicy.expired(claim.attempt().deadline()));
             return;
         }
 
@@ -135,6 +137,9 @@ public class DispatchService {
         });
         if (decision.state() == DispatchFailureDecision.State.RETRY_SCHEDULED) {
             throw new DispatchRetryPendingException(event.deliveryId());
+        }
+        if (decision.state() == DispatchFailureDecision.State.DECISION_PENDING) {
+            secondaryDispatch.dispatch(event, attemptId);
         }
     }
 }

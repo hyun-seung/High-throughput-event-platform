@@ -7,7 +7,7 @@ import org.springframework.context.annotation.Configuration;
 import java.time.Clock;
 
 @Configuration
-@EnableConfigurationProperties(DispatchProperties.class)
+@EnableConfigurationProperties({DispatchProperties.class, SecondaryDispatchProperties.class})
 public class DispatchConfiguration {
 
     @Bean

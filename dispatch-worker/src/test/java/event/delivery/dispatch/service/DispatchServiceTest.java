@@ -47,7 +47,7 @@ class DispatchServiceTest {
                 attemptStore,
                 providerClient,
                 properties,
-                Clock.fixed(NOW, ZoneOffset.UTC), new DeliveryMetrics(registry)
+                Clock.fixed(NOW, ZoneOffset.UTC), new DeliveryMetrics(registry), org.mockito.Mockito.mock(SecondaryDispatchService.class)
         );
         event = DeliveryEvent.requested(
                 DeliveryIds.deliveryId(10L, "request-1"),
@@ -189,6 +189,16 @@ class DispatchServiceTest {
     }
 
     private static final class FakeDispatchAttemptStore implements DispatchAttemptStore {
+
+        @Override
+        public java.util.Optional<event.delivery.dispatch.model.SecondaryRoute> prepareSecondary(DeliveryEvent event, String id, String provider, Duration ttl) {
+            throw new UnsupportedOperationException("Secondary service is mocked in this test");
+        }
+
+        @Override
+        public DispatchClaim claimSecondary(DeliveryEvent event, event.delivery.dispatch.model.SecondaryRoute route, Instant now, Instant leaseUntil) {
+            throw new UnsupportedOperationException("Secondary service is mocked in this test");
+        }
 
         private DispatchClaim nextClaim;
         private boolean acceptedRecorded;

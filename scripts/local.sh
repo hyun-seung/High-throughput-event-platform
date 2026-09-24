@@ -43,6 +43,7 @@ case "${1:-help}" in
     export DB_URL="jdbc:postgresql://localhost:${POSTGRES_HOST_PORT:-5432}/delivery"
     export DB_USERNAME=delivery DB_PASSWORD=delivery
     export DYNAMODB_ENDPOINT="http://localhost:${DYNAMODB_HOST_PORT:-8000}"
+    export EXTERNAL_TCP_PORT="${MOCK_TCP_PORT:-8093}" SIMULATOR_TCP_PORT="${MOCK_TCP_PORT:-8093}"
     export EXTERNAL_API_BASE_URL="http://localhost:${MOCK_PROVIDER_PORT:-8090}"
     export SERVER_PORT="${DELIVERY_API_PORT:-8080}"
     case "$module" in

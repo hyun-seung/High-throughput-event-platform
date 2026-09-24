@@ -9,6 +9,9 @@ public final class DynamoDbAttributeNames {
     public static final String DELIVERY_TYPE = "delivery_type";
     public static final String PAYLOAD = "payload";
     public static final String OCCURRED_AT = "occurred_at";
+    public static final String FALLBACK_ALLOWED = "fallback_allowed";
+    public static final String DEADLINE_AT = "deadline_at";
+    public static final String ROUTE_ORDER = "route_order";
 
     public static final String PK = "pk";
     public static final String SK = "sk";

@@ -169,7 +169,7 @@ bash scripts/monitoring.sh benchmark --suite baseline
 
 경보는 Prometheus 규칙 평가와 대시보드 표시까지 구현했다. 현재 임계값(lag 100건 1분, 최장 대기 30초 등)은 로컬 시험용이며 운영 SLO가 아니다. Slack·메일·문자 발송, Alertmanager 연동, 경보 담당자·반복 억제는 아직 없다.
 
-남은 작업은 결과 웹훅/TCP/만료 업무별 계측, 고유 운영 미해결 상태 조회, 운영 환경의 AWS/컨테이너 자원 수집, 외부 경보 전달과 장애 이력이다. MTTD/MTTR은 이력이 생긴 뒤 계산한다.
+남은 작업은 결과 웹훅/만료 업무별 계측, TCP 부하 검증, 고유 운영 미해결 상태 조회, 운영 환경의 AWS/컨테이너 자원 수집, 외부 경보 전달과 장애 이력이다. MTTD/MTTR은 이력이 생긴 뒤 계산한다.
 
 ## 8. 공식 근거
 
@@ -179,3 +179,9 @@ bash scripts/monitoring.sh benchmark --suite baseline
 - [Alloy 파일 로그 수집](https://grafana.com/docs/alloy/latest/reference/components/loki/loki.source.file/) 및 [로그 처리](https://grafana.com/docs/alloy/latest/reference/components/loki/loki.process/): 파일 추적·JSON 처리·허용 로그 필터의 근거다.
 - [Loki 설정 예제](https://grafana.com/docs/loki/latest/configure/examples/): 단일 로컬 파일 저장 구성을 참고했다. 운영 고가용성 구성의 근거로 사용하지 않는다.
 - [Redis exporter](https://github.com/oliver006/redis_exporter), [PostgreSQL exporter](https://github.com/prometheus-community/postgres_exporter): 앱 지표와 별도로 DB 연결·서버 상태를 관측한다.
+
+## TCP 2차 접수 추가
+
+TCP 구현 후 외부 업체 화면에 시도 TPS·접수 저장 TPS·응답 p95·전체 재시도 예약 관측을 추가했다. 현재 provision 파일은 7개 화면·92개 패널·80개 질의다. 위 최초 구축 검증 수치는 당시 기록이다. 새 지표는 새 앱 JAR 적용 이후 수집되며, TCP 접수와 최종 전달 성공을 구분한다. [계약과 검증 범위](25-대체-발송-허용과-TCP-2차-접수.md).
+
+2026-09-24 추가한 4개 PromQL의 Prometheus 직접 실행은 성공했다. 기존 Grafana API timeout과 Docker의 컨테이너 zombie 종료 오류로 화면 반영 검증은 보류 상태다. 단일 컨테이너 재시작·재생성은 완료하지 못했으며 영구 볼륨은 유지했다. Docker 런타임 복구 후 전체 `verify`를 다시 실행해야 한다. 상세 경과는 위 계약 문서에 기록했다.
