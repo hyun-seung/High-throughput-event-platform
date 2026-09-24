@@ -94,7 +94,7 @@ public class TcpSimulatorServer implements SmartLifecycle, AutoCloseable {
             payload.remove("forceFail");
             payload.put("simulatorResultCode", payload.getOrDefault("simulatorTcpResultCode", "ACCEPTED"));
             var received = ledger.receive("tcp:" + request.attemptId(), new ProviderDispatchRequest(request.deliveryId(),
-                    request.tenantId(), request.deliveryType(), payload, request.occurredAt()));
+                    request.tenantId(), request.deliveryType(), payload, request.occurredAt(), request.invocation()));
             if (mode.equals("close-after-effect")) return;
             var response = new TcpDeliveryResponse(received.deliveryId(), mode.equals("wrong-attempt") ? "unrelated" : request.attemptId(),
                     received.accepted(), received.processedAt(), received.accepted() ? "RECEIVED" : received.code());

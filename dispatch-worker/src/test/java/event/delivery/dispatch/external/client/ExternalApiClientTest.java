@@ -33,6 +33,7 @@ class ExternalApiClientTest {
             Instant.parse("2026-09-24T00:00:00Z"));
     private final AtomicInteger calls = new AtomicInteger();
     private final AtomicReference<String> receivedKey = new AtomicReference<>();
+    private final AtomicReference<String> receivedBody = new AtomicReference<>();
     private final CountDownLatch releaseResponse = new CountDownLatch(1);
     private HttpServer server;
     private ExecutorService executor;
@@ -51,7 +52,7 @@ class ExternalApiClientTest {
             try (exchange) {
                 calls.incrementAndGet();
                 receivedKey.set(exchange.getRequestHeaders().getFirst("Idempotency-Key"));
-                exchange.getRequestBody().readAllBytes();
+                receivedBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
                 if (holdResponse) {
                     try {
                         releaseResponse.await(5, TimeUnit.SECONDS);
@@ -95,6 +96,14 @@ class ExternalApiClientTest {
     private String response(String id, String accepted, String code) {
         return "{\"deliveryId\":\"%s\",\"accepted\":%s,\"processedAt\":\"2026-09-24T00:00:01Z\",\"code\":%s}"
                 .formatted(id, accepted, code == null ? "null" : "\"" + code + "\"");
+    }
+
+    @Test
+    void invocationIsSentSeparatelyFromStableAttemptKey() {
+        body = response(event.deliveryId(), "true", "ACCEPTED");
+        assertTrue(client.send(event, "stable-attempt", 3).accepted());
+        assertEquals("stable-attempt", receivedKey.get());
+        assertEquals(3, tools.jackson.databind.json.JsonMapper.builder().build().readTree(receivedBody.get()).get("invocation").asInt());
     }
 
     @Test

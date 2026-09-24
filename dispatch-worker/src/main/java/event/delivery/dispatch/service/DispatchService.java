@@ -92,7 +92,7 @@ public class DispatchService {
         final ProviderDispatchResponse response;
         try {
             response = metrics.measure(DeliveryMetrics.Stage.DISPATCH_HTTP, () -> {
-                ProviderDispatchResponse received = deliveryProviderClient.send(event, attemptId);
+                ProviderDispatchResponse received = deliveryProviderClient.send(event, attemptId, claim.attempt().retryCount() + 1);
                 if (!Boolean.TRUE.equals(received.accepted())) {
                     throw new ProviderFailureException(ProviderFailureException.Kind.INVALID_RESPONSE);
                 }

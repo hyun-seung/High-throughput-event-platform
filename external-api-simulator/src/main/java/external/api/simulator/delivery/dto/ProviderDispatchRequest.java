@@ -8,6 +8,11 @@ public record ProviderDispatchRequest(
         Long tenantId,
         String deliveryType,
         Map<String, Object> payload,
-        Instant occurredAt
+        Instant occurredAt,
+        Integer invocation
 ) {
+    public ProviderDispatchRequest(String deliveryId, Long tenantId, String deliveryType,
+                                   Map<String, Object> payload, Instant occurredAt) {
+        this(deliveryId, tenantId, deliveryType, payload, occurredAt, 1);
+    }
 }

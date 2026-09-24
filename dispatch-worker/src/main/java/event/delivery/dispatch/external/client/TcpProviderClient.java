@@ -37,8 +37,13 @@ public class TcpProviderClient implements SecondaryProviderClient, AutoCloseable
 
     @Override
     public ProviderDispatchResponse send(DeliveryEvent event, String idempotencyKey) {
+        return send(event, idempotencyKey, 1);
+    }
+
+    @Override
+    public ProviderDispatchResponse send(DeliveryEvent event, String idempotencyKey, int invocation) {
         try (var socket = new Socket()) {
-            byte[] body = mapper.writeValueAsBytes(TcpDeliveryRequest.from(event, idempotencyKey));
+            byte[] body = mapper.writeValueAsBytes(TcpDeliveryRequest.from(event, idempotencyKey, invocation));
             if (body.length > TcpFrames.MAX_BYTES) throw new ProviderFailureException(PERMANENT_REJECTION);
             // SO_TIMEOUT covers reads only. Closing the socket also bounds blocked writes and slow trickles.
             var timeout = timeouts.schedule(() -> closeSocket(socket), properties.exchangeTimeout().toMillis(), TimeUnit.MILLISECONDS);

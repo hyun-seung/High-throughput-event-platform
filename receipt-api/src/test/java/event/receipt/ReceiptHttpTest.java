@@ -115,6 +115,17 @@ class ReceiptHttpTest {
     }
 
     @Test
+    void invocationIsPreservedAndOutOfRangeInvocationCannotPublish() throws Exception {
+        assertEquals(202, send(request("mock-provider", PRIMARY, body().replace("{", "{\"invocation\":3,"))).statusCode());
+        var captured = ArgumentCaptor.forClass(ReceiptEvent.class);
+        verify(publisher).publish(captured.capture());
+        assertEquals(3, captured.getValue().invocation());
+        clearInvocations(publisher);
+        assertEquals(400, send(request("mock-provider", PRIMARY, body().replace("{", "{\"invocation\":5,"))).statusCode());
+        verifyNoInteractions(publisher);
+    }
+
+    @Test
     void limitsBodyWithAndWithoutContentLength() throws Exception {
         byte[] oversized = (" ".repeat(17000) + body()).getBytes(StandardCharsets.UTF_8);
         assertEquals(413, send(request("mock-provider", PRIMARY, new String(oversized, StandardCharsets.UTF_8))).statusCode());

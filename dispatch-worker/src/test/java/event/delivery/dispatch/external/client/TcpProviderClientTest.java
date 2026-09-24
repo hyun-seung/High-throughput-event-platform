@@ -34,6 +34,7 @@ class TcpProviderClientTest {
             var request = mapper.readValue(TcpFrames.read(socket.getInputStream()), TcpDeliveryRequest.class);
             assertEquals(event.deliveryId(), request.deliveryId());
             assertEquals("attempt", request.attemptId());
+            assertEquals(3, request.invocation());
             byte[] reply = mapper.writeValueAsBytes(new TcpDeliveryResponse("delivery", "attempt", true, Instant.now(), "RECEIVED"));
             var buffer = new ByteArrayOutputStream();
             TcpFrames.write(buffer, reply);
@@ -41,7 +42,7 @@ class TcpProviderClientTest {
                 socket.getOutputStream().write(b);
                 socket.getOutputStream().flush();
             }
-        }, client -> assertTrue(client.send(event, "attempt").accepted()));
+        }, client -> assertTrue(client.send(event, "attempt", 3).accepted()));
     }
 
     @ParameterizedTest
