@@ -26,6 +26,8 @@ external-api:
 dispatch:
   provider: ${DISPATCH_PROVIDER:mock-provider}
   lease-duration: ${DISPATCH_LEASE_DURATION:30s}
+  primary-ttl: ${DISPATCH_PRIMARY_TTL:3h}
+  no-response-retry-delay: ${DISPATCH_NO_RESPONSE_RETRY_DELAY:1s}
   redelivery-backoff-ms: ${DISPATCH_REDELIVERY_BACKOFF_MS:1000}
 
 delivery:

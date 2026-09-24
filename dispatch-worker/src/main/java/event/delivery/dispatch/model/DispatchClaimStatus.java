@@ -4,5 +4,7 @@ public enum DispatchClaimStatus {
     CLAIMED,
     ALREADY_ACCEPTED,
     IN_PROGRESS,
-    REVIEW_REQUIRED
+    REVIEW_REQUIRED,
+    RETRY_WAIT,
+    DECISION_PENDING
 }

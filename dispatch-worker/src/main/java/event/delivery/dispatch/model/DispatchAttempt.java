@@ -1,9 +1,13 @@
 package event.delivery.dispatch.model;
 
+import java.time.Instant;
+
 public record DispatchAttempt(
         String deliveryId,
         String attemptId,
         String provider,
-        long version
+        long version,
+        int retryCount,
+        Instant primaryDeadline
 ) {
 }

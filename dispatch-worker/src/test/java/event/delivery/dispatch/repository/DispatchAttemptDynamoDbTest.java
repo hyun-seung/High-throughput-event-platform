@@ -7,10 +7,13 @@ import event.delivery.dispatch.config.DispatchProperties;
 import event.delivery.dispatch.external.dto.ProviderDispatchResponse;
 import event.delivery.dispatch.model.DispatchAttempt;
 import event.delivery.dispatch.model.DispatchClaim;
+import event.delivery.dispatch.model.DispatchFailureDecision;
 import event.delivery.dispatch.model.DispatchClaimStatus;
 import event.delivery.dispatch.port.DeliveryProviderClient;
 import event.delivery.dispatch.port.DispatchAttemptStore;
 import event.delivery.dispatch.service.DispatchService;
+import event.delivery.dispatch.service.DispatchRetryPendingException;
+import event.delivery.dispatch.external.client.ProviderFailureException;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
@@ -33,6 +36,24 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
+import org.apache.kafka.clients.admin.Admin;
+import org.apache.kafka.clients.admin.NewTopic;
+import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.serialization.ByteArraySerializer;
+import org.apache.kafka.common.serialization.StringDeserializer;
+import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
+import org.springframework.kafka.listener.ContainerProperties;
+import org.springframework.kafka.listener.KafkaMessageListenerContainer;
+import org.springframework.kafka.listener.MessageListener;
+import org.springframework.kafka.support.TopicPartitionOffset;
+import org.springframework.kafka.support.serializer.JacksonJsonDeserializer;
+import event.delivery.dispatch.config.DispatchFailureConfiguration;
+import event.delivery.dispatch.consumer.DispatchRequestConsumer;
+import tools.jackson.databind.json.JsonMapper;
 
 import static event.common.dynamodb.DynamoDbAttributeNames.*;
 import static event.common.dynamodb.DynamoDbTableNames.DELIVERY_STATE;
@@ -105,8 +126,13 @@ class DispatchAttemptDynamoDbTest {
     void providerEffectWithoutResultRecordIsNotRepeatedOnReplay() {
         DispatchAttemptStore failingResultStore = new DispatchAttemptStore() {
             @Override
-            public DispatchClaim claim(DeliveryEvent request, String attemptId, String provider, Instant now, Instant until) {
-                return repository.claim(request, attemptId, provider, now, until);
+            public DispatchClaim claim(DeliveryEvent request, String attemptId, String provider, Instant now, Instant until, Instant deadline) {
+                return repository.claim(request, attemptId, provider, now, until, deadline);
+            }
+
+            @Override
+            public void recordFailure(DispatchAttempt attempt, DispatchFailureDecision decision) {
+                repository.recordFailure(attempt, decision);
             }
 
             @Override
@@ -227,6 +253,259 @@ class DispatchAttemptDynamoDbTest {
         assertReview(event);
     }
 
+    @Test
+    void restartReadsReservationAndOnlyDueWorkerCanClaim() throws Exception {
+        var first = claim(event, NOW).attempt();
+        repository.recordFailure(first, retryAt(NOW.plusSeconds(10)));
+        repository = new DispatchAttemptRepository(client);
+        assertEquals(DispatchClaimStatus.RETRY_WAIT, claim(event, NOW.plusSeconds(9)).status());
+        var start = new CountDownLatch(1);
+        var results = new ArrayList<Future<DispatchClaim>>();
+        DispatchAttempt winner = null;
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            for (int i = 0; i < 20; i++) results.add(executor.submit(() -> {
+                start.await();
+                return claim(event, NOW.plusSeconds(10));
+            }));
+            start.countDown();
+            int claimed = 0;
+            for (var result : results) {
+                var value = result.get(15, TimeUnit.SECONDS);
+                if (value.status() == DispatchClaimStatus.CLAIMED) {
+                    claimed++;
+                    winner = value.attempt();
+                } else assertEquals(DispatchClaimStatus.IN_PROGRESS, value.status());
+            }
+            assertEquals(1, claimed);
+        }
+        assertNotNull(winner);
+        assertEquals(1, winner.retryCount());
+        assertEquals(first.attemptId(), winner.attemptId());
+        assertEquals(2, winner.version());
+        assertThrows(ConditionalCheckFailedException.class, () -> repository.markAccepted(first, NOW, NOW));
+        assertThrows(ConditionalCheckFailedException.class, () -> repository.recordFailure(first, retryAt(NOW.plusSeconds(20))));
+        repository.markAccepted(winner, NOW.plusSeconds(10), NOW.plusSeconds(10));
+        assertEquals(DispatchClaimStatus.ALREADY_ACCEPTED, claim(event, NOW.plusSeconds(11)).status());
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = ProviderFailureException.Kind.class, names = {"RETRY_1S", "RETRY_10S", "NO_RESPONSE"})
+    void exactlyThreeRetriesSurviveNewServiceInstances(ProviderFailureException.Kind kind) {
+        var callCount = new AtomicInteger();
+        DeliveryProviderClient failingProvider = (request, key) -> {
+            callCount.incrementAndGet();
+            assertEquals(attemptId(request), key);
+            throw new ProviderFailureException(kind);
+        };
+        for (int retry = 0; retry <= 3; retry++) {
+            var current = service(new DispatchAttemptRepository(client), failingProvider, NOW.plusSeconds(retry * 10L));
+            if (retry < 3) assertThrows(DispatchRetryPendingException.class, () -> current.dispatch(event));
+            else current.dispatch(event);
+        }
+        service(repository, failingProvider, NOW.plusSeconds(100)).dispatch(event);
+        assertEquals(4, callCount.get());
+        assertEquals("3", stored(event).get(RETRY_COUNT).n());
+        assertEquals("DECISION_PENDING", stored(event).get(STATUS).s());
+        assertEquals("RETRY_EXHAUSTED_" + kind, stored(event).get(FAILURE_REASON).s());
+        assertFalse(stored(event).containsKey(NEXT_ATTEMPT_AT));
+    }
+
+    @Test
+    void lostFailureWriteAcknowledgementDoesNotLoseOrDuplicateReservation() {
+        var lossClient = mock(DynamoDbClient.class, delegatesTo(client));
+        doAnswer(invocation -> {
+            UpdateItemRequest request = invocation.getArgument(0);
+            var result = client.updateItem(request);
+            if (request.expressionAttributeValues().containsKey(":state")) {
+                throw SdkClientException.create("response lost after failure write");
+            }
+            return result;
+        }).when(lossClient).updateItem(any(UpdateItemRequest.class));
+        DeliveryProviderClient failing = (request, key) -> {
+            calls.incrementAndGet();
+            throw new ProviderFailureException(ProviderFailureException.Kind.RETRY_10S);
+        };
+        assertThrows(SdkClientException.class, () -> service(new DispatchAttemptRepository(lossClient), failing, NOW).dispatch(event));
+        assertThrows(DispatchRetryPendingException.class, () -> service(repository, NOW.plusSeconds(9)).dispatch(event));
+        assertEquals(1, calls.get());
+        service(repository, NOW.plusSeconds(10)).dispatch(event);
+        service(repository, NOW.plusSeconds(11)).dispatch(event);
+        assertEquals(2, calls.get());
+        assertEquals("ACCEPTED", stored(event).get(STATUS).s());
+    }
+
+    @Test
+    void failureBeforeDurableRecordingRequiresReviewWithoutAutomaticRetry() {
+        var lossClient = mock(DynamoDbClient.class, delegatesTo(client));
+        doAnswer(invocation -> {
+            UpdateItemRequest request = invocation.getArgument(0);
+            if (request.expressionAttributeValues().containsKey(":state")) throw SdkClientException.create("storage unavailable");
+            return client.updateItem(request);
+        }).when(lossClient).updateItem(any(UpdateItemRequest.class));
+        DeliveryProviderClient failing = (request, key) -> {
+            calls.incrementAndGet();
+            throw new ProviderFailureException(ProviderFailureException.Kind.NO_RESPONSE);
+        };
+        assertThrows(SdkClientException.class, () -> service(new DispatchAttemptRepository(lossClient), failing, NOW).dispatch(event));
+        service(repository, LEASE_END).dispatch(event);
+        assertEquals(1, calls.get());
+        assertReview(event);
+    }
+
+    @Test
+    void resumedRetryWithoutResultDoesNotBecomeAnotherScheduledRetry() {
+        var first = claim(event, NOW).attempt();
+        repository.recordFailure(first, retryAt(NOW.plusSeconds(1)));
+        assertEquals(DispatchClaimStatus.CLAIMED, claim(event, NOW.plusSeconds(1)).status());
+        service(repository, NOW.plusSeconds(31)).dispatch(event);
+        assertReview(event);
+        assertEquals(0, calls.get());
+        assertEquals("1", stored(event).get(RETRY_COUNT).n());
+    }
+
+    @Test
+    void retryDeadlineIsPersistedAndCannotBeExtendedByConfigurationChange() {
+        var first = repository.claim(event, attemptId(event), PROVIDER, NOW, LEASE_END, NOW.plusSeconds(5)).attempt();
+        repository.recordFailure(first, retryAt(NOW.plusSeconds(10)));
+        assertEquals(DispatchClaimStatus.RETRY_WAIT, claim(event, NOW.plusSeconds(4)).status());
+        assertEquals(DispatchClaimStatus.DECISION_PENDING, claim(event, NOW.plusSeconds(5)).status());
+        assertEquals("PRIMARY_EXPIRED", stored(event).get(FAILURE_REASON).s());
+        assertEquals(NOW.plusSeconds(5).toString(), stored(event).get(FAILURE_OBSERVED_AT).s());
+        assertEquals("0", stored(event).get(RETRY_COUNT).n());
+    }
+
+    @Test
+    void lateAcceptanceIsStoredAsExpiryWithoutASecondProviderCall() {
+        var time = new java.util.concurrent.atomic.AtomicReference<>(NOW);
+        Clock clock = new Clock() {
+            public java.time.ZoneId getZone() { return ZoneOffset.UTC; }
+            public Clock withZone(java.time.ZoneId zone) { return this; }
+            public Instant instant() { return time.get(); }
+        };
+        DeliveryProviderClient late = (request, key) -> {
+            calls.incrementAndGet();
+            time.set(NOW.plusSeconds(10800));
+            return new ProviderDispatchResponse(request.deliveryId(), true, time.get());
+        };
+        new DispatchService(repository, late, new DispatchProperties(PROVIDER, Duration.ofSeconds(30)), clock, metrics()).dispatch(event);
+        service(repository, NOW.plusSeconds(10801)).dispatch(event);
+        assertEquals(1, calls.get());
+        assertEquals("PRIMARY_EXPIRED", stored(event).get(FAILURE_REASON).s());
+        assertEquals("DECISION_PENDING", stored(event).get(STATUS).s());
+    }
+
+    private DispatchFailureDecision retryAt(Instant due) {
+        return new DispatchFailureDecision(DispatchFailureDecision.State.RETRY_SCHEDULED, "RETRY_10S", NOW, due);
+    }
+
+    @Test
+    @EnabledIfEnvironmentVariable(named = "KAFKA_TEST_BOOTSTRAP_SERVERS", matches = ".+")
+    void kafkaOffsetRemainsBeforeReservationAcrossConsumerRestartThenCommitsOnceAccepted() throws Exception {
+        String bootstrap = System.getenv("KAFKA_TEST_BOOTSTRAP_SERVERS");
+        for (String address : bootstrap.split(",")) {
+            if (!address.trim().matches("(localhost|127\\.0\\.0\\.1):[0-9]+")) {
+                throw new IllegalArgumentException("Only local test Kafka endpoints are allowed");
+            }
+        }
+        String topic = "test.dispatch-retry." + UUID.randomUUID();
+        String group = topic + ".worker";
+        var time = new java.util.concurrent.atomic.AtomicReference<>(NOW);
+        Clock clock = new Clock() {
+            public java.time.ZoneId getZone() { return ZoneOffset.UTC; }
+            public Clock withZone(java.time.ZoneId zone) { return this; }
+            public Instant instant() { return time.get(); }
+        };
+        DeliveryProviderClient firstFails = (request, key) -> {
+            if (request.deliveryId().equals(event.deliveryId()) && calls.incrementAndGet() == 1) {
+                throw new ProviderFailureException(ProviderFailureException.Kind.RETRY_10S);
+            }
+            return new ProviderDispatchResponse(request.deliveryId(), true, time.get());
+        };
+        var observedPending = new java.util.concurrent.atomic.AtomicReference<>(new CountDownLatch(1));
+        KafkaMessageListenerContainer<String, DeliveryEvent> container = null;
+        try (var admin = Admin.create(Map.of("bootstrap.servers", bootstrap, "request.timeout.ms", 5000, "default.api.timeout.ms", 10000));
+             var input = new KafkaProducer<byte[], byte[]>(Map.of("bootstrap.servers", bootstrap, "acks", "all"),
+                     new ByteArraySerializer(), new ByteArraySerializer())) {
+            admin.createTopics(List.of(new NewTopic(topic, 1, (short) 1))).all().get(10, TimeUnit.SECONDS);
+            try {
+                container = retryContainer(bootstrap, topic, group, clock, firstFails, observedPending);
+                container.start();
+                var mapper = JsonMapper.builder().build();
+                input.send(new ProducerRecord<>(topic, mapper.writeValueAsBytes(newEvent()))).get(10, TimeUnit.SECONDS);
+                awaitCommit(admin, group, topic, 1);
+                input.send(new ProducerRecord<>(topic, mapper.writeValueAsBytes(event))).get(10, TimeUnit.SECONDS);
+                assertTrue(observedPending.get().await(10, TimeUnit.SECONDS));
+                assertEquals("RETRY_SCHEDULED", stored(event).get(STATUS).s());
+                container.stop();
+                assertEquals(1, committed(admin, group, topic));
+
+                observedPending.set(new CountDownLatch(1));
+                container = retryContainer(bootstrap, topic, group, clock, firstFails, observedPending);
+                container.start();
+                assertTrue(observedPending.get().await(10, TimeUnit.SECONDS));
+                assertEquals(1, calls.get(), "Restart before due time must not call provider");
+                assertEquals(1, committed(admin, group, topic));
+                time.set(NOW.plusSeconds(10));
+                awaitCommit(admin, group, topic, 2);
+                assertEquals("ACCEPTED", stored(event).get(STATUS).s());
+                input.send(new ProducerRecord<>(topic, mapper.writeValueAsBytes(event))).get(10, TimeUnit.SECONDS);
+                awaitCommit(admin, group, topic, 3);
+                assertEquals(2, calls.get(), "Duplicate input after completion must not repeat the retry");
+            } finally {
+                if (container != null) container.stop();
+                admin.deleteTopics(List.of(topic)).all().get(10, TimeUnit.SECONDS);
+                admin.deleteConsumerGroups(List.of(group)).all().get(10, TimeUnit.SECONDS);
+            }
+        }
+    }
+
+    private KafkaMessageListenerContainer<String, DeliveryEvent> retryContainer(
+            String bootstrap, String topic, String group, Clock clock, DeliveryProviderClient sender,
+            java.util.concurrent.atomic.AtomicReference<CountDownLatch> pending) {
+        var consumerFactory = new DefaultKafkaConsumerFactory<>(Map.of("bootstrap.servers", bootstrap, "group.id", group,
+                "enable.auto.commit", false, "auto.offset.reset", "earliest"), new StringDeserializer(),
+                new JacksonJsonDeserializer<>(DeliveryEvent.class, false));
+        var properties = new ContainerProperties(new TopicPartitionOffset(topic, 0));
+        properties.setGroupId(group);
+        properties.setAckMode(ContainerProperties.AckMode.RECORD);
+        properties.setPollTimeout(100);
+        properties.setShutdownTimeout(5000);
+        var service = new DispatchService(new DispatchAttemptRepository(client), sender,
+                new DispatchProperties(PROVIDER, Duration.ofSeconds(30)), clock, metrics());
+        var listener = new DispatchRequestConsumer(service);
+        properties.setMessageListener((MessageListener<String, DeliveryEvent>) record -> {
+            try {
+                listener.consume(record.value());
+            } catch (DispatchRetryPendingException expected) {
+                pending.get().countDown();
+                throw expected;
+            }
+        });
+        var container = new KafkaMessageListenerContainer<>(consumerFactory, properties);
+        container.setCommonErrorHandler(new DispatchFailureConfiguration().dispatchErrorHandler(50));
+        return container;
+    }
+
+    private long committed(Admin admin, String group, String topic) throws Exception {
+        var offsets = admin.listConsumerGroupOffsets(group).partitionsToOffsetAndMetadata().get(10, TimeUnit.SECONDS);
+        var offset = offsets.get(new TopicPartition(topic, 0));
+        return offset == null ? -1 : offset.offset();
+    }
+
+    private void awaitCommit(Admin admin, String group, String topic, long expected) throws Exception {
+        long deadline = System.nanoTime() + Duration.ofSeconds(15).toNanos();
+        while (System.nanoTime() < deadline) {
+            if (committed(admin, group, topic) == expected) return;
+            Thread.sleep(20);
+        }
+        assertEquals(expected, committed(admin, group, topic));
+    }
+
+    private DispatchService service(DispatchAttemptStore store, DeliveryProviderClient sender, Instant now) {
+        return new DispatchService(store, sender, new DispatchProperties(PROVIDER, Duration.ofSeconds(30)),
+                Clock.fixed(now, ZoneOffset.UTC), metrics());
+    }
+
     private DeliveryEvent newEvent() {
         var result = DeliveryEvent.requested(DeliveryIds.deliveryId(999L, "dispatch-test-" + UUID.randomUUID()),
                 999L, "EMAIL", Map.of("body", "test"), NOW).toDispatchRequested();
@@ -235,7 +514,7 @@ class DispatchAttemptDynamoDbTest {
     }
 
     private DispatchClaim claim(DeliveryEvent request, Instant now) {
-        return repository.claim(request, attemptId(request), PROVIDER, now, now.plusSeconds(30));
+        return repository.claim(request, attemptId(request), PROVIDER, now, now.plusSeconds(30), NOW.plusSeconds(10800));
     }
 
     private DispatchService service(DispatchAttemptStore store, Instant now) {

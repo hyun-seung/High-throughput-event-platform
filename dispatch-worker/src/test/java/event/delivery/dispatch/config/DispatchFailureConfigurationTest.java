@@ -1,6 +1,7 @@
 package event.delivery.dispatch.config;
 
 import event.delivery.dispatch.service.DispatchAttemptInProgressException;
+import event.delivery.dispatch.service.DispatchRetryPendingException;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.junit.jupiter.api.Test;
@@ -15,6 +16,7 @@ class DispatchFailureConfigurationTest {
     @Test
     void leaseWaitAndStorageErrorsAreNotDiscardedAfterDefaultRetryBudget() {
         assertRemainsUnrecovered(new DispatchAttemptInProgressException("delivery-1"));
+        assertRemainsUnrecovered(new DispatchRetryPendingException("delivery-1"));
         assertRemainsUnrecovered(new IllegalStateException("review storage unavailable"));
     }
 

@@ -9,6 +9,7 @@ import event.delivery.dispatch.external.dto.ProviderDispatchResponse;
 import event.delivery.dispatch.external.client.ProviderFailureException;
 import event.delivery.dispatch.model.DispatchAttempt;
 import event.delivery.dispatch.model.DispatchClaim;
+import event.delivery.dispatch.model.DispatchFailureDecision;
 import event.delivery.dispatch.port.DeliveryProviderClient;
 import event.delivery.dispatch.port.DispatchAttemptStore;
 import org.junit.jupiter.api.BeforeEach;
@@ -60,7 +61,7 @@ class DispatchServiceTest {
 
     @Test
     void claimedAttemptCallsProviderAndRecordsAcceptedResult() {
-        DispatchAttempt attempt = new DispatchAttempt(event.deliveryId(), attemptId, PROVIDER, 1L);
+        DispatchAttempt attempt = new DispatchAttempt(event.deliveryId(), attemptId, PROVIDER, 1L, 0, NOW.plusSeconds(10800));
         attemptStore.nextClaim = DispatchClaim.claimed(attempt);
         providerClient.nextResponse = new ProviderDispatchResponse(
                 event.deliveryId(), true, NOW.plusSeconds(1));
@@ -111,7 +112,7 @@ class DispatchServiceTest {
 
     @Test
     void successfulProviderCallWithFailedStorageIsNotCountedAsPersistedAcceptance() {
-        attemptStore.nextClaim = DispatchClaim.claimed(new DispatchAttempt(event.deliveryId(), attemptId, PROVIDER, 1));
+        attemptStore.nextClaim = DispatchClaim.claimed(new DispatchAttempt(event.deliveryId(), attemptId, PROVIDER, 1, 0, NOW.plusSeconds(10800)));
         providerClient.nextResponse = new ProviderDispatchResponse(event.deliveryId(), true, NOW);
         attemptStore.storeFailure = new IllegalStateException("storage unavailable");
         assertThrows(IllegalStateException.class, () -> dispatchService.dispatch(event));
@@ -124,9 +125,10 @@ class DispatchServiceTest {
 
     @Test
     void providerRejectionIsCountedAsHttpStageFailure() {
-        attemptStore.nextClaim = DispatchClaim.claimed(new DispatchAttempt(event.deliveryId(), attemptId, PROVIDER, 1));
+        attemptStore.nextClaim = DispatchClaim.claimed(new DispatchAttempt(event.deliveryId(), attemptId, PROVIDER, 1, 0, NOW.plusSeconds(10800)));
         providerClient.nextResponse = new ProviderDispatchResponse(event.deliveryId(), false, NOW);
-        assertThrows(IllegalStateException.class, () -> dispatchService.dispatch(event));
+        dispatchService.dispatch(event);
+        assertEquals(DispatchFailureDecision.State.REVIEW_REQUIRED, attemptStore.failureDecision.state());
         assertFalse(attemptStore.acceptedRecorded);
         assertEquals(0, outcome("dispatch_accepted"));
         assertEquals(1, registry.get("delivery.stage.duration")
@@ -139,10 +141,11 @@ class DispatchServiceTest {
 
     @Test
     void classifiedFailureEscapesWithoutAcceptanceOrAnotherProviderCall() {
-        attemptStore.nextClaim = DispatchClaim.claimed(new DispatchAttempt(event.deliveryId(), attemptId, PROVIDER, 1));
+        attemptStore.nextClaim = DispatchClaim.claimed(new DispatchAttempt(event.deliveryId(), attemptId, PROVIDER, 1, 0, NOW.plusSeconds(10800)));
         providerClient.failure = new ProviderFailureException(ProviderFailureException.Kind.RETRY_1S);
-        var failure = assertThrows(ProviderFailureException.class, () -> dispatchService.dispatch(event));
-        assertEquals(ProviderFailureException.Kind.RETRY_1S, failure.kind());
+        assertThrows(DispatchRetryPendingException.class, () -> dispatchService.dispatch(event));
+        assertEquals("RETRY_1S", attemptStore.failureDecision.reason());
+        assertEquals(NOW.plusSeconds(1), attemptStore.failureDecision.nextAttemptAt());
         assertEquals(1, providerClient.callCount);
         assertFalse(attemptStore.acceptedRecorded);
         assertEquals(0, outcome("dispatch_accepted"));
@@ -158,6 +161,33 @@ class DispatchServiceTest {
         assertFalse(attemptStore.acceptedRecorded);
     }
 
+    @Test
+    void failureStorageErrorCannotBeAcknowledgedAsScheduledRetry() {
+        attemptStore.nextClaim = DispatchClaim.claimed(new DispatchAttempt(event.deliveryId(), attemptId, PROVIDER, 1, 0, NOW.plusSeconds(10800)));
+        providerClient.failure = new ProviderFailureException(ProviderFailureException.Kind.NO_RESPONSE);
+        attemptStore.storeFailure = new IllegalStateException("DynamoDB unavailable");
+        assertThrows(IllegalStateException.class, () -> dispatchService.dispatch(event));
+        assertEquals(1, providerClient.callCount);
+        assertEquals(0, outcome("dispatch_retry_scheduled"));
+        assertFalse(attemptStore.acceptedRecorded);
+    }
+
+    @Test
+    void waitingReservationDoesNotCallProvider() {
+        attemptStore.nextClaim = DispatchClaim.retryWait();
+        assertThrows(DispatchRetryPendingException.class, () -> dispatchService.dispatch(event));
+        assertEquals(0, providerClient.callCount);
+    }
+
+    @Test
+    void expiredFirstClaimDoesNotCallProvider() {
+        attemptStore.nextClaim = DispatchClaim.claimed(new DispatchAttempt(event.deliveryId(), attemptId, PROVIDER, 1, 0, NOW));
+        dispatchService.dispatch(event);
+        assertEquals(0, providerClient.callCount);
+        assertEquals("PRIMARY_EXPIRED", attemptStore.failureDecision.reason());
+        assertFalse(attemptStore.acceptedRecorded);
+    }
+
     private static final class FakeDispatchAttemptStore implements DispatchAttemptStore {
 
         private DispatchClaim nextClaim;
@@ -166,6 +196,13 @@ class DispatchServiceTest {
         private Instant providerProcessedAt;
         private RuntimeException claimFailure;
         private RuntimeException storeFailure;
+        private DispatchFailureDecision failureDecision;
+
+        @Override
+        public void recordFailure(DispatchAttempt attempt, DispatchFailureDecision decision) {
+            if (storeFailure != null) throw storeFailure;
+            failureDecision = decision;
+        }
 
         @Override
         public DispatchClaim claim(
@@ -173,7 +210,8 @@ class DispatchServiceTest {
                 String attemptId,
                 String provider,
                 Instant now,
-                Instant leaseUntil
+                Instant leaseUntil,
+                Instant primaryDeadline
         ) {
             assertEquals(NOW, now);
             assertEquals(NOW.plusSeconds(30), leaseUntil);
