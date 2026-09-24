@@ -21,6 +21,12 @@ management:
         "[http.server.requests]": true
 
 simulator:
+  receipts:
+    enabled: ${SIMULATOR_RECEIPTS_ENABLED:false}
+    primary-url: ${SIMULATOR_RECEIPTS_PRIMARY_URL:http://127.0.0.1:8094/api/v1/receipts/mock-provider}
+    secondary-url: ${SIMULATOR_RECEIPTS_SECONDARY_URL:http://127.0.0.1:8094/api/v1/receipts/tcp-provider}
+    primary-secret: ${RECEIPT_PRIMARY_SECRET:}
+    secondary-secret: ${RECEIPT_SECONDARY_SECRET:}
   tcp:
     enabled: ${SIMULATOR_TCP_ENABLED:true}
     bind-address: ${SIMULATOR_TCP_BIND_ADDRESS:127.0.0.1}
