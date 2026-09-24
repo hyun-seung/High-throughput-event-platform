@@ -1,0 +1,3750 @@
+[
+  {
+    "runId": "20260924T103522Z-e3363da5",
+    "environment": {
+      "runId": "20260924T103522Z-e3363da5",
+      "gitCommit": "1c2b58fe092f69cfe4b0272f7a00e87972c9e5cb",
+      "workingTreeDirty": false,
+      "platform": "macOS-26.3.1-arm64-arm-64bit-Mach-O",
+      "logicalCpus": 10,
+      "java": "Property settings:\n    file.encoding = UTF-8\n    file.separator = /\n    ftp.nonProxyHosts = local|*.local|169.254/16|*.169.254/16\n    http.nonProxyHosts = local|*.local|169.254/16|*.169.254/16\n    java.class.path = \n    java.class.version = 65.0\n    java.home = /Users/hyunseung/Library/Java/JavaVirtualMachines/temurin-21.0.7/Contents/Home\n    java.io.tmpdir = /var/folders/xv/44tbr7wd7bxgbqfv_8nkj30c0000gn/T/\n    java.library.path = /Users/hyunseung/Library/Java/Extensions\n        /Library/Java/Extensions\n        /Network/Library/Java/Extensions\n        /System/Library/Java/Extensions\n        /usr/lib/java\n        .\n    java.runtime.name = OpenJDK Runtime Environment\n    java.runtime.version = 21.0.7+6-LTS\n    java.specification.name = Java Platform API Specification\n    java.specification.vendor = Oracle Corporation\n    java.specification.version = 21\n    java.vendor = Eclipse Adoptium\n    java.vendor.url = https://adoptium.net/\n    java.vendor.url.bug = https://github.com/adoptium/adoptium-support/issues\n    java.vendor.version = Temurin-21.0.7+6\n    java.version = 21.0.7\n    java.version.date = 2025-04-15\n    java.vm.compressedOopsMode = Zero based\n    java.vm.info = mixed mode, sharing\n    java.vm.name = OpenJDK 64-Bit Server VM\n    java.vm.specification.name = Java Virtual Machine Specification\n    java.vm.specification.vendor = Oracle Corporation\n    java.vm.specification.version = 21\n    java.vm.vendor = Eclipse Adoptium\n    java.vm.version = 21.0.7+6-LTS\n    jdk.debug = release\n    line.separator = \\n \n    native.encoding = UTF-8\n    os.arch = aarch64\n    os.name = Mac OS X\n    os.version = 26.3.1\n    path.separator = :\n    socksNonProxyHosts = local|*.local|169.254/16|*.169.254/16\n    stderr.encoding = UTF-8\n    stdout.encoding = UTF-8\n    sun.arch.data.model = 64\n    sun.boot.library.path = /Users/hyunseung/Library/Java/JavaVirtualMachines/temurin-21.0.7/Contents/Home/lib\n    sun.cpu.endian = little\n    sun.io.unicode.encoding = UnicodeBig\n    sun.java.launcher = SUN_STANDARD\n    sun.jnu.encoding = UTF-8\n    sun.management.compiler = HotSpot 64-Bit Tiered Compilers\n    user.country = KR\n    user.dir = /Users/hyunseung/IdeaProjects/High-Throughtput/platform\n    user.home = /Users/hyunseung\n    user.language = ko\n    user.name = hyunseung\n\nopenjdk version \"21.0.7\" 2025-04-15 LTS\nOpenJDK Runtime Environment Temurin-21.0.7+6 (build 21.0.7+6-LTS)\nOpenJDK 64-Bit Server VM Temurin-21.0.7+6 (build 21.0.7+6-LTS, mixed mode, sharing)",
+      "k6": "k6 v1.8.1 (commit/73b044f9f9, go1.26.5, darwin/arm64)",
+      "pythonPackages": [
+        "boto3==1.43.101",
+        "botocore==1.43.101",
+        "confluent-kafka==2.15.1",
+        "jmespath==1.1.0",
+        "python-dateutil==2.9.0.post0",
+        "s3transfer==0.19.2",
+        "six==1.17.0",
+        "urllib3==2.8.0"
+      ],
+      "ports": {
+        "KAFKA_HOST_PORT": "29092",
+        "REDIS_HOST_PORT": "26379",
+        "POSTGRES_HOST_PORT": "25432",
+        "DYNAMODB_HOST_PORT": "28000",
+        "DELIVERY_API_PORT": "28080",
+        "MOCK_PROVIDER_PORT": "28090",
+        "INGRESS_HTTP_PORT": "28081",
+        "DISPATCH_HTTP_PORT": "28082",
+        "DELIVERY_API_METRICS_PORT": "29080",
+        "INGRESS_METRICS_PORT": "29081",
+        "DISPATCH_METRICS_PORT": "29082",
+        "SIMULATOR_METRICS_PORT": "29090"
+      },
+      "composeProject": "platform-poc",
+      "heapPerApp": "-Xms128m -Xmx512m",
+      "simulatorDelayMillis": 0,
+      "simulatorDeduplicate": false,
+      "workerConcurrency": 1,
+      "ingressLingerMillis": 5,
+      "workerAckMode": "RECORD",
+      "suite": "comparison",
+      "jarsSha256": {
+        "api": "a958fb5bda3adff3e03e220afcba29141cd47b14bf781ff6af1317141383e8b2",
+        "ingress": "fda0d29ca744f46d5f8151e062a4c948fa5eb5efdf7e03d12eb4d9688dd584a0",
+        "dispatch": "c701227de895b1676558b5e633b31967f00d51bd01f24b69e0d2bf68794b18f9",
+        "simulator": "41a3696cc698656d803960a537fa7085bbb8e399cad89faf48b535e920953e09"
+      },
+      "harnessSha256": {
+        "run.py": "ba71edd7f69ed18066550a584b56c7d97e4e854b610e06b1355ededc5c0458a8",
+        "requirements.txt": "8803e66f3e962ba30760df1103afa20cc3ec2aeeceb9e41e1824e2b0177fbd19",
+        "load.js": "54af50203c2e90d4c0bafee0398364a6d164fd744812396c12ffbd2959240a54",
+        "setup.py": "3b19bafab6c647954f7164ff5966794b452e18b67aab0649d2055587bd4ee497",
+        "test_evidence.py": "17c22ba85e001cc9ca44b9b114ae7bb5ccbdbc63a03eb5d8113abfd48717bf45",
+        "evidence.py": "ae3681e2506a53817bc5a84a2a969e32347c4897f567d2c8f1732c08ad8c1c64"
+      },
+      "hostMemoryBytes": 17179869184
+    },
+    "phases": [
+      {
+        "uniqueRequests": 10,
+        "submitted": 10,
+        "responses": 10,
+        "httpStatuses": {
+          "202": 10
+        },
+        "unanswered": 0,
+        "states": {
+          "ACCEPTED": 10
+        },
+        "problemRequests": 0,
+        "unexpectedKafkaIds": [],
+        "persistedTimestampLatencyMs": {
+          "p50": 1308.505,
+          "p95": 1879.12195,
+          "p99": 1889.32759
+        },
+        "consistent": true,
+        "label": "smoke-unique",
+        "rate": 5,
+        "seconds": 2,
+        "mode": "unique",
+        "plannedRequests": 10,
+        "k6ExitCode": 0,
+        "droppedIterations": 0,
+        "completedIterations": 10,
+        "aborted": null,
+        "drained": true,
+        "maxLag": 9,
+        "oldestUncommittedAgeSeconds": 2.049102783203125,
+        "drainObservationSeconds": 18.613941874937154,
+        "completionWindowSeconds": 20.85250083298888,
+        "metricsWindowSeconds": 16.167755126953125,
+        "persistedAcceptancesPerWindowSecond": 0.6185150579952244,
+        "httpDurationMs": {
+          "p(99)": 1154.86335,
+          "avg": 411.3165000000001,
+          "min": 12.947,
+          "med": 274.284,
+          "max": 1172.709,
+          "p(50)": 274.284,
+          "p(95)": 1083.48075
+        },
+        "bodyBytes": 1009,
+        "pass": true
+      },
+      {
+        "uniqueRequests": 6,
+        "submitted": 11,
+        "responses": 11,
+        "httpStatuses": {
+          "202": 11
+        },
+        "unanswered": 0,
+        "states": {
+          "ACCEPTED": 6
+        },
+        "problemRequests": 0,
+        "unexpectedKafkaIds": [],
+        "persistedTimestampLatencyMs": {
+          "p50": 51.6315,
+          "p95": 71.63775,
+          "p99": 71.82915
+        },
+        "consistent": true,
+        "label": "smoke-duplicate",
+        "rate": 5,
+        "seconds": 2,
+        "mode": "duplicate",
+        "plannedRequests": 10,
+        "k6ExitCode": 0,
+        "droppedIterations": 0,
+        "completedIterations": 11,
+        "aborted": null,
+        "drained": true,
+        "maxLag": 7,
+        "oldestUncommittedAgeSeconds": 1.497176170349121,
+        "drainObservationSeconds": 12.032355917035602,
+        "completionWindowSeconds": 16.821868084021844,
+        "metricsWindowSeconds": 18.945394039154053,
+        "persistedAcceptancesPerWindowSecond": 0.3166996678770536,
+        "httpDurationMs": {
+          "max": 34.36,
+          "p(50)": 19.804,
+          "p(95)": 33.78,
+          "p(99)": 34.244,
+          "avg": 21.799454545454548,
+          "min": 14.218,
+          "med": 19.804
+        },
+        "bodyBytes": 1009,
+        "pass": true
+      },
+      {
+        "uniqueRequests": 601,
+        "submitted": 601,
+        "responses": 601,
+        "httpStatuses": {
+          "202": 601
+        },
+        "unanswered": 0,
+        "states": {
+          "ACCEPTED": 601
+        },
+        "problemRequests": 0,
+        "unexpectedKafkaIds": [],
+        "persistedTimestampLatencyMs": {
+          "p50": 37.339,
+          "p95": 54.152,
+          "p99": 87.65
+        },
+        "consistent": true,
+        "label": "warmup",
+        "rate": 10,
+        "seconds": 60,
+        "mode": "unique",
+        "plannedRequests": 600,
+        "k6ExitCode": 0,
+        "droppedIterations": 0,
+        "completedIterations": 601,
+        "aborted": null,
+        "drained": true,
+        "maxLag": 16,
+        "oldestUncommittedAgeSeconds": 1.7128028869628906,
+        "drainObservationSeconds": 11.985714750015177,
+        "completionWindowSeconds": 75.69286358298268,
+        "metricsWindowSeconds": 78.31121706962585,
+        "persistedAcceptancesPerWindowSecond": 7.674507209684353,
+        "httpDurationMs": {
+          "max": 65.949,
+          "p(50)": 13.068,
+          "p(95)": 18.467,
+          "p(99)": 41.987,
+          "avg": 14.014722129783703,
+          "min": 9.371,
+          "med": 13.068
+        },
+        "bodyBytes": 1009,
+        "pass": true
+      },
+      {
+        "uniqueRequests": 1000,
+        "submitted": 2000,
+        "responses": 2000,
+        "httpStatuses": {
+          "202": 2000
+        },
+        "unanswered": 0,
+        "states": {
+          "ACCEPTED": 1000
+        },
+        "problemRequests": 0,
+        "unexpectedKafkaIds": [],
+        "persistedTimestampLatencyMs": {
+          "p50": 8446.985499999999,
+          "p95": 18159.286,
+          "p99": 19170.69987
+        },
+        "consistent": true,
+        "label": "duplicate-load",
+        "rate": 100,
+        "seconds": 20,
+        "mode": "duplicate",
+        "plannedRequests": 2000,
+        "k6ExitCode": 0,
+        "droppedIterations": 0,
+        "completedIterations": 2000,
+        "aborted": null,
+        "drained": true,
+        "maxLag": 1001,
+        "oldestUncommittedAgeSeconds": 17.126863956451416,
+        "drainObservationSeconds": 26.156938791973516,
+        "completionWindowSeconds": 49.75450591696426,
+        "metricsWindowSeconds": 49.24186992645264,
+        "persistedAcceptancesPerWindowSecond": 20.307920911484352,
+        "httpDurationMs": {
+          "p(99)": 18.115029999999997,
+          "avg": 8.526357499999994,
+          "min": 5.848,
+          "med": 8.002,
+          "max": 56.737,
+          "p(50)": 8.002,
+          "p(95)": 10.6711
+        },
+        "bodyBytes": 1009,
+        "pass": true
+      },
+      {
+        "uniqueRequests": 9001,
+        "submitted": 9001,
+        "responses": 9001,
+        "httpStatuses": {
+          "202": 9001
+        },
+        "unanswered": 0,
+        "states": {
+          "ACCEPTED": 9001
+        },
+        "problemRequests": 0,
+        "unexpectedKafkaIds": [],
+        "persistedTimestampLatencyMs": {
+          "p50": 24.295,
+          "p95": 89.28999999999999,
+          "p99": 157.715
+        },
+        "consistent": true,
+        "label": "comparison-50",
+        "rate": 50,
+        "seconds": 180,
+        "mode": "unique",
+        "plannedRequests": 9000,
+        "k6ExitCode": 0,
+        "droppedIterations": 0,
+        "completedIterations": 9001,
+        "aborted": null,
+        "drained": true,
+        "maxLag": 31,
+        "oldestUncommittedAgeSeconds": 0.5477890968322754,
+        "drainObservationSeconds": 12.389167707995512,
+        "completionWindowSeconds": 192.56264754198492,
+        "metricsWindowSeconds": 192.31287503242493,
+        "persistedAcceptancesPerWindowSecond": 46.80393862596244,
+        "httpDurationMs": {
+          "p(50)": 7.756,
+          "p(95)": 9.454,
+          "p(99)": 12.478,
+          "avg": 7.941006110432168,
+          "min": 4.098,
+          "med": 7.756,
+          "max": 48.431
+        },
+        "bodyBytes": 1009,
+        "pass": true
+      },
+      {
+        "uniqueRequests": 3900,
+        "submitted": 3900,
+        "responses": 3899,
+        "httpStatuses": {
+          "202": 3899
+        },
+        "unanswered": 1,
+        "states": {
+          "ACCEPTED": 3900
+        },
+        "problemRequests": 1,
+        "unexpectedKafkaIds": [],
+        "persistedTimestampLatencyMs": {
+          "p50": 11848.393499999998,
+          "p95": 29109.0411,
+          "p99": 30653.39835
+        },
+        "consistent": false,
+        "label": "comparison-100",
+        "rate": 100,
+        "seconds": 180,
+        "mode": "unique",
+        "plannedRequests": 18000,
+        "k6ExitCode": 105,
+        "droppedIterations": 0,
+        "completedIterations": 3899,
+        "aborted": "Sustained increasing backlog for six samples",
+        "drained": true,
+        "maxLag": 1662,
+        "oldestUncommittedAgeSeconds": 31.850558042526245,
+        "drainObservationSeconds": 40.36304162500892,
+        "completionWindowSeconds": 79.51037279202137,
+        "metricsWindowSeconds": 82.01634979248047,
+        "persistedAcceptancesPerWindowSecond": 47.55149442602437,
+        "httpDurationMs": {
+          "min": 2.328,
+          "med": 7.262,
+          "max": 59.6,
+          "p(50)": 7.262,
+          "p(95)": 8.825699999999998,
+          "p(99)": 11.8883,
+          "avg": 7.436426519620403
+        },
+        "bodyBytes": 1009,
+        "pass": false
+      }
+    ],
+    "analysis": [
+      {
+        "phase": "smoke-unique",
+        "stageMeanMs": {
+          "ingress_process": 33.1895918,
+          "ingress_store": 20.0136791,
+          "ingress_publish": 13.1351999,
+          "dispatch_process": 44.8277875,
+          "dispatch_claim": 24.100429300000002,
+          "dispatch_http": 10.300145700000002,
+          "dispatch_store": 10.119491700000001
+        },
+        "maxLagByTopic": {
+          "delivery.dispatch-requested.v1": 9,
+          "delivery.requested.v1": 0
+        },
+        "lastCommitLatencyAvgMsByClient": {
+          "ingress": [
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-1"
+              },
+              "value": 7.8
+            }
+          ],
+          "dispatch": [
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-1"
+              },
+              "value": 8.1
+            }
+          ]
+        },
+        "lastAssignedPartitionsByClient": {
+          "ingress": [
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-1"
+              },
+              "value": 3.0
+            }
+          ],
+          "dispatch": [
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-1"
+              },
+              "value": 3.0
+            }
+          ]
+        },
+        "dynamoDbLogicalCalls": {
+          "ingress": {
+            "put_item": {
+              "success": 10.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "get_item": {
+              "success": 0.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "update_item": {
+              "success": 0.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            }
+          },
+          "dispatch": {
+            "put_item": {
+              "success": 0.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "get_item": {
+              "success": 0.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "update_item": {
+              "success": 20.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            }
+          }
+        }
+      },
+      {
+        "phase": "smoke-duplicate",
+        "stageMeanMs": {
+          "ingress_process": 26.615845000000004,
+          "ingress_store": 16.547636454545458,
+          "ingress_publish": 10.001113636363636,
+          "dispatch_process": 22.10037872727273,
+          "dispatch_claim": 13.83221209090909,
+          "dispatch_http": 4.779298666666665,
+          "dispatch_store": 10.122194333333335
+        },
+        "maxLagByTopic": {
+          "delivery.dispatch-requested.v1": 3,
+          "delivery.requested.v1": 4
+        },
+        "lastCommitLatencyAvgMsByClient": {
+          "ingress": [
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-1"
+              },
+              "value": 7.761904761904762
+            }
+          ],
+          "dispatch": [
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-1"
+              },
+              "value": 7.9523809523809526
+            }
+          ]
+        },
+        "lastAssignedPartitionsByClient": {
+          "ingress": [
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-1"
+              },
+              "value": 3.0
+            }
+          ],
+          "dispatch": [
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-1"
+              },
+              "value": 3.0
+            }
+          ]
+        },
+        "dynamoDbLogicalCalls": {
+          "ingress": {
+            "put_item": {
+              "success": 6.0,
+              "condition_failed": 5.0,
+              "failure": 0.0
+            },
+            "get_item": {
+              "success": 5.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "update_item": {
+              "success": 0.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            }
+          },
+          "dispatch": {
+            "put_item": {
+              "success": 0.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "get_item": {
+              "success": 5.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "update_item": {
+              "success": 12.0,
+              "condition_failed": 5.0,
+              "failure": 0.0
+            }
+          }
+        }
+      },
+      {
+        "phase": "warmup",
+        "stageMeanMs": {
+          "ingress_process": 16.577979886855243,
+          "ingress_store": 8.774927074875208,
+          "ingress_publish": 7.77853881031614,
+          "dispatch_process": 19.26082643760399,
+          "dispatch_claim": 8.377810815307821,
+          "dispatch_http": 3.9079767670549086,
+          "dispatch_store": 6.887492292845257
+        },
+        "maxLagByTopic": {
+          "delivery.dispatch-requested.v1": 12,
+          "delivery.requested.v1": 12
+        },
+        "lastCommitLatencyAvgMsByClient": {
+          "ingress": [
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-1"
+              },
+              "value": 7.11913357400722
+            }
+          ],
+          "dispatch": [
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-1"
+              },
+              "value": 7.129090909090909
+            }
+          ]
+        },
+        "lastAssignedPartitionsByClient": {
+          "ingress": [
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-1"
+              },
+              "value": 3.0
+            }
+          ],
+          "dispatch": [
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-1"
+              },
+              "value": 3.0
+            }
+          ]
+        },
+        "dynamoDbLogicalCalls": {
+          "ingress": {
+            "put_item": {
+              "success": 601.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "get_item": {
+              "success": 0.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "update_item": {
+              "success": 0.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            }
+          },
+          "dispatch": {
+            "put_item": {
+              "success": 0.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "get_item": {
+              "success": 0.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "update_item": {
+              "success": 1202.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            }
+          }
+        }
+      },
+      {
+        "phase": "duplicate-load",
+        "stageMeanMs": {
+          "ingress_process": 12.5764300835,
+          "ingress_store": 6.099478125,
+          "ingress_publish": 6.4691018835000005,
+          "dispatch_process": 8.8679313545,
+          "dispatch_claim": 5.2157600495,
+          "dispatch_http": 2.442733362,
+          "dispatch_store": 4.794179611000001
+        },
+        "maxLagByTopic": {
+          "delivery.dispatch-requested.v1": 56,
+          "delivery.requested.v1": 973
+        },
+        "lastCommitLatencyAvgMsByClient": {
+          "ingress": [
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-1"
+              },
+              "value": 5.974
+            }
+          ],
+          "dispatch": [
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-1"
+              },
+              "value": 6.101
+            }
+          ]
+        },
+        "lastAssignedPartitionsByClient": {
+          "ingress": [
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-1"
+              },
+              "value": 3.0
+            }
+          ],
+          "dispatch": [
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-1"
+              },
+              "value": 3.0
+            }
+          ]
+        },
+        "dynamoDbLogicalCalls": {
+          "ingress": {
+            "put_item": {
+              "success": 1000.0,
+              "condition_failed": 1000.0,
+              "failure": 0.0
+            },
+            "get_item": {
+              "success": 1000.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "update_item": {
+              "success": 0.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            }
+          },
+          "dispatch": {
+            "put_item": {
+              "success": 0.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "get_item": {
+              "success": 1000.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "update_item": {
+              "success": 2000.0,
+              "condition_failed": 1000.0,
+              "failure": 0.0
+            }
+          }
+        }
+      },
+      {
+        "phase": "comparison-50",
+        "stageMeanMs": {
+          "ingress_process": 11.360810534718366,
+          "ingress_store": 5.043828810687702,
+          "ingress_publish": 6.313446933896234,
+          "dispatch_process": 11.020371782468615,
+          "dispatch_claim": 4.638932520497722,
+          "dispatch_http": 1.844799094433952,
+          "dispatch_store": 4.51699503955116
+        },
+        "maxLagByTopic": {
+          "delivery.dispatch-requested.v1": 18,
+          "delivery.requested.v1": 17
+        },
+        "lastCommitLatencyAvgMsByClient": {
+          "ingress": [
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-1"
+              },
+              "value": 5.8324396782841825
+            }
+          ],
+          "dispatch": [
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-1"
+              },
+              "value": 5.923283082077052
+            }
+          ]
+        },
+        "lastAssignedPartitionsByClient": {
+          "ingress": [
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-1"
+              },
+              "value": 3.0
+            }
+          ],
+          "dispatch": [
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-1"
+              },
+              "value": 3.0
+            }
+          ]
+        },
+        "dynamoDbLogicalCalls": {
+          "ingress": {
+            "put_item": {
+              "success": 9001.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "get_item": {
+              "success": 0.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "update_item": {
+              "success": 0.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            }
+          },
+          "dispatch": {
+            "put_item": {
+              "success": 0.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "get_item": {
+              "success": 0.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "update_item": {
+              "success": 18002.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            }
+          }
+        }
+      },
+      {
+        "phase": "comparison-100",
+        "stageMeanMs": {
+          "ingress_process": 11.230181467435898,
+          "ingress_store": 4.9810684330769215,
+          "ingress_publish": 6.24673140871795,
+          "dispatch_process": 10.13019274102564,
+          "dispatch_claim": 4.180563473589744,
+          "dispatch_http": 1.711962292820513,
+          "dispatch_store": 4.227815467948719
+        },
+        "maxLagByTopic": {
+          "delivery.dispatch-requested.v1": 90,
+          "delivery.requested.v1": 1632
+        },
+        "lastCommitLatencyAvgMsByClient": {
+          "ingress": [
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-1"
+              },
+              "value": 5.914358974358974
+            }
+          ],
+          "dispatch": [
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-1"
+              },
+              "value": 5.92025641025641
+            }
+          ]
+        },
+        "lastAssignedPartitionsByClient": {
+          "ingress": [
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-1"
+              },
+              "value": 3.0
+            }
+          ],
+          "dispatch": [
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-1"
+              },
+              "value": 3.0
+            }
+          ]
+        },
+        "dynamoDbLogicalCalls": {
+          "ingress": {
+            "put_item": {
+              "success": 3900.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "get_item": {
+              "success": 0.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "update_item": {
+              "success": 0.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            }
+          },
+          "dispatch": {
+            "put_item": {
+              "success": 0.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "get_item": {
+              "success": 0.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "update_item": {
+              "success": 7800.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            }
+          }
+        }
+      }
+    ],
+    "rawEvidenceDirectory": ".poc-results/20260924T103522Z-e3363da5",
+    "artifactSha256": {
+      "environment.json": "b76c14821180400137593eddf3f5d78e314ba943aef00a80b515a32c0e9c0ac6",
+      "results.json": "0751896179c99c3945caa263a57be66012dc9c10ca1b3ef2dfc3f7929b38eb1d",
+      "smoke-duplicate/result.json": "98e863f8f766a7c28fbfc39f0f3c5fd9a6d7f572d633abe16240f003cbd0a94e",
+      "smoke-unique/result.json": "9b1da876653ca9a558d5ccf727d993aaf9586eace9a1e7ff3bbc826f118d785c",
+      "comparison-100/result.json": "f66193112765b25d4975f940a5a87ac9c3f8d5a1cb3dae244771fa737d6991a3",
+      "comparison-50/result.json": "c387378f17e56558807c2c0ecb7a1d803821d0d497ae7ba023cee2c275f1dea9",
+      "duplicate-load/result.json": "487c99a9609b6ae58f5df12c1ac0f230b0923e130e64ae628d32245bd9059675",
+      "warmup/result.json": "575611ac0510b7624cd6ad4dcc05e6fbda5f2b765cc198027c46c371b759485c"
+    },
+    "failure": {
+      "type": "RuntimeError",
+      "message": "comparison-100 did not meet acceptance criteria; later phases stopped"
+    },
+    "policy-restored": {
+      "restored": true,
+      "usageCountersPreserved": true
+    }
+  },
+  {
+    "runId": "20260924T104455Z-9a21b1bc",
+    "environment": {
+      "runId": "20260924T104455Z-9a21b1bc",
+      "gitCommit": "1c2b58fe092f69cfe4b0272f7a00e87972c9e5cb",
+      "workingTreeDirty": false,
+      "platform": "macOS-26.3.1-arm64-arm-64bit-Mach-O",
+      "logicalCpus": 10,
+      "java": "Property settings:\n    file.encoding = UTF-8\n    file.separator = /\n    ftp.nonProxyHosts = local|*.local|169.254/16|*.169.254/16\n    http.nonProxyHosts = local|*.local|169.254/16|*.169.254/16\n    java.class.path = \n    java.class.version = 65.0\n    java.home = /Users/hyunseung/Library/Java/JavaVirtualMachines/temurin-21.0.7/Contents/Home\n    java.io.tmpdir = /var/folders/xv/44tbr7wd7bxgbqfv_8nkj30c0000gn/T/\n    java.library.path = /Users/hyunseung/Library/Java/Extensions\n        /Library/Java/Extensions\n        /Network/Library/Java/Extensions\n        /System/Library/Java/Extensions\n        /usr/lib/java\n        .\n    java.runtime.name = OpenJDK Runtime Environment\n    java.runtime.version = 21.0.7+6-LTS\n    java.specification.name = Java Platform API Specification\n    java.specification.vendor = Oracle Corporation\n    java.specification.version = 21\n    java.vendor = Eclipse Adoptium\n    java.vendor.url = https://adoptium.net/\n    java.vendor.url.bug = https://github.com/adoptium/adoptium-support/issues\n    java.vendor.version = Temurin-21.0.7+6\n    java.version = 21.0.7\n    java.version.date = 2025-04-15\n    java.vm.compressedOopsMode = Zero based\n    java.vm.info = mixed mode, sharing\n    java.vm.name = OpenJDK 64-Bit Server VM\n    java.vm.specification.name = Java Virtual Machine Specification\n    java.vm.specification.vendor = Oracle Corporation\n    java.vm.specification.version = 21\n    java.vm.vendor = Eclipse Adoptium\n    java.vm.version = 21.0.7+6-LTS\n    jdk.debug = release\n    line.separator = \\n \n    native.encoding = UTF-8\n    os.arch = aarch64\n    os.name = Mac OS X\n    os.version = 26.3.1\n    path.separator = :\n    socksNonProxyHosts = local|*.local|169.254/16|*.169.254/16\n    stderr.encoding = UTF-8\n    stdout.encoding = UTF-8\n    sun.arch.data.model = 64\n    sun.boot.library.path = /Users/hyunseung/Library/Java/JavaVirtualMachines/temurin-21.0.7/Contents/Home/lib\n    sun.cpu.endian = little\n    sun.io.unicode.encoding = UnicodeBig\n    sun.java.launcher = SUN_STANDARD\n    sun.jnu.encoding = UTF-8\n    sun.management.compiler = HotSpot 64-Bit Tiered Compilers\n    user.country = KR\n    user.dir = /Users/hyunseung/IdeaProjects/High-Throughtput/platform\n    user.home = /Users/hyunseung\n    user.language = ko\n    user.name = hyunseung\n\nopenjdk version \"21.0.7\" 2025-04-15 LTS\nOpenJDK Runtime Environment Temurin-21.0.7+6 (build 21.0.7+6-LTS)\nOpenJDK 64-Bit Server VM Temurin-21.0.7+6 (build 21.0.7+6-LTS, mixed mode, sharing)",
+      "k6": "k6 v1.8.1 (commit/73b044f9f9, go1.26.5, darwin/arm64)",
+      "pythonPackages": [
+        "boto3==1.43.101",
+        "botocore==1.43.101",
+        "confluent-kafka==2.15.1",
+        "jmespath==1.1.0",
+        "python-dateutil==2.9.0.post0",
+        "s3transfer==0.19.2",
+        "six==1.17.0",
+        "urllib3==2.8.0"
+      ],
+      "ports": {
+        "KAFKA_HOST_PORT": "29092",
+        "REDIS_HOST_PORT": "26379",
+        "POSTGRES_HOST_PORT": "25432",
+        "DYNAMODB_HOST_PORT": "28000",
+        "DELIVERY_API_PORT": "28080",
+        "MOCK_PROVIDER_PORT": "28090",
+        "INGRESS_HTTP_PORT": "28081",
+        "DISPATCH_HTTP_PORT": "28082",
+        "DELIVERY_API_METRICS_PORT": "29080",
+        "INGRESS_METRICS_PORT": "29081",
+        "DISPATCH_METRICS_PORT": "29082",
+        "SIMULATOR_METRICS_PORT": "29090"
+      },
+      "composeProject": "platform-poc",
+      "heapPerApp": "-Xms128m -Xmx512m",
+      "simulatorDelayMillis": 0,
+      "simulatorDeduplicate": false,
+      "workerConcurrency": 3,
+      "ingressLingerMillis": 5,
+      "workerAckMode": "RECORD",
+      "suite": "comparison",
+      "jarsSha256": {
+        "api": "a958fb5bda3adff3e03e220afcba29141cd47b14bf781ff6af1317141383e8b2",
+        "ingress": "fda0d29ca744f46d5f8151e062a4c948fa5eb5efdf7e03d12eb4d9688dd584a0",
+        "dispatch": "c701227de895b1676558b5e633b31967f00d51bd01f24b69e0d2bf68794b18f9",
+        "simulator": "41a3696cc698656d803960a537fa7085bbb8e399cad89faf48b535e920953e09"
+      },
+      "harnessSha256": {
+        "run.py": "ba71edd7f69ed18066550a584b56c7d97e4e854b610e06b1355ededc5c0458a8",
+        "requirements.txt": "8803e66f3e962ba30760df1103afa20cc3ec2aeeceb9e41e1824e2b0177fbd19",
+        "load.js": "54af50203c2e90d4c0bafee0398364a6d164fd744812396c12ffbd2959240a54",
+        "setup.py": "3b19bafab6c647954f7164ff5966794b452e18b67aab0649d2055587bd4ee497",
+        "test_evidence.py": "17c22ba85e001cc9ca44b9b114ae7bb5ccbdbc63a03eb5d8113abfd48717bf45",
+        "evidence.py": "ae3681e2506a53817bc5a84a2a969e32347c4897f567d2c8f1732c08ad8c1c64"
+      },
+      "hostMemoryBytes": 17179869184
+    },
+    "phases": [
+      {
+        "uniqueRequests": 11,
+        "submitted": 11,
+        "responses": 11,
+        "httpStatuses": {
+          "202": 11
+        },
+        "unanswered": 0,
+        "states": {
+          "ACCEPTED": 11
+        },
+        "problemRequests": 0,
+        "unexpectedKafkaIds": [],
+        "persistedTimestampLatencyMs": {
+          "p50": 1168.656,
+          "p95": 1762.0369999999998,
+          "p99": 1762.8225999999997
+        },
+        "consistent": true,
+        "label": "smoke-unique",
+        "rate": 5,
+        "seconds": 2,
+        "mode": "unique",
+        "plannedRequests": 10,
+        "k6ExitCode": 0,
+        "droppedIterations": 0,
+        "completedIterations": 11,
+        "aborted": null,
+        "drained": true,
+        "maxLag": 11,
+        "oldestUncommittedAgeSeconds": 2.0768470764160156,
+        "drainObservationSeconds": 18.661319915903732,
+        "completionWindowSeconds": 20.929209249909036,
+        "metricsWindowSeconds": 16.22737979888916,
+        "persistedAcceptancesPerWindowSecond": 0.6778666757249991,
+        "httpDurationMs": {
+          "med": 146.301,
+          "max": 1144.808,
+          "p(50)": 146.301,
+          "p(95)": 1045.697,
+          "p(99)": 1124.9858,
+          "avg": 360.26727272727265,
+          "min": 14.33
+        },
+        "bodyBytes": 1009,
+        "pass": true
+      },
+      {
+        "uniqueRequests": 6,
+        "submitted": 11,
+        "responses": 11,
+        "httpStatuses": {
+          "202": 11
+        },
+        "unanswered": 0,
+        "states": {
+          "ACCEPTED": 6
+        },
+        "problemRequests": 0,
+        "unexpectedKafkaIds": [],
+        "persistedTimestampLatencyMs": {
+          "p50": 51.666,
+          "p95": 69.49125000000001,
+          "p99": 74.18305000000001
+        },
+        "consistent": true,
+        "label": "smoke-duplicate",
+        "rate": 5,
+        "seconds": 2,
+        "mode": "duplicate",
+        "plannedRequests": 10,
+        "k6ExitCode": 0,
+        "droppedIterations": 0,
+        "completedIterations": 11,
+        "aborted": null,
+        "drained": true,
+        "maxLag": 9,
+        "oldestUncommittedAgeSeconds": 2.5315628051757812,
+        "drainObservationSeconds": 12.01852487504948,
+        "completionWindowSeconds": 18.175088749965653,
+        "metricsWindowSeconds": 20.350920915603638,
+        "persistedAcceptancesPerWindowSecond": 0.2948269527891304,
+        "httpDurationMs": {
+          "min": 13.209,
+          "med": 20.438,
+          "max": 27.511,
+          "p(50)": 20.438,
+          "p(95)": 24.548499999999997,
+          "p(99)": 26.918499999999998,
+          "avg": 19.831727272727274
+        },
+        "bodyBytes": 1009,
+        "pass": true
+      },
+      {
+        "uniqueRequests": 601,
+        "submitted": 601,
+        "responses": 601,
+        "httpStatuses": {
+          "202": 601
+        },
+        "unanswered": 0,
+        "states": {
+          "ACCEPTED": 601
+        },
+        "problemRequests": 0,
+        "unexpectedKafkaIds": [],
+        "persistedTimestampLatencyMs": {
+          "p50": 38.851,
+          "p95": 45.772,
+          "p99": 60.012
+        },
+        "consistent": true,
+        "label": "warmup",
+        "rate": 10,
+        "seconds": 60,
+        "mode": "unique",
+        "plannedRequests": 600,
+        "k6ExitCode": 0,
+        "droppedIterations": 0,
+        "completedIterations": 601,
+        "aborted": null,
+        "drained": true,
+        "maxLag": 18,
+        "oldestUncommittedAgeSeconds": 2.5120410919189453,
+        "drainObservationSeconds": 11.981081417063251,
+        "completionWindowSeconds": 75.71240587509237,
+        "metricsWindowSeconds": 78.37338089942932,
+        "persistedAcceptancesPerWindowSecond": 7.66841998013609,
+        "httpDurationMs": {
+          "p(95)": 17.121,
+          "p(99)": 21.36,
+          "avg": 14.02229950083196,
+          "min": 9.576,
+          "med": 13.767,
+          "max": 49.781,
+          "p(50)": 13.767
+        },
+        "bodyBytes": 1009,
+        "pass": true
+      },
+      {
+        "uniqueRequests": 1000,
+        "submitted": 2000,
+        "responses": 2000,
+        "httpStatuses": {
+          "202": 2000
+        },
+        "unanswered": 0,
+        "states": {
+          "ACCEPTED": 1000
+        },
+        "problemRequests": 0,
+        "unexpectedKafkaIds": [],
+        "persistedTimestampLatencyMs": {
+          "p50": 83.5085,
+          "p95": 703.4591,
+          "p99": 881.4956500000001
+        },
+        "consistent": true,
+        "label": "duplicate-load",
+        "rate": 100,
+        "seconds": 20,
+        "mode": "duplicate",
+        "plannedRequests": 2000,
+        "k6ExitCode": 0,
+        "droppedIterations": 0,
+        "completedIterations": 2000,
+        "aborted": null,
+        "drained": true,
+        "maxLag": 32,
+        "oldestUncommittedAgeSeconds": 0.3668529987335205,
+        "drainObservationSeconds": 11.94583566696383,
+        "completionWindowSeconds": 34.6783573749708,
+        "metricsWindowSeconds": 34.579588174819946,
+        "persistedAcceptancesPerWindowSecond": 28.918794375005795,
+        "httpDurationMs": {
+          "max": 173.454,
+          "p(50)": 9.4905,
+          "p(95)": 18.3605,
+          "p(99)": 57.01041999999999,
+          "avg": 11.445123000000024,
+          "min": 3.211,
+          "med": 9.4905
+        },
+        "bodyBytes": 1009,
+        "pass": true
+      },
+      {
+        "uniqueRequests": 9001,
+        "submitted": 9001,
+        "responses": 9001,
+        "httpStatuses": {
+          "202": 9001
+        },
+        "unanswered": 0,
+        "states": {
+          "ACCEPTED": 9001
+        },
+        "problemRequests": 0,
+        "unexpectedKafkaIds": [],
+        "persistedTimestampLatencyMs": {
+          "p50": 23.149,
+          "p95": 31.625,
+          "p99": 47.423
+        },
+        "consistent": true,
+        "label": "comparison-50",
+        "rate": 50,
+        "seconds": 180,
+        "mode": "unique",
+        "plannedRequests": 9000,
+        "k6ExitCode": 0,
+        "droppedIterations": 0,
+        "completedIterations": 9001,
+        "aborted": null,
+        "drained": true,
+        "maxLag": 35,
+        "oldestUncommittedAgeSeconds": 0.46844983100891113,
+        "drainObservationSeconds": 12.291754958103411,
+        "completionWindowSeconds": 192.49675008305348,
+        "metricsWindowSeconds": 192.2686369419098,
+        "persistedAcceptancesPerWindowSecond": 46.814707500732304,
+        "httpDurationMs": {
+          "avg": 8.002589934451729,
+          "min": 4.913,
+          "med": 7.762,
+          "max": 41.219,
+          "p(50)": 7.762,
+          "p(95)": 9.724,
+          "p(99)": 13.179
+        },
+        "bodyBytes": 1009,
+        "pass": true
+      },
+      {
+        "uniqueRequests": 18001,
+        "submitted": 18001,
+        "responses": 18001,
+        "httpStatuses": {
+          "202": 18001
+        },
+        "unanswered": 0,
+        "states": {
+          "ACCEPTED": 18001
+        },
+        "problemRequests": 0,
+        "unexpectedKafkaIds": [],
+        "persistedTimestampLatencyMs": {
+          "p50": 27.233,
+          "p95": 62.398,
+          "p99": 115.494
+        },
+        "consistent": true,
+        "label": "comparison-100",
+        "rate": 100,
+        "seconds": 180,
+        "mode": "unique",
+        "plannedRequests": 18000,
+        "k6ExitCode": 0,
+        "droppedIterations": 0,
+        "completedIterations": 18001,
+        "aborted": null,
+        "drained": true,
+        "maxLag": 31,
+        "oldestUncommittedAgeSeconds": 0.30614304542541504,
+        "drainObservationSeconds": 12.056584249949083,
+        "completionWindowSeconds": 192.23843925003894,
+        "metricsWindowSeconds": 194.4733009338379,
+        "persistedAcceptancesPerWindowSecond": 92.56283465936619,
+        "httpDurationMs": {
+          "p(95)": 8.578,
+          "p(99)": 11.158,
+          "avg": 7.425099272262699,
+          "min": 1.451,
+          "med": 7.174,
+          "max": 68.445,
+          "p(50)": 7.174
+        },
+        "bodyBytes": 1009,
+        "pass": true
+      }
+    ],
+    "analysis": [
+      {
+        "phase": "smoke-unique",
+        "stageMeanMs": {
+          "ingress_process": 76.37442809090909,
+          "ingress_store": 55.735269,
+          "ingress_publish": 20.516181999999997,
+          "dispatch_process": 88.10679927272727,
+          "dispatch_claim": 51.42429545454545,
+          "dispatch_http": 23.49899245454545,
+          "dispatch_store": 12.437147636363637
+        },
+        "maxLagByTopic": {
+          "delivery.dispatch-requested.v1": 11,
+          "delivery.requested.v1": 0
+        },
+        "lastCommitLatencyAvgMsByClient": {
+          "ingress": [
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-1"
+              },
+              "value": 10.666666666666666
+            },
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-2",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-2"
+              },
+              "value": 9.0
+            },
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-3",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-3"
+              },
+              "value": 10.333333333333334
+            }
+          ],
+          "dispatch": [
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-1"
+              },
+              "value": 3.3333333333333335
+            },
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-2",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-2"
+              },
+              "value": 8.2
+            },
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-3",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-3"
+              },
+              "value": 7.0
+            }
+          ]
+        },
+        "lastAssignedPartitionsByClient": {
+          "ingress": [
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-1"
+              },
+              "value": 1.0
+            },
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-2",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-2"
+              },
+              "value": 1.0
+            },
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-3",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-3"
+              },
+              "value": 1.0
+            }
+          ],
+          "dispatch": [
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-1"
+              },
+              "value": 1.0
+            },
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-2",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-2"
+              },
+              "value": 1.0
+            },
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-3",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-3"
+              },
+              "value": 1.0
+            }
+          ]
+        },
+        "dynamoDbLogicalCalls": {
+          "ingress": {
+            "put_item": {
+              "success": 11.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "get_item": {
+              "success": 0.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "update_item": {
+              "success": 0.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            }
+          },
+          "dispatch": {
+            "put_item": {
+              "success": 0.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "get_item": {
+              "success": 0.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "update_item": {
+              "success": 22.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            }
+          }
+        }
+      },
+      {
+        "phase": "smoke-duplicate",
+        "stageMeanMs": {
+          "ingress_process": 26.225461999999997,
+          "ingress_store": 17.336450636363637,
+          "ingress_publish": 8.835837000000003,
+          "dispatch_process": 21.79479918181819,
+          "dispatch_claim": 14.093397545454549,
+          "dispatch_http": 5.286263833333332,
+          "dispatch_store": 8.433257166666666
+        },
+        "maxLagByTopic": {
+          "delivery.dispatch-requested.v1": 2,
+          "delivery.requested.v1": 7
+        },
+        "lastCommitLatencyAvgMsByClient": {
+          "ingress": [
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-1"
+              },
+              "value": 10.0
+            },
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-2",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-2"
+              },
+              "value": 8.444444444444445
+            },
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-3",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-3"
+              },
+              "value": 8.666666666666666
+            }
+          ],
+          "dispatch": [
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-1"
+              },
+              "value": 4.75
+            },
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-2",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-2"
+              },
+              "value": 8.11111111111111
+            },
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-3",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-3"
+              },
+              "value": 7.222222222222222
+            }
+          ]
+        },
+        "lastAssignedPartitionsByClient": {
+          "ingress": [
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-1"
+              },
+              "value": 1.0
+            },
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-2",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-2"
+              },
+              "value": 1.0
+            },
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-3",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-3"
+              },
+              "value": 1.0
+            }
+          ],
+          "dispatch": [
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-1"
+              },
+              "value": 1.0
+            },
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-2",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-2"
+              },
+              "value": 1.0
+            },
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-3",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-3"
+              },
+              "value": 1.0
+            }
+          ]
+        },
+        "dynamoDbLogicalCalls": {
+          "ingress": {
+            "put_item": {
+              "success": 6.0,
+              "condition_failed": 5.0,
+              "failure": 0.0
+            },
+            "get_item": {
+              "success": 5.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "update_item": {
+              "success": 0.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            }
+          },
+          "dispatch": {
+            "put_item": {
+              "success": 0.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "get_item": {
+              "success": 5.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "update_item": {
+              "success": 12.0,
+              "condition_failed": 5.0,
+              "failure": 0.0
+            }
+          }
+        }
+      },
+      {
+        "phase": "warmup",
+        "stageMeanMs": {
+          "ingress_process": 16.88385135607321,
+          "ingress_store": 8.802326001663893,
+          "ingress_publish": 8.055359797004991,
+          "dispatch_process": 17.91622864559068,
+          "dispatch_claim": 7.692117081530782,
+          "dispatch_http": 3.8374339317803665,
+          "dispatch_store": 6.292147823627287
+        },
+        "maxLagByTopic": {
+          "delivery.dispatch-requested.v1": 11,
+          "delivery.requested.v1": 13
+        },
+        "lastCommitLatencyAvgMsByClient": {
+          "ingress": [
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-1"
+              },
+              "value": 6.613756613756614
+            },
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-2",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-2"
+              },
+              "value": 6.763546798029557
+            },
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-3",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-3"
+              },
+              "value": 6.857142857142857
+            }
+          ],
+          "dispatch": [
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-1"
+              },
+              "value": 7.211640211640212
+            },
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-2",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-2"
+              },
+              "value": 7.088669950738916
+            },
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-3",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-3"
+              },
+              "value": 7.235
+            }
+          ]
+        },
+        "lastAssignedPartitionsByClient": {
+          "ingress": [
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-1"
+              },
+              "value": 1.0
+            },
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-2",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-2"
+              },
+              "value": 1.0
+            },
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-3",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-3"
+              },
+              "value": 1.0
+            }
+          ],
+          "dispatch": [
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-1"
+              },
+              "value": 1.0
+            },
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-2",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-2"
+              },
+              "value": 1.0
+            },
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-3",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-3"
+              },
+              "value": 1.0
+            }
+          ]
+        },
+        "dynamoDbLogicalCalls": {
+          "ingress": {
+            "put_item": {
+              "success": 601.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "get_item": {
+              "success": 0.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "update_item": {
+              "success": 0.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            }
+          },
+          "dispatch": {
+            "put_item": {
+              "success": 0.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "get_item": {
+              "success": 0.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "update_item": {
+              "success": 1202.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            }
+          }
+        }
+      },
+      {
+        "phase": "duplicate-load",
+        "stageMeanMs": {
+          "ingress_process": 17.1951657925,
+          "ingress_store": 10.908304291,
+          "ingress_publish": 6.277960564499999,
+          "dispatch_process": 15.045620542500002,
+          "dispatch_claim": 9.2568145365,
+          "dispatch_http": 2.940913765,
+          "dispatch_store": 8.560189798
+        },
+        "maxLagByTopic": {
+          "delivery.dispatch-requested.v1": 14,
+          "delivery.requested.v1": 22
+        },
+        "lastCommitLatencyAvgMsByClient": {
+          "ingress": [
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-1"
+              },
+              "value": 6.618593563766389
+            },
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-2",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-2"
+              },
+              "value": 6.804973821989528
+            },
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-3",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-3"
+              },
+              "value": 6.662668665667167
+            }
+          ],
+          "dispatch": [
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-1"
+              },
+              "value": 5.934445768772348
+            },
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-2",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-2"
+              },
+              "value": 5.93586387434555
+            },
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-3",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-3"
+              },
+              "value": 5.896449704142012
+            }
+          ]
+        },
+        "lastAssignedPartitionsByClient": {
+          "ingress": [
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-1"
+              },
+              "value": 1.0
+            },
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-2",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-2"
+              },
+              "value": 1.0
+            },
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-3",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-3"
+              },
+              "value": 1.0
+            }
+          ],
+          "dispatch": [
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-1"
+              },
+              "value": 1.0
+            },
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-2",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-2"
+              },
+              "value": 1.0
+            },
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-3",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-3"
+              },
+              "value": 1.0
+            }
+          ]
+        },
+        "dynamoDbLogicalCalls": {
+          "ingress": {
+            "put_item": {
+              "success": 1000.0,
+              "condition_failed": 1000.0,
+              "failure": 0.0
+            },
+            "get_item": {
+              "success": 1000.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "update_item": {
+              "success": 0.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            }
+          },
+          "dispatch": {
+            "put_item": {
+              "success": 0.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "get_item": {
+              "success": 1000.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "update_item": {
+              "success": 2000.0,
+              "condition_failed": 1000.0,
+              "failure": 0.0
+            }
+          }
+        }
+      },
+      {
+        "phase": "comparison-50",
+        "stageMeanMs": {
+          "ingress_process": 10.943636878680147,
+          "ingress_store": 4.5724690984335075,
+          "ingress_publish": 6.366181371958672,
+          "dispatch_process": 10.51145069292301,
+          "dispatch_claim": 4.391040675036106,
+          "dispatch_http": 1.85866362704144,
+          "dispatch_store": 4.243794601933119
+        },
+        "maxLagByTopic": {
+          "delivery.dispatch-requested.v1": 19,
+          "delivery.requested.v1": 18
+        },
+        "lastCommitLatencyAvgMsByClient": {
+          "ingress": [
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-1"
+              },
+              "value": 5.780364372469635
+            },
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-2",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-2"
+              },
+              "value": 5.721393034825871
+            },
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-3",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-3"
+              },
+              "value": 5.810728744939271
+            }
+          ],
+          "dispatch": [
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-1"
+              },
+              "value": 5.885511651469098
+            },
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-2",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-2"
+              },
+              "value": 5.864676616915423
+            },
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-3",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-3"
+              },
+              "value": 5.8582995951417
+            }
+          ]
+        },
+        "lastAssignedPartitionsByClient": {
+          "ingress": [
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-1"
+              },
+              "value": 1.0
+            },
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-2",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-2"
+              },
+              "value": 1.0
+            },
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-3",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-3"
+              },
+              "value": 1.0
+            }
+          ],
+          "dispatch": [
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-1"
+              },
+              "value": 1.0
+            },
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-2",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-2"
+              },
+              "value": 1.0
+            },
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-3",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-3"
+              },
+              "value": 1.0
+            }
+          ]
+        },
+        "dynamoDbLogicalCalls": {
+          "ingress": {
+            "put_item": {
+              "success": 9001.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "get_item": {
+              "success": 0.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "update_item": {
+              "success": 0.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            }
+          },
+          "dispatch": {
+            "put_item": {
+              "success": 0.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "get_item": {
+              "success": 0.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "update_item": {
+              "success": 18002.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            }
+          }
+        }
+      },
+      {
+        "phase": "comparison-100",
+        "stageMeanMs": {
+          "ingress_process": 11.187246884561969,
+          "ingress_store": 5.849132252152659,
+          "ingress_publish": 5.33548086861841,
+          "dispatch_process": 11.5975314454197,
+          "dispatch_claim": 5.051338989389479,
+          "dispatch_http": 1.5888319895561358,
+          "dispatch_store": 4.950057207321816
+        },
+        "maxLagByTopic": {
+          "delivery.dispatch-requested.v1": 17,
+          "delivery.requested.v1": 20
+        },
+        "lastCommitLatencyAvgMsByClient": {
+          "ingress": [
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-1"
+              },
+              "value": 5.731439960139512
+            },
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-2",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-2"
+              },
+              "value": 5.742969906265417
+            },
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-3",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-3"
+              },
+              "value": 5.773353751914242
+            }
+          ],
+          "dispatch": [
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-1"
+              },
+              "value": 5.0059790732436475
+            },
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-2",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-2"
+              },
+              "value": 4.997039960532807
+            },
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-3",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-3"
+              },
+              "value": 5.0173557937723325
+            }
+          ]
+        },
+        "lastAssignedPartitionsByClient": {
+          "ingress": [
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-1"
+              },
+              "value": 1.0
+            },
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-2",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-2"
+              },
+              "value": 1.0
+            },
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-3",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-3"
+              },
+              "value": 1.0
+            }
+          ],
+          "dispatch": [
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-1"
+              },
+              "value": 1.0
+            },
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-2",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-2"
+              },
+              "value": 1.0
+            },
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-3",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-3"
+              },
+              "value": 1.0
+            }
+          ]
+        },
+        "dynamoDbLogicalCalls": {
+          "ingress": {
+            "put_item": {
+              "success": 18001.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "get_item": {
+              "success": 0.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "update_item": {
+              "success": 0.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            }
+          },
+          "dispatch": {
+            "put_item": {
+              "success": 0.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "get_item": {
+              "success": 0.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "update_item": {
+              "success": 36002.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            }
+          }
+        }
+      }
+    ],
+    "rawEvidenceDirectory": ".poc-results/20260924T104455Z-9a21b1bc",
+    "artifactSha256": {
+      "environment.json": "f1c30f4127937e9e23269d8b075472e7d3d9d934c1a18c36ee2eeb14c869e846",
+      "results.json": "9f11b98c3f141247964995a5efe3c525de2fcb2850f6e4ae107ef6efe232ba27",
+      "smoke-duplicate/result.json": "87c8cd699189d1e814f8c388eb168bb529ae8c1a6e10be3d3a1adedb713b9079",
+      "smoke-unique/result.json": "53d26b0a509007f94aca176de7971dd255b28959f707435ccb8be7c8abf869ec",
+      "comparison-100/result.json": "b00aff27174301513a3829035a1b75d85acc32d2c3218ef0d5f62403f2f0f117",
+      "comparison-50/result.json": "8815152b46f6dbc1d4e4b31c3cec57f15e1cec443da5c2f92b987192add98e7a",
+      "duplicate-load/result.json": "ac454eea580f382fd7089c435bb4fdec4507f02d453b037b500cd0a22251a122",
+      "warmup/result.json": "4a9522607876bb917d2ad85e66be2d8a53d27d414e7ba1b2c848af484cbf1467"
+    },
+    "policy-restored": {
+      "restored": true,
+      "usageCountersPreserved": true
+    }
+  },
+  {
+    "runId": "20260924T105557Z-9e342587",
+    "environment": {
+      "runId": "20260924T105557Z-9e342587",
+      "gitCommit": "1c2b58fe092f69cfe4b0272f7a00e87972c9e5cb",
+      "workingTreeDirty": false,
+      "platform": "macOS-26.3.1-arm64-arm-64bit-Mach-O",
+      "logicalCpus": 10,
+      "java": "Property settings:\n    file.encoding = UTF-8\n    file.separator = /\n    ftp.nonProxyHosts = local|*.local|169.254/16|*.169.254/16\n    http.nonProxyHosts = local|*.local|169.254/16|*.169.254/16\n    java.class.path = \n    java.class.version = 65.0\n    java.home = /Users/hyunseung/Library/Java/JavaVirtualMachines/temurin-21.0.7/Contents/Home\n    java.io.tmpdir = /var/folders/xv/44tbr7wd7bxgbqfv_8nkj30c0000gn/T/\n    java.library.path = /Users/hyunseung/Library/Java/Extensions\n        /Library/Java/Extensions\n        /Network/Library/Java/Extensions\n        /System/Library/Java/Extensions\n        /usr/lib/java\n        .\n    java.runtime.name = OpenJDK Runtime Environment\n    java.runtime.version = 21.0.7+6-LTS\n    java.specification.name = Java Platform API Specification\n    java.specification.vendor = Oracle Corporation\n    java.specification.version = 21\n    java.vendor = Eclipse Adoptium\n    java.vendor.url = https://adoptium.net/\n    java.vendor.url.bug = https://github.com/adoptium/adoptium-support/issues\n    java.vendor.version = Temurin-21.0.7+6\n    java.version = 21.0.7\n    java.version.date = 2025-04-15\n    java.vm.compressedOopsMode = Zero based\n    java.vm.info = mixed mode, sharing\n    java.vm.name = OpenJDK 64-Bit Server VM\n    java.vm.specification.name = Java Virtual Machine Specification\n    java.vm.specification.vendor = Oracle Corporation\n    java.vm.specification.version = 21\n    java.vm.vendor = Eclipse Adoptium\n    java.vm.version = 21.0.7+6-LTS\n    jdk.debug = release\n    line.separator = \\n \n    native.encoding = UTF-8\n    os.arch = aarch64\n    os.name = Mac OS X\n    os.version = 26.3.1\n    path.separator = :\n    socksNonProxyHosts = local|*.local|169.254/16|*.169.254/16\n    stderr.encoding = UTF-8\n    stdout.encoding = UTF-8\n    sun.arch.data.model = 64\n    sun.boot.library.path = /Users/hyunseung/Library/Java/JavaVirtualMachines/temurin-21.0.7/Contents/Home/lib\n    sun.cpu.endian = little\n    sun.io.unicode.encoding = UnicodeBig\n    sun.java.launcher = SUN_STANDARD\n    sun.jnu.encoding = UTF-8\n    sun.management.compiler = HotSpot 64-Bit Tiered Compilers\n    user.country = KR\n    user.dir = /Users/hyunseung/IdeaProjects/High-Throughtput/platform\n    user.home = /Users/hyunseung\n    user.language = ko\n    user.name = hyunseung\n\nopenjdk version \"21.0.7\" 2025-04-15 LTS\nOpenJDK Runtime Environment Temurin-21.0.7+6 (build 21.0.7+6-LTS)\nOpenJDK 64-Bit Server VM Temurin-21.0.7+6 (build 21.0.7+6-LTS, mixed mode, sharing)",
+      "k6": "k6 v1.8.1 (commit/73b044f9f9, go1.26.5, darwin/arm64)",
+      "pythonPackages": [
+        "boto3==1.43.101",
+        "botocore==1.43.101",
+        "confluent-kafka==2.15.1",
+        "jmespath==1.1.0",
+        "python-dateutil==2.9.0.post0",
+        "s3transfer==0.19.2",
+        "six==1.17.0",
+        "urllib3==2.8.0"
+      ],
+      "ports": {
+        "KAFKA_HOST_PORT": "29092",
+        "REDIS_HOST_PORT": "26379",
+        "POSTGRES_HOST_PORT": "25432",
+        "DYNAMODB_HOST_PORT": "28000",
+        "DELIVERY_API_PORT": "28080",
+        "MOCK_PROVIDER_PORT": "28090",
+        "INGRESS_HTTP_PORT": "28081",
+        "DISPATCH_HTTP_PORT": "28082",
+        "DELIVERY_API_METRICS_PORT": "29080",
+        "INGRESS_METRICS_PORT": "29081",
+        "DISPATCH_METRICS_PORT": "29082",
+        "SIMULATOR_METRICS_PORT": "29090"
+      },
+      "composeProject": "platform-poc",
+      "heapPerApp": "-Xms128m -Xmx512m",
+      "simulatorDelayMillis": 0,
+      "simulatorDeduplicate": false,
+      "workerConcurrency": 3,
+      "ingressLingerMillis": 0,
+      "workerAckMode": "RECORD",
+      "suite": "comparison",
+      "jarsSha256": {
+        "api": "a958fb5bda3adff3e03e220afcba29141cd47b14bf781ff6af1317141383e8b2",
+        "ingress": "fda0d29ca744f46d5f8151e062a4c948fa5eb5efdf7e03d12eb4d9688dd584a0",
+        "dispatch": "c701227de895b1676558b5e633b31967f00d51bd01f24b69e0d2bf68794b18f9",
+        "simulator": "41a3696cc698656d803960a537fa7085bbb8e399cad89faf48b535e920953e09"
+      },
+      "harnessSha256": {
+        "run.py": "ba71edd7f69ed18066550a584b56c7d97e4e854b610e06b1355ededc5c0458a8",
+        "requirements.txt": "8803e66f3e962ba30760df1103afa20cc3ec2aeeceb9e41e1824e2b0177fbd19",
+        "load.js": "54af50203c2e90d4c0bafee0398364a6d164fd744812396c12ffbd2959240a54",
+        "setup.py": "3b19bafab6c647954f7164ff5966794b452e18b67aab0649d2055587bd4ee497",
+        "test_evidence.py": "17c22ba85e001cc9ca44b9b114ae7bb5ccbdbc63a03eb5d8113abfd48717bf45",
+        "evidence.py": "ae3681e2506a53817bc5a84a2a969e32347c4897f567d2c8f1732c08ad8c1c64"
+      },
+      "hostMemoryBytes": 17179869184
+    },
+    "phases": [
+      {
+        "uniqueRequests": 11,
+        "submitted": 11,
+        "responses": 11,
+        "httpStatuses": {
+          "202": 11
+        },
+        "unanswered": 0,
+        "states": {
+          "ACCEPTED": 11
+        },
+        "problemRequests": 0,
+        "unexpectedKafkaIds": [],
+        "persistedTimestampLatencyMs": {
+          "p50": 1217.692,
+          "p95": 1894.991,
+          "p99": 1936.2798
+        },
+        "consistent": true,
+        "label": "smoke-unique",
+        "rate": 5,
+        "seconds": 2,
+        "mode": "unique",
+        "plannedRequests": 10,
+        "k6ExitCode": 0,
+        "droppedIterations": 0,
+        "completedIterations": 11,
+        "aborted": null,
+        "drained": true,
+        "maxLag": 11,
+        "oldestUncommittedAgeSeconds": 2.4509329795837402,
+        "drainObservationSeconds": 19.093162875040434,
+        "completionWindowSeconds": 21.34035929199308,
+        "metricsWindowSeconds": 16.73895025253296,
+        "persistedAcceptancesPerWindowSecond": 0.6571499307930296,
+        "httpDurationMs": {
+          "max": 1310.772,
+          "p(50)": 312.819,
+          "p(95)": 1211.6885,
+          "p(99)": 1290.9552999999999,
+          "avg": 459.3484545454546,
+          "min": 14.655,
+          "med": 312.819
+        },
+        "bodyBytes": 1009,
+        "pass": true
+      },
+      {
+        "uniqueRequests": 6,
+        "submitted": 11,
+        "responses": 11,
+        "httpStatuses": {
+          "202": 11
+        },
+        "unanswered": 0,
+        "states": {
+          "ACCEPTED": 6
+        },
+        "problemRequests": 0,
+        "unexpectedKafkaIds": [],
+        "persistedTimestampLatencyMs": {
+          "p50": 43.6155,
+          "p95": 63.71475,
+          "p99": 68.05255
+        },
+        "consistent": true,
+        "label": "smoke-duplicate",
+        "rate": 5,
+        "seconds": 2,
+        "mode": "duplicate",
+        "plannedRequests": 10,
+        "k6ExitCode": 0,
+        "droppedIterations": 0,
+        "completedIterations": 11,
+        "aborted": null,
+        "drained": true,
+        "maxLag": 6,
+        "oldestUncommittedAgeSeconds": 1.423604965209961,
+        "drainObservationSeconds": 12.00431754195597,
+        "completionWindowSeconds": 17.55418962496333,
+        "metricsWindowSeconds": 19.837815046310425,
+        "persistedAcceptancesPerWindowSecond": 0.30245266356165174,
+        "httpDurationMs": {
+          "max": 29.574,
+          "p(50)": 19.434,
+          "p(95)": 25.822,
+          "p(99)": 28.823600000000003,
+          "avg": 19.345181818181818,
+          "min": 15.001,
+          "med": 19.434
+        },
+        "bodyBytes": 1009,
+        "pass": true
+      },
+      {
+        "uniqueRequests": 601,
+        "submitted": 601,
+        "responses": 601,
+        "httpStatuses": {
+          "202": 601
+        },
+        "unanswered": 0,
+        "states": {
+          "ACCEPTED": 601
+        },
+        "problemRequests": 0,
+        "unexpectedKafkaIds": [],
+        "persistedTimestampLatencyMs": {
+          "p50": 32.745000000000005,
+          "p95": 43.471999999999994,
+          "p99": 55.525999999999996
+        },
+        "consistent": true,
+        "label": "warmup",
+        "rate": 10,
+        "seconds": 60,
+        "mode": "unique",
+        "plannedRequests": 600,
+        "k6ExitCode": 0,
+        "droppedIterations": 0,
+        "completedIterations": 601,
+        "aborted": null,
+        "drained": true,
+        "maxLag": 18,
+        "oldestUncommittedAgeSeconds": 1.5126008987426758,
+        "drainObservationSeconds": 12.036335583077744,
+        "completionWindowSeconds": 72.29743029200472,
+        "metricsWindowSeconds": 74.89969730377197,
+        "persistedAcceptancesPerWindowSecond": 8.024064470681559,
+        "httpDurationMs": {
+          "p(95)": 17.182,
+          "p(99)": 21.174,
+          "avg": 13.773093178036591,
+          "min": 9.609,
+          "med": 13.423,
+          "max": 72.666,
+          "p(50)": 13.423
+        },
+        "bodyBytes": 1009,
+        "pass": true
+      },
+      {
+        "uniqueRequests": 1000,
+        "submitted": 2000,
+        "responses": 2000,
+        "httpStatuses": {
+          "202": 2000
+        },
+        "unanswered": 0,
+        "states": {
+          "ACCEPTED": 1000
+        },
+        "problemRequests": 0,
+        "unexpectedKafkaIds": [],
+        "persistedTimestampLatencyMs": {
+          "p50": 30.782,
+          "p95": 120.09055,
+          "p99": 152.64266999999998
+        },
+        "consistent": true,
+        "label": "duplicate-load",
+        "rate": 100,
+        "seconds": 20,
+        "mode": "duplicate",
+        "plannedRequests": 2000,
+        "k6ExitCode": 0,
+        "droppedIterations": 0,
+        "completedIterations": 2000,
+        "aborted": null,
+        "drained": true,
+        "maxLag": 30,
+        "oldestUncommittedAgeSeconds": 0.234544038772583,
+        "drainObservationSeconds": 11.878834082977846,
+        "completionWindowSeconds": 33.994306207983755,
+        "metricsWindowSeconds": 34.10601091384888,
+        "persistedAcceptancesPerWindowSecond": 29.320344807429418,
+        "httpDurationMs": {
+          "avg": 9.368841000000014,
+          "min": 4.469,
+          "med": 8.695,
+          "max": 58.489,
+          "p(50)": 8.695,
+          "p(95)": 12.554949999999998,
+          "p(99)": 18.591219999999993
+        },
+        "bodyBytes": 1009,
+        "pass": true
+      },
+      {
+        "uniqueRequests": 9000,
+        "submitted": 9000,
+        "responses": 9000,
+        "httpStatuses": {
+          "202": 9000
+        },
+        "unanswered": 0,
+        "states": {
+          "ACCEPTED": 9000
+        },
+        "problemRequests": 0,
+        "unexpectedKafkaIds": [],
+        "persistedTimestampLatencyMs": {
+          "p50": 18.136,
+          "p95": 28.358249999999998,
+          "p99": 53.31751000000014
+        },
+        "consistent": true,
+        "label": "comparison-50",
+        "rate": 50,
+        "seconds": 180,
+        "mode": "unique",
+        "plannedRequests": 9000,
+        "k6ExitCode": 0,
+        "droppedIterations": 0,
+        "completedIterations": 9000,
+        "aborted": null,
+        "drained": true,
+        "maxLag": 30,
+        "oldestUncommittedAgeSeconds": 0.5628759860992432,
+        "drainObservationSeconds": 12.30044258304406,
+        "completionWindowSeconds": 192.56456974998582,
+        "metricsWindowSeconds": 192.46144723892212,
+        "persistedAcceptancesPerWindowSecond": 46.76261209252665,
+        "httpDurationMs": {
+          "min": 2.98,
+          "med": 7.986,
+          "max": 68.792,
+          "p(50)": 7.986,
+          "p(95)": 9.792,
+          "p(99)": 14.36717,
+          "avg": 8.230789666666661
+        },
+        "bodyBytes": 1009,
+        "pass": true
+      },
+      {
+        "uniqueRequests": 18001,
+        "submitted": 18001,
+        "responses": 18001,
+        "httpStatuses": {
+          "202": 18001
+        },
+        "unanswered": 0,
+        "states": {
+          "ACCEPTED": 18001
+        },
+        "problemRequests": 0,
+        "unexpectedKafkaIds": [],
+        "persistedTimestampLatencyMs": {
+          "p50": 24.339,
+          "p95": 1728.454,
+          "p99": 3546.035
+        },
+        "consistent": true,
+        "label": "comparison-100",
+        "rate": 100,
+        "seconds": 180,
+        "mode": "unique",
+        "plannedRequests": 18000,
+        "k6ExitCode": 0,
+        "droppedIterations": 0,
+        "completedIterations": 18001,
+        "aborted": null,
+        "drained": true,
+        "maxLag": 404,
+        "oldestUncommittedAgeSeconds": 2.8721418380737305,
+        "drainObservationSeconds": 12.153153999941424,
+        "completionWindowSeconds": 193.51980775000993,
+        "metricsWindowSeconds": 193.22666788101196,
+        "persistedAcceptancesPerWindowSecond": 93.16001873553462,
+        "httpDurationMs": {
+          "p(95)": 9.61,
+          "p(99)": 13.176,
+          "avg": 7.787598244541943,
+          "min": 1.533,
+          "med": 7.608,
+          "max": 59.876,
+          "p(50)": 7.608
+        },
+        "bodyBytes": 1009,
+        "pass": true
+      }
+    ],
+    "analysis": [
+      {
+        "phase": "smoke-unique",
+        "stageMeanMs": {
+          "ingress_process": 67.423856,
+          "ingress_store": 52.29598481818182,
+          "ingress_publish": 15.029102272727274,
+          "dispatch_process": 100.30936,
+          "dispatch_claim": 54.137356,
+          "dispatch_http": 29.818636454545455,
+          "dispatch_store": 15.608060636363636
+        },
+        "maxLagByTopic": {
+          "delivery.dispatch-requested.v1": 11,
+          "delivery.requested.v1": 0
+        },
+        "lastCommitLatencyAvgMsByClient": {
+          "ingress": [
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-1"
+              },
+              "value": 8.75
+            },
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-2",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-2"
+              },
+              "value": 14.5
+            },
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-3",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-3"
+              },
+              "value": 9.4
+            }
+          ],
+          "dispatch": [
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-1"
+              },
+              "value": 6.25
+            },
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-2",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-2"
+              },
+              "value": 8.0
+            },
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-3",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-3"
+              },
+              "value": 8.2
+            }
+          ]
+        },
+        "lastAssignedPartitionsByClient": {
+          "ingress": [
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-1"
+              },
+              "value": 1.0
+            },
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-2",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-2"
+              },
+              "value": 1.0
+            },
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-3",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-3"
+              },
+              "value": 1.0
+            }
+          ],
+          "dispatch": [
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-1"
+              },
+              "value": 1.0
+            },
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-2",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-2"
+              },
+              "value": 1.0
+            },
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-3",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-3"
+              },
+              "value": 1.0
+            }
+          ]
+        },
+        "dynamoDbLogicalCalls": {
+          "ingress": {
+            "put_item": {
+              "success": 11.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "get_item": {
+              "success": 0.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "update_item": {
+              "success": 0.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            }
+          },
+          "dispatch": {
+            "put_item": {
+              "success": 0.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "get_item": {
+              "success": 0.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "update_item": {
+              "success": 22.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            }
+          }
+        }
+      },
+      {
+        "phase": "smoke-duplicate",
+        "stageMeanMs": {
+          "ingress_process": 22.202742545454544,
+          "ingress_store": 18.55127654545454,
+          "ingress_publish": 3.5963372727272724,
+          "dispatch_process": 22.08434472727274,
+          "dispatch_claim": 14.684871272727278,
+          "dispatch_http": 5.054499999999999,
+          "dispatch_store": 8.211465333333335
+        },
+        "maxLagByTopic": {
+          "delivery.dispatch-requested.v1": 0,
+          "delivery.requested.v1": 6
+        },
+        "lastCommitLatencyAvgMsByClient": {
+          "ingress": [
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-1"
+              },
+              "value": 8.333333333333334
+            },
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-2",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-2"
+              },
+              "value": 11.25
+            },
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-3",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-3"
+              },
+              "value": 9.0
+            }
+          ],
+          "dispatch": [
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-1"
+              },
+              "value": 6.666666666666667
+            },
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-2",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-2"
+              },
+              "value": 8.25
+            },
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-3",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-3"
+              },
+              "value": 7.666666666666667
+            }
+          ]
+        },
+        "lastAssignedPartitionsByClient": {
+          "ingress": [
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-1"
+              },
+              "value": 1.0
+            },
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-2",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-2"
+              },
+              "value": 1.0
+            },
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-3",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-3"
+              },
+              "value": 1.0
+            }
+          ],
+          "dispatch": [
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-1"
+              },
+              "value": 1.0
+            },
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-2",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-2"
+              },
+              "value": 1.0
+            },
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-3",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-3"
+              },
+              "value": 1.0
+            }
+          ]
+        },
+        "dynamoDbLogicalCalls": {
+          "ingress": {
+            "put_item": {
+              "success": 6.0,
+              "condition_failed": 5.0,
+              "failure": 0.0
+            },
+            "get_item": {
+              "success": 5.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "update_item": {
+              "success": 0.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            }
+          },
+          "dispatch": {
+            "put_item": {
+              "success": 0.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "get_item": {
+              "success": 5.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "update_item": {
+              "success": 12.0,
+              "condition_failed": 5.0,
+              "failure": 0.0
+            }
+          }
+        }
+      },
+      {
+        "phase": "warmup",
+        "stageMeanMs": {
+          "ingress_process": 11.34298871547421,
+          "ingress_store": 9.201699126455907,
+          "ingress_publish": 2.1134048003327783,
+          "dispatch_process": 18.48640335607321,
+          "dispatch_claim": 7.8032296289517475,
+          "dispatch_http": 3.780454242928453,
+          "dispatch_store": 6.80603500998336
+        },
+        "maxLagByTopic": {
+          "delivery.dispatch-requested.v1": 9,
+          "delivery.requested.v1": 9
+        },
+        "lastCommitLatencyAvgMsByClient": {
+          "ingress": [
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-1"
+              },
+              "value": 6.653409090909091
+            },
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-2",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-2"
+              },
+              "value": 6.9655172413793105
+            },
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-3",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-3"
+              },
+              "value": 6.635416666666667
+            }
+          ],
+          "dispatch": [
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-1"
+              },
+              "value": 7.045454545454546
+            },
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-2",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-2"
+              },
+              "value": 7.054187192118227
+            },
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-3",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-3"
+              },
+              "value": 6.9
+            }
+          ]
+        },
+        "lastAssignedPartitionsByClient": {
+          "ingress": [
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-1"
+              },
+              "value": 1.0
+            },
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-2",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-2"
+              },
+              "value": 1.0
+            },
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-3",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-3"
+              },
+              "value": 1.0
+            }
+          ],
+          "dispatch": [
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-1"
+              },
+              "value": 1.0
+            },
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-2",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-2"
+              },
+              "value": 1.0
+            },
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-3",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-3"
+              },
+              "value": 1.0
+            }
+          ]
+        },
+        "dynamoDbLogicalCalls": {
+          "ingress": {
+            "put_item": {
+              "success": 601.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "get_item": {
+              "success": 0.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "update_item": {
+              "success": 0.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            }
+          },
+          "dispatch": {
+            "put_item": {
+              "success": 0.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "get_item": {
+              "success": 0.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "update_item": {
+              "success": 1202.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            }
+          }
+        }
+      },
+      {
+        "phase": "duplicate-load",
+        "stageMeanMs": {
+          "ingress_process": 9.546074058,
+          "ingress_store": 8.1957782175,
+          "ingress_publish": 1.3411295534999998,
+          "dispatch_process": 12.0451726195,
+          "dispatch_claim": 7.378230661,
+          "dispatch_http": 2.5134546490000003,
+          "dispatch_store": 6.7411160830000005
+        },
+        "maxLagByTopic": {
+          "delivery.dispatch-requested.v1": 24,
+          "delivery.requested.v1": 14
+        },
+        "lastCommitLatencyAvgMsByClient": {
+          "ingress": [
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-1"
+              },
+              "value": 5.830379746835443
+            },
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-2",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-2"
+              },
+              "value": 5.76552598225602
+            },
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-3",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-3"
+              },
+              "value": 5.80835734870317
+            }
+          ],
+          "dispatch": [
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-1"
+              },
+              "value": 5.656962025316456
+            },
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-2",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-2"
+              },
+              "value": 5.690747782002535
+            },
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-3",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-3"
+              },
+              "value": 5.6753623188405795
+            }
+          ]
+        },
+        "lastAssignedPartitionsByClient": {
+          "ingress": [
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-1"
+              },
+              "value": 1.0
+            },
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-2",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-2"
+              },
+              "value": 1.0
+            },
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-3",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-3"
+              },
+              "value": 1.0
+            }
+          ],
+          "dispatch": [
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-1"
+              },
+              "value": 1.0
+            },
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-2",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-2"
+              },
+              "value": 1.0
+            },
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-3",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-3"
+              },
+              "value": 1.0
+            }
+          ]
+        },
+        "dynamoDbLogicalCalls": {
+          "ingress": {
+            "put_item": {
+              "success": 1000.0,
+              "condition_failed": 1000.0,
+              "failure": 0.0
+            },
+            "get_item": {
+              "success": 1000.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "update_item": {
+              "success": 0.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            }
+          },
+          "dispatch": {
+            "put_item": {
+              "success": 0.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "get_item": {
+              "success": 1000.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "update_item": {
+              "success": 2000.0,
+              "condition_failed": 1000.0,
+              "failure": 0.0
+            }
+          }
+        }
+      },
+      {
+        "phase": "comparison-50",
+        "stageMeanMs": {
+          "ingress_process": 5.679060055999998,
+          "ingress_store": 4.870648682222222,
+          "ingress_publish": 0.8041545607777778,
+          "dispatch_process": 11.023826045222222,
+          "dispatch_claim": 4.588743631888889,
+          "dispatch_http": 1.8999966824444445,
+          "dispatch_store": 4.518660841222222
+        },
+        "maxLagByTopic": {
+          "delivery.dispatch-requested.v1": 19,
+          "delivery.requested.v1": 23
+        },
+        "lastCommitLatencyAvgMsByClient": {
+          "ingress": [
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-1"
+              },
+              "value": 6.054655870445344
+            },
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-2",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-2"
+              },
+              "value": 6.037661050545094
+            },
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-3",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-3"
+              },
+              "value": 6.1361788617886175
+            }
+          ],
+          "dispatch": [
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-1"
+              },
+              "value": 5.966599190283401
+            },
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-2",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-2"
+              },
+              "value": 5.952475247524752
+            },
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-3",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-3"
+              },
+              "value": 5.973577235772358
+            }
+          ]
+        },
+        "lastAssignedPartitionsByClient": {
+          "ingress": [
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-1"
+              },
+              "value": 1.0
+            },
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-2",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-2"
+              },
+              "value": 1.0
+            },
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-3",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-3"
+              },
+              "value": 1.0
+            }
+          ],
+          "dispatch": [
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-1"
+              },
+              "value": 1.0
+            },
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-2",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-2"
+              },
+              "value": 1.0
+            },
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-3",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-3"
+              },
+              "value": 1.0
+            }
+          ]
+        },
+        "dynamoDbLogicalCalls": {
+          "ingress": {
+            "put_item": {
+              "success": 9000.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "get_item": {
+              "success": 0.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "update_item": {
+              "success": 0.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            }
+          },
+          "dispatch": {
+            "put_item": {
+              "success": 0.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "get_item": {
+              "success": 0.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "update_item": {
+              "success": 18000.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            }
+          }
+        }
+      },
+      {
+        "phase": "comparison-100",
+        "stageMeanMs": {
+          "ingress_process": 7.897647849286149,
+          "ingress_store": 7.114290744514195,
+          "ingress_publish": 0.7810900354980279,
+          "dispatch_process": 13.886796133325928,
+          "dispatch_claim": 6.100518555413588,
+          "dispatch_http": 1.697093666185212,
+          "dispatch_store": 6.080713905894116
+        },
+        "maxLagByTopic": {
+          "delivery.dispatch-requested.v1": 296,
+          "delivery.requested.v1": 108
+        },
+        "lastCommitLatencyAvgMsByClient": {
+          "ingress": [
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-1"
+              },
+              "value": 5.56619443087445
+            },
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-2",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-2"
+              },
+              "value": 5.484455958549223
+            },
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-3",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-3"
+              },
+              "value": 5.571567200388161
+            }
+          ],
+          "dispatch": [
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-1"
+              },
+              "value": 5.13533107781537
+            },
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-2",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-2"
+              },
+              "value": 5.0992327365728904
+            },
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-3",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-3"
+              },
+              "value": 5.143062200956938
+            }
+          ]
+        },
+        "lastAssignedPartitionsByClient": {
+          "ingress": [
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-1"
+              },
+              "value": 1.0
+            },
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-2",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-2"
+              },
+              "value": 1.0
+            },
+            {
+              "labels": {
+                "application": "delivery-ingress-worker",
+                "client_id": "consumer-delivery-ingress-worker-3",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-ingress-worker-3"
+              },
+              "value": 1.0
+            }
+          ],
+          "dispatch": [
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-1",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-1"
+              },
+              "value": 1.0
+            },
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-2",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-2"
+              },
+              "value": 1.0
+            },
+            {
+              "labels": {
+                "application": "dispatch-worker",
+                "client_id": "consumer-delivery-dispatch-worker-3",
+                "kafka_version": "4.2.1",
+                "spring_id": "kafkaConsumerFactory.consumer-delivery-dispatch-worker-3"
+              },
+              "value": 1.0
+            }
+          ]
+        },
+        "dynamoDbLogicalCalls": {
+          "ingress": {
+            "put_item": {
+              "success": 18001.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "get_item": {
+              "success": 0.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "update_item": {
+              "success": 0.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            }
+          },
+          "dispatch": {
+            "put_item": {
+              "success": 0.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "get_item": {
+              "success": 0.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            },
+            "update_item": {
+              "success": 36002.0,
+              "condition_failed": 0.0,
+              "failure": 0.0
+            }
+          }
+        }
+      }
+    ],
+    "rawEvidenceDirectory": ".poc-results/20260924T105557Z-9e342587",
+    "artifactSha256": {
+      "environment.json": "152e55d94e84caf6a4a81ccaa917dd936e09689b7ff77ffb3e0c3a1c91c5813d",
+      "results.json": "9f2b0467455de8165cfc6c73754f47a8cd1845afc7961066cbd90305c37d3b5b",
+      "smoke-duplicate/result.json": "009dd5e17bb92f64403bc05f1fc2ea78f7680d515fb3550f9e4bfd04aa2ef4e1",
+      "smoke-unique/result.json": "29411e8dda3c9ef4ece7f9d1c9482da2514a169c0d459ef83f3f58676fcfb46f",
+      "comparison-100/result.json": "6c61ab0345c28aa8c9cd35b6227cd4d955f66ac429b107038e0135de70209bd9",
+      "comparison-50/result.json": "9f5463a7978c388cd2863ac502ca86209c8b37243fb62868dd7aa42ae1f8b042",
+      "duplicate-load/result.json": "087acc713c3722e96d15a7a30f057fd2f1b9496c4ee1d24c782ca62e752488cf",
+      "warmup/result.json": "ffa7c459d239a4bb51e3ba73a40d4e6ca7fc375d87be2dcd7e7f270998b17dc5"
+    },
+    "policy-restored": {
+      "restored": true,
+      "usageCountersPreserved": true
+    }
+  }
+]
