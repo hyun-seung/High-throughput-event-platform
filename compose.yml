@@ -22,7 +22,8 @@ services:
       KAFKA_NUM_PARTITIONS: 3
       KAFKA_LOG_DIRS: /var/lib/kafka/data
     volumes:
-      - kafka-data:/var/lib/kafka
+      # Mount the actual log path; the image declares a nested VOLUME at /var/lib/kafka/data.
+      - kafka-data:/var/lib/kafka/data
     healthcheck:
       test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:29092 --list >/dev/null 2>&1"]
       interval: 10s

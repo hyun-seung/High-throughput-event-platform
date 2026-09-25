@@ -123,6 +123,8 @@ class Runner:
             manifest['hostMemoryBytes'] = int(subprocess.check_output(['sysctl', '-n', 'hw.memsize'], text=True))
         write_json(self.directory / 'environment.json', manifest)
         print(f'RUN {self.run_id}: starting isolated infrastructure', flush=True)
+        subprocess.run(['bash', str(ROOT / 'scripts/check-kafka-volume.sh')] + self.compose,
+                       env=self.compose_env, cwd=ROOT, check=True, timeout=20)
         self.infra_started = True
         with (self.directory / 'infra-start.log').open('w') as log:
             subprocess.run(self.compose + ['up', '-d', '--wait', '--wait-timeout', '180'], env=self.compose_env,
