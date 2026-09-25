@@ -150,7 +150,7 @@ class Run:
                  'correlationId': delivery, 'causationId': java_id(f'event:{delivery}:DELIVERY_REQUESTED:v1'),
                  'fallbackAllowed': fallback}
         self.db.put_item(TableName=TABLE, Item={'pk': {'S': 'DELIVERY#' + delivery}, 'sk': {'S': 'META'},
-            'tenant_id': {'N': '999'}, 'delivery_type': {'S': 'SMS'}, 'payload': {'S': json.dumps(event['payload'])},
+            'delivery_id': {'S': delivery}, 'tenant_id': {'N': '999'}, 'delivery_type': {'S': 'SMS'}, 'payload': {'S': json.dumps(event['payload'])},
             'occurred_at': {'S': now}, 'fallback_allowed': {'BOOL': fallback}}, ConditionExpression='attribute_not_exists(pk)')
         self.publish(event)
         return delivery, event

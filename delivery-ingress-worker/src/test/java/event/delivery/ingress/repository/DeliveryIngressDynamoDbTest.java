@@ -75,6 +75,57 @@ class DeliveryIngressDynamoDbTest {
         if (client != null) client.close();
     }
 
+    @Test void newAdmissionKeepsOneExecutionAcrossConcurrentApiRetriesAndRedisLoss() throws Exception {
+        first = first.forAdmission();
+        var executions = new java.util.HashSet<String>();
+        try (var workers = Executors.newFixedThreadPool(8)) {
+            var calls = new ArrayList<Future<DeliveryRepository.SavedDelivery>>();
+            for (int i = 0; i < 24; i++) calls.add(workers.submit(() -> repository.saveOrLoad(first)));
+            for (var call : calls) {
+                var saved = call.get(10, TimeUnit.SECONDS);
+                assertFalse(saved.completed()); assertEquals(first.occurredAt(), saved.event().occurredAt());
+                assertEquals(first.requestKey(), saved.event().requestKey()); executions.add(saved.event().deliveryId());
+            }
+        }
+        assertEquals(1, executions.size()); assertFalse(executions.contains(first.deliveryId()));
+        assertEquals(executions.iterator().next(), new DeliveryRepository(client, JsonMapper.builder().build()).saveOrLoad(first).event().deliveryId());
+    }
+
+    @Test void realRedisCompletionBlocksUntilLostAndActiveDynamoStillWins() throws Exception {
+        int port = Integer.parseInt(System.getenv().getOrDefault("REDIS_TEST_PORT", "16379"));
+        var factory = new org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory("localhost", port);
+        factory.afterPropertiesSet(); factory.start();
+        var redis = new org.springframework.data.redis.core.StringRedisTemplate(factory);
+        var cache = new event.common.redis.DeliveryCache(redis, null, Duration.ofSeconds(30));
+        first = first.forAdmission();
+        try {
+            var repo = new DeliveryRepository(client, JsonMapper.builder().build(), cache);
+            var active = repo.saveOrLoad(first).event();
+            cache.removeSchedule(active.requestKey());
+            assertEquals(active.deliveryId(), repo.saveOrLoad(first).event().deliveryId());
+            var fingerprint = event.common.lifecycle.DeliveryCompletion.fingerprint(first.requestKey(), first.tenantId(), first.deliveryType(),
+                    first.fallbackAllowed(), JsonMapper.builder().build().writeValueAsString(first.payload()));
+            cache.complete(first.requestKey(), fingerprint, Instant.now());
+            assertTrue(repo.saveOrLoad(first).completed());
+            // Simulate the deletion boundary; SQL-before-cleanup is tested in the result worker.
+            client.deleteItem(r -> r.tableName(DELIVERY_STATE).key(key()));
+            assertTrue(repo.saveOrLoad(first).completed());
+            redis.delete("delivery:completed:" + first.requestKey());
+            var next = repo.saveOrLoad(first).event(); assertNotEquals(active.deliveryId(), next.deliveryId());
+            assertEquals(first.requestKey(), next.requestKey());
+            cache.removeSchedule(next.deliveryId()); cache.removeSchedule(active.deliveryId());
+        } finally { cache.removeSchedule(first.requestKey()); redis.delete("delivery:completed:" + first.requestKey()); factory.destroy(); }
+    }
+
+    @Test void cacheCompletionArrivingAfterAdmissionNeverDeletesAnActiveOrigin() {
+        first = first.forAdmission();
+        var cache = mock(event.common.redis.DeliveryCache.class);
+        when(cache.completed(first.requestKey())).thenReturn(null, "completion-arrived");
+        var repo = new DeliveryRepository(client, JsonMapper.builder().build(), cache);
+        var saved = repo.saveOrLoad(first); assertFalse(saved.completed());
+        assertEquals(saved.event().deliveryId(), stored().get("delivery_id").s());
+    }
+
     @Test
     void replayAfterStorageBeforePublicationRecoversDispatchWithOriginalTime() {
         repository.saveOrLoad(first); // Process stopped after this durable write.

@@ -1,4 +1,11 @@
 spring:
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      database: ${REDIS_DATABASE:0}
+      connect-timeout: ${REDIS_CONNECT_TIMEOUT:200ms}
+      timeout: ${REDIS_TIMEOUT:200ms}
   application:
     name: dispatch-worker
 
@@ -44,6 +51,7 @@ external-tcp:
   exchange-timeout: ${EXTERNAL_TCP_EXCHANGE_TIMEOUT:5s}
 
 delivery:
+  completed-retention: ${DELIVERY_COMPLETED_RETENTION:24h}
   dynamodb:
     enabled: true
     region: ${AWS_REGION:ap-northeast-2}

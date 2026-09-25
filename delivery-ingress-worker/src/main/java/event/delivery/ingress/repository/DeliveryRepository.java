@@ -34,7 +34,6 @@ import static event.common.dynamodb.DynamoDbAttributeNames.UPDATED_AT;
 import static event.common.dynamodb.DynamoDbTableNames.DELIVERY_STATE;
 
 @Repository
-@RequiredArgsConstructor
 public class DeliveryRepository {
 
     private static final String DELIVERY_PREFIX = "DELIVERY#";
@@ -44,10 +43,27 @@ public class DeliveryRepository {
     private final DynamoDbClient dynamoDbClient;
     private final JsonMapper jsonMapper;
 
+    private final event.common.redis.DeliveryCache cache;
+    public DeliveryRepository(DynamoDbClient db, JsonMapper mapper) {
+        this(db, mapper, event.common.redis.DeliveryCache.UNAVAILABLE);
+    }
+    @org.springframework.beans.factory.annotation.Autowired
+    public DeliveryRepository(DynamoDbClient db, JsonMapper mapper, event.common.redis.DeliveryCache cache) {
+        this.dynamoDbClient = db; this.jsonMapper = mapper; this.cache = cache;
+    }
+
     public record SavedDelivery(DeliveryEvent event, boolean completed) {}
 
     public SavedDelivery saveOrLoad(DeliveryEvent event) {
-        Map<String, AttributeValue> item = toItem(event);
+        if (event.schemaVersion() >= 2) {
+            String completed = cache.completed(event.requestKey());
+            if (completed != null) {
+                if (!completed.equals(fingerprint(event))) throw new IdempotencyConflictException(event.requestKey());
+                return new SavedDelivery(event, true);
+            }
+        }
+        DeliveryEvent candidate = event.schemaVersion() >= 2 ? event.execution(java.util.UUID.randomUUID().toString()) : event;
+        Map<String, AttributeValue> item = toItem(candidate);
         PutItemRequest request = PutItemRequest.builder()
                 .tableName(DELIVERY_STATE)
                 .item(item)
@@ -57,7 +73,10 @@ public class DeliveryRepository {
 
         try {
             dynamoDbClient.putItem(request);
-            return new SavedDelivery(event, false);
+            // Cache and DynamoDB are not atomic. Once admitted, preserve this execution even if an old
+            // completion marker arrives late; a lifecycle worker may already have claimed its STEP.
+            cache.schedule(candidate.requestKey(), candidate.occurredAt());
+            return new SavedDelivery(candidate, false);
         } catch (ConditionalCheckFailedException e) {
             return loadExistingDelivery(event);
         }
@@ -66,7 +85,7 @@ public class DeliveryRepository {
     private SavedDelivery loadExistingDelivery(DeliveryEvent event) {
         Map<String, AttributeValue> existing = dynamoDbClient.getItem(GetItemRequest.builder()
                         .tableName(DELIVERY_STATE)
-                        .key(key(event.deliveryId()))
+                        .key(key(event.requestKey()))
                         .consistentRead(true)
                         .build())
                 .item();
@@ -84,7 +103,7 @@ public class DeliveryRepository {
                     || !value(existing, EVENT_ID).equals(event.eventId())) throw new IdempotencyConflictException(event.deliveryId());
             return new SavedDelivery(event, true);
         }
-        boolean sameRequest = value(existing, EVENT_ID).equals(event.eventId())
+        boolean sameRequest = (event.schemaVersion() >= 2 || value(existing, EVENT_ID).equals(event.eventId()))
                 && value(existing, TENANT_ID).equals(String.valueOf(event.tenantId()))
                 && value(existing, DELIVERY_TYPE).equals(event.deliveryType())
                 && Boolean.TRUE.equals(existing.getOrDefault(FALLBACK_ALLOWED, AttributeValue.fromBool(false)).bool()) == event.fallbackAllowed()
@@ -97,16 +116,18 @@ public class DeliveryRepository {
         // A client retry has a new API timestamp. Always forward the first persisted ingress time.
         Instant originalOccurredAt = Instant.parse(value(existing, OCCURRED_AT));
         return new SavedDelivery(new DeliveryEvent(
-                event.schemaVersion(), event.eventId(), event.eventType(), event.deliveryId(),
+                existing.containsKey("schema_version") ? Integer.parseInt(existing.get("schema_version").n()) : 1, value(existing, EVENT_ID), event.eventType(), value(existing, DELIVERY_ID),
                 event.tenantId(), event.deliveryType(), event.payload(), originalOccurredAt,
-                event.correlationId(), event.causationId(), event.fallbackAllowed()), existing.containsKey(DeliveryCompletion.FENCE));
+                event.requestKey(), event.causationId(), event.fallbackAllowed(), event.requestKey()), existing.containsKey(DeliveryCompletion.FENCE));
     }
 
     private Map<String, AttributeValue> toItem(DeliveryEvent event) {
         Instant now = Instant.now();
         Map<String, AttributeValue> item = new HashMap<>();
 
-        item.putAll(key(event.deliveryId()));
+        item.putAll(key(event.requestKey()));
+        item.put("request_key", AttributeValue.fromS(event.requestKey()));
+        item.put("schema_version", AttributeValue.fromN(Integer.toString(event.schemaVersion())));
         LifecycleIndex.add(item, event.deliveryId(), 0);
         item.put(DELIVERY_ID, AttributeValue.fromS(event.deliveryId()));
         item.put(EVENT_ID, AttributeValue.fromS(event.eventId()));
@@ -133,6 +154,11 @@ public class DeliveryRepository {
     private String value(Map<String, AttributeValue> item, String name) {
         AttributeValue value = item.get(name);
         return value == null ? "" : value.s() == null ? value.n() : value.s();
+    }
+
+    private String fingerprint(DeliveryEvent event) {
+        return DeliveryCompletion.fingerprint(event.requestKey(), event.tenantId(), event.deliveryType(),
+                event.fallbackAllowed(), serializePayload(event.payload()));
     }
 
     private String serializePayload(Map<String, Object> payload) {
