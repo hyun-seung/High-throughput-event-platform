@@ -146,3 +146,7 @@ JAVA_HOME=/path/to/jdk-21 ./mvnw -q -pl dispatch-worker -am \
 - [조정 호출 순서](../dispatch-worker/src/main/java/event/delivery/dispatch/lifecycle/LifecycleService.java)
 - [원본 정리](../event-common/src/main/java/event/common/lifecycle/DeliveryCompactor.java)
 - [횟수 계측 시험](../dispatch-worker/src/test/java/event/delivery/dispatch/lifecycle/DynamoDbWriteBudgetTest.java)
+
+## Redis 활용을 포함한 후속 계획
+
+[Redis TTL의 보장과 DynamoDB 최소화 계획](34-Redis-TTL의-보장과-DynamoDB-최소화-계획.md)에 TTL의 정확한 의미, Redis로 옮길 검색·캐시, DDB에 유지할 내구성 조건, 중간 쓰기 병합 순서를 정리했습니다. 계획 단계이며 이 문서의 실제 측정값을 바꾸지 않습니다.

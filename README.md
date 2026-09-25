@@ -40,6 +40,7 @@
 - [고객 HTTP 묶음 통지와 재전송 복구](docs/31-고객-HTTP-묶음-통지와-재전송-복구.md)
 - [완료 기록 유지와 발송 원본의 안전한 정리](docs/32-완료-기록-유지와-발송-원본의-안전한-정리.md)
 - [DynamoDB 사용 횟수와 최소화 검토](docs/33-DynamoDB-사용-횟수와-최소화-검토.md)
+- [Redis TTL의 보장과 DynamoDB 최소화 계획](docs/34-Redis-TTL의-보장과-DynamoDB-최소화-계획.md)
 - [설계 결정과 근거 목록](docs/adr/설계-결정과-근거-목록.md)
 
 ## Grafana 대시보드
