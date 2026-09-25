@@ -64,7 +64,7 @@ class DltRecoveryIntegrationTest {
             statement.execute("SET search_path TO " + schema);
             for (String migration : List.of("V1__delivery_history_and_notification_outbox.sql", "V2__customer_notification_batches.sql",
                     "V3__delivery_cleanup_reservations.sql", "V4__dlt_recovery_handoff.sql", "V5__dlt_history_coverage.sql",
-                    "V6__dlt_recovery_checkpoint.sql", "V7__dlt_intake.sql")) {
+                    "V6__dlt_recovery_checkpoint.sql", "V7__dlt_intake.sql", "V8__dlt_operator_recheck.sql")) {
                 try (var resource = DltRecoveryIntegrationTest.class.getResourceAsStream("/db/migration/" + migration)) {
                     assertNotNull(resource); statement.execute(new String(resource.readAllBytes(), StandardCharsets.UTF_8));
                 }
@@ -152,6 +152,127 @@ class DltRecoveryIntegrationTest {
     }
     Map<String, AttributeValue> origin() {
         return db.getItem(r -> r.tableName("ORIGIN").key(DeliveryCompletion.metaKey(admitted.requestKey())).consistentRead(true)).item();
+    }
+
+    DltOperations operations() { return new DltOperations(DltRecoveryIntegrationTest::connect, schema, topic); }
+    DltOperations.Item heldItem() throws Exception {
+        createInput(); input(record); removeOrigin();
+        intakeWorker(planner(NOW)).runOnce(0, 10);
+        return operations().held(inputTopic, 0, -1, 10).records().getFirst();
+    }
+
+    @Test void heldMetadataPagesAreBoundedAndDoNotExposeOrModifyRawRecords() throws Exception {
+        createInput(); input(record); input(record); input(record); removeOrigin();
+        intakeWorker(planner(NOW)).runOnce(0, 10);
+        var operations = operations(); var page = operations.held(inputTopic, 0, -1, 2);
+        assertEquals(List.of(0L, 1L), page.records().stream().map(DltOperations.Item::offset).toList());
+        assertTrue(page.hasMore()); assertEquals(1L, page.nextAfterOffset());
+        var last = operations.held(inputTopic, 0, page.nextAfterOffset(), 2);
+        assertEquals(2L, last.records().getFirst().offset()); assertFalse(last.hasMore()); assertNull(last.nextAfterOffset());
+        assertEquals(page, operations.held(inputTopic, 0, -1, 2));
+        assertFalse(MAPPER.writeValueAsString(page).contains("private-payload"));
+        assertEquals(3, intakeStore().cursor(intakeScope(), 0)); assertEquals(0, records());
+        assertEquals(0, count("dlt_intake_action a JOIN " + schema + ".dlt_intake_record i ON i.intake_id=a.intake_id WHERE i.cluster_alias='" + topic + "'"));
+        assertThrows(IllegalArgumentException.class, () -> operations.held(inputTopic, 0, -1, 101));
+        assertThrows(IllegalArgumentException.class, () -> operations.held(inputTopic, 0, -2, 10));
+    }
+
+    @Test void statusJoinsRecoveryAttemptsWithoutExposingCheckpointOrPayload() throws Exception {
+        createInput(); input(record); intakeWorker(planner(NOW)).runOnce(0, 10);
+        UUID id;
+        try (var connection = connect(); var query = connection.prepareStatement("SELECT intake_id FROM " + schema + ".dlt_intake_record WHERE cluster_alias=?")) {
+            query.setString(1, topic); try (var row = query.executeQuery()) { assertTrue(row.next()); id = row.getObject(1, UUID.class); }
+        }
+        var status = operations().status(id);
+        assertEquals("REGISTERED", status.record().state()); assertEquals("ACKNOWLEDGED", status.record().recoveryState());
+        assertEquals(1L, status.nextScanOffset()); assertEquals(1, status.recentAttempts().size());
+        assertEquals("ACKNOWLEDGED", status.recentAttempts().getFirst().outcome());
+        assertTrue(status.recentActions().isEmpty());
+        var json = MAPPER.writeValueAsString(status);
+        assertFalse(json.contains("private-payload")); assertFalse(json.contains("checkpoint_json")); assertFalse(json.contains("record_json"));
+        assertEquals(status, operations().status(id)); assertEquals(1, records());
+    }
+
+    @Test void auditedRecheckRecoversArchivedHeldRecordAfterKafkaRetention() throws Exception {
+        var held = heldItem(); enableRestore(NOW.minusSeconds(1));
+        var action = UUID.randomUUID();
+        assertEquals("QUEUED", operations().recheck(held.intakeId(), held.updatedAt(), action, "operator", "coverage verified").status());
+        assertEquals("NEW", operations().status(held.intakeId()).record().state()); assertEquals(0, records());
+        assertEquals(1, intakeStore().cursor(intakeScope(), 0));
+        admin.deleteRecords(Map.of(new TopicPartition(inputTopic, 0), RecordsToDelete.beforeOffset(1))).all().get(10, TimeUnit.SECONDS);
+        intakeWorker(planner(NOW.plus(Duration.ofHours(8)))).runOnce(0, 10);
+        var status = operations().status(held.intakeId());
+        assertEquals("REGISTERED", status.record().state()); assertEquals("ACKNOWLEDGED", status.record().recoveryState());
+        assertEquals(action, status.recentActions().getFirst().actionId());
+        assertEquals("operator", status.recentActions().getFirst().actor());
+        assertEquals("coverage verified", status.recentActions().getFirst().reason());
+        assertEquals(held.updatedAt(), status.recentActions().getFirst().expectedUpdatedAt());
+        var command = MAPPER.readValue(DltInspector.fetchExact(bootstrap, topic, 0, 0).value(), DeliveryEvent.class);
+        assertEquals(NOW, command.occurredAt()); assertFalse(command.fallbackAllowed());
+    }
+
+    @Test void repeatedActionDoesNotRequeueARecordThatWasHeldAgain() throws Exception {
+        var held = heldItem(); var action = UUID.randomUUID(); var operations = operations();
+        assertEquals("QUEUED", operations.recheck(held.intakeId(), held.updatedAt(), action, "operator", "check again").status());
+        intakeWorker(planner(NOW)).runOnce(0, 10); // coverage still disabled; recheck cannot override it
+        var after = operations.status(held.intakeId()); assertEquals("HELD", after.record().state());
+        assertEquals("ALREADY_QUEUED", operations.recheck(held.intakeId(), held.updatedAt(), action, "operator", "check again").status());
+        assertEquals(after, operations.status(held.intakeId())); assertEquals(1, after.recentActions().size()); assertEquals(0, records());
+    }
+
+    @Test void staleVersionAndChangedActionIdentityAreRejected() throws Exception {
+        var held = heldItem(); var action = UUID.randomUUID(); var operations = operations();
+        assertThrows(IllegalArgumentException.class, () -> operations.recheck(held.intakeId(), held.updatedAt().plusNanos(1), action, "operator", "rounded version"));
+        assertEquals("QUEUED", operations.recheck(held.intakeId(), held.updatedAt(), action, "operator", "verified").status());
+        assertEquals("ACTION_CONFLICT", operations.recheck(held.intakeId(), held.updatedAt(), action, "operator", "changed reason").status());
+        intakeWorker(planner(NOW)).runOnce(0, 10);
+        assertEquals("STALE_OR_NOT_HELD", operations.recheck(held.intakeId(), held.updatedAt(), UUID.randomUUID(), "operator", "old view").status());
+        assertEquals(1, operations.status(held.intakeId()).recentActions().size());
+        assertThrows(IllegalArgumentException.class, () -> operations.recheck(held.intakeId(), held.updatedAt(), UUID.randomUUID(), "operator", ""));
+        assertEquals(0, records());
+    }
+
+    @Test void concurrentOperatorsQueueOnlyOneRecheckForTheObservedVersion() throws Exception {
+        var held = heldItem(); var start = new CountDownLatch(1);
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var tasks = new ArrayList<Future<DltOperations.Recheck>>();
+            for (int i = 0; i < 2; i++) tasks.add(executor.submit(() -> {
+                assertTrue(start.await(10, TimeUnit.SECONDS));
+                return operations().recheck(held.intakeId(), held.updatedAt(), UUID.randomUUID(), "operator", "concurrent review");
+            }));
+            start.countDown();
+            var statuses = new HashSet<String>();
+            for (var task : tasks) statuses.add(task.get(10, TimeUnit.SECONDS).status());
+            assertEquals(Set.of("QUEUED", "STALE_OR_NOT_HELD"), statuses);
+            assertEquals(1, operations().status(held.intakeId()).recentActions().size()); assertEquals(0, records());
+        }
+    }
+
+    @Test void operationsRemainScopedToConfiguredCluster() throws Exception {
+        var held = heldItem();
+        var other = new DltOperations(DltRecoveryIntegrationTest::connect, schema, "another-cluster");
+        assertTrue(other.held(inputTopic, 0, -1, 10).records().isEmpty()); assertNull(other.status(held.intakeId()));
+        assertEquals("STALE_OR_NOT_HELD", other.recheck(held.intakeId(), held.updatedAt(), UUID.randomUUID(), "operator", "wrong scope").status());
+        assertEquals("HELD", operations().status(held.intakeId()).record().state());
+        assertTrue(operations().status(held.intakeId()).recentActions().isEmpty());
+    }
+
+    @Test void failedAuditInsertRollsBackRecheckStateChange() throws Exception {
+        var held = heldItem();
+        try (var connection = connect(); var statement = connection.createStatement()) {
+            statement.execute("CREATE FUNCTION " + schema + ".reject_action() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected audit failure'; END $$");
+            statement.execute("CREATE TRIGGER reject_action BEFORE INSERT ON " + schema + ".dlt_intake_action FOR EACH ROW EXECUTE FUNCTION " + schema + ".reject_action()");
+        }
+        try {
+            assertThrows(IllegalStateException.class, () -> operations().recheck(held.intakeId(), held.updatedAt(), UUID.randomUUID(), "operator", "audit unavailable"));
+            var status = operations().status(held.intakeId());
+            assertEquals(held, status.record()); assertTrue(status.recentActions().isEmpty()); assertEquals(0, records());
+        } finally {
+            try (var connection = connect(); var statement = connection.createStatement()) {
+                statement.execute("DROP TRIGGER reject_action ON " + schema + ".dlt_intake_action");
+                statement.execute("DROP FUNCTION " + schema + ".reject_action()");
+            }
+        }
     }
 
     DltIntakeStore intakeStore() { return new DltIntakeStore(DltRecoveryIntegrationTest::connect, schema); }
