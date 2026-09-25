@@ -40,6 +40,7 @@ class DltRecoveryIntegrationTest {
     DeliveryEvent admitted, execution;
     ConsumerRecord<byte[], byte[]> record;
     String topic;
+    String inputTopic;
     Admin admin;
     KafkaProducer<String, byte[]> producer;
 
@@ -63,7 +64,7 @@ class DltRecoveryIntegrationTest {
             statement.execute("SET search_path TO " + schema);
             for (String migration : List.of("V1__delivery_history_and_notification_outbox.sql", "V2__customer_notification_batches.sql",
                     "V3__delivery_cleanup_reservations.sql", "V4__dlt_recovery_handoff.sql", "V5__dlt_history_coverage.sql",
-                    "V6__dlt_recovery_checkpoint.sql")) {
+                    "V6__dlt_recovery_checkpoint.sql", "V7__dlt_intake.sql")) {
                 try (var resource = DltRecoveryIntegrationTest.class.getResourceAsStream("/db/migration/" + migration)) {
                     assertNotNull(resource); statement.execute(new String(resource.readAllBytes(), StandardCharsets.UTF_8));
                 }
@@ -102,7 +103,8 @@ class DltRecoveryIntegrationTest {
     @AfterEach void cleanup() throws Exception {
         if (producer != null) producer.close(Duration.ofSeconds(5));
         if (admin != null) {
-            try { admin.deleteTopics(List.of(topic)).all().get(10, TimeUnit.SECONDS); } finally { admin.close(Duration.ofSeconds(5)); }
+            try { admin.deleteTopics(inputTopic == null ? List.of(topic) : List.of(topic, inputTopic)).all().get(10, TimeUnit.SECONDS); }
+            finally { admin.close(Duration.ofSeconds(5)); }
         }
         if (admitted != null) db.deleteItem(r -> r.tableName("ORIGIN").key(DeliveryCompletion.metaKey(admitted.requestKey())));
         if (execution != null) db.deleteItem(r -> r.tableName("STEP").key(stepKey()));
@@ -150,6 +152,128 @@ class DltRecoveryIntegrationTest {
     }
     Map<String, AttributeValue> origin() {
         return db.getItem(r -> r.tableName("ORIGIN").key(DeliveryCompletion.metaKey(admitted.requestKey())).consistentRead(true)).item();
+    }
+
+    DltIntakeStore intakeStore() { return new DltIntakeStore(DltRecoveryIntegrationTest::connect, schema); }
+    DltIntakeStore.Scope intakeScope() { return new DltIntakeStore.Scope(topic, inputTopic, 0, "source", topic); }
+    void createInput() throws Exception {
+        inputTopic = topic + ".input";
+        admin.createTopics(List.of(new NewTopic(inputTopic, 1, (short) 1))).all().get(10, TimeUnit.SECONDS);
+    }
+    void input(ConsumerRecord<byte[], byte[]> record) throws Exception {
+        try (var sender = new KafkaProducer<byte[], byte[]>(Map.of("bootstrap.servers", bootstrap, "acks", "all"),
+                new ByteArraySerializer(), new ByteArraySerializer())) {
+            sender.send(new ProducerRecord<>(inputTopic, 0, record.key(), record.value(), record.headers())).get(10, TimeUnit.SECONDS);
+        }
+    }
+    DltIntakeWorker intakeWorker(DltRecoveryPlanner planner) {
+        return new DltIntakeWorker(intakeStore(), store, planner, intakeScope(),
+                (offset, limit) -> DltInspector.readRaw(bootstrap, inputTopic, 0, offset, limit), this::publish);
+    }
+
+    @Test void intakeArchivesMixedRecordsAndDeduplicatesSourceWithoutChangingConsumerGroup() throws Exception {
+        createInput(); input(record); input(record);
+        var malformed = new ConsumerRecord<byte[], byte[]>(inputTopic, 0, 0, record.key(), "invalid-json".getBytes(StandardCharsets.UTF_8));
+        record.headers().forEach(h -> malformed.headers().add(h)); input(malformed);
+        String group = topic + ".independent"; var tp = new TopicPartition(inputTopic, 0);
+        try {
+            try (var consumer = new org.apache.kafka.clients.consumer.KafkaConsumer<byte[], byte[]>(Map.of("bootstrap.servers", bootstrap,
+                    "group.id", group, "enable.auto.commit", false), new ByteArrayDeserializer(), new ByteArrayDeserializer())) {
+                consumer.assign(List.of(tp)); consumer.commitSync(Map.of(tp, new org.apache.kafka.clients.consumer.OffsetAndMetadata(1)));
+            }
+            var first = intakeWorker(planner(NOW)).runOnce(0, 2);
+            assertEquals(2, first.archived()); assertEquals(2, first.nextOffset()); assertEquals(1, records());
+            var second = intakeWorker(planner(NOW)).runOnce(999, 2); // persisted cursor wins over bootstrap argument
+            assertEquals(3, second.nextOffset()); assertEquals(1, second.backlog().held());
+            assertNotNull(second.backlog().oldestHeldAt()); assertEquals(0, second.backlog().unprocessed());
+            assertEquals(3, count("dlt_intake_record WHERE cluster_alias='" + topic + "'"));
+            assertFalse(MAPPER.writeValueAsString(second).contains("private-payload"));
+            assertEquals(0, intakeWorker(planner(NOW)).runOnce(0, 2).archived()); assertEquals(1, records());
+            assertEquals(1, admin.listConsumerGroupOffsets(group).partitionsToOffsetAndMetadata().get(10, TimeUnit.SECONDS).get(tp).offset());
+        } finally { admin.deleteConsumerGroups(List.of(group)).all().get(10, TimeUnit.SECONDS); }
+    }
+
+    @Test void archiveAndCursorRollBackTogetherAndStaleArchiveDoesNotDuplicate() throws Exception {
+        createInput(); input(record);
+        var intake = intakeStore(); var scope = intakeScope(); intake.cursor(scope, 0);
+        var page = DltInspector.readRaw(bootstrap, inputTopic, 0, 0, 10);
+        var bad = new ConsumerRecord<byte[], byte[]>("different-topic", 0, 1, record.key(), record.value());
+        var invalid = new DltInspector.RawPage(0, 2, 2, List.of(page.records().getFirst(), bad));
+        assertThrows(IllegalArgumentException.class, () -> intake.archive(scope, 0, invalid));
+        assertEquals(0, intake.cursor(scope, 0));
+        assertEquals(0, count("dlt_intake_record WHERE cluster_alias='" + topic + "'"));
+        assertTrue(intake.archive(scope, 0, page)); assertFalse(intake.archive(scope, 0, page));
+        assertEquals(1, intake.cursor(scope, 0));
+        assertEquals(1, count("dlt_intake_record WHERE cluster_alias='" + topic + "'"));
+    }
+
+    @Test void archivedUnregisteredWorkSurvivesKafkaRetentionAndPreservesExpiry() throws Exception {
+        createInput(); input(record); removeOrigin(); enableRestore(NOW.minusSeconds(1));
+        var intake = intakeStore(); intake.cursor(intakeScope(), 0);
+        assertTrue(intake.archive(intakeScope(), 0, DltInspector.readRaw(bootstrap, inputTopic, 0, 0, 10)));
+        admin.deleteRecords(Map.of(new TopicPartition(inputTopic, 0), RecordsToDelete.beforeOffset(1))).all().get(10, TimeUnit.SECONDS);
+        var cycle = intakeWorker(planner(NOW.plus(Duration.ofHours(8)))).runOnce(0, 10);
+        assertEquals(0, cycle.archived()); assertEquals(0, cycle.backlog().unprocessed()); assertEquals(1, records());
+        var command = MAPPER.readValue(DltInspector.fetchExact(bootstrap, topic, 0, 0).value(), DeliveryEvent.class);
+        assertEquals(NOW, command.occurredAt()); assertFalse(command.fallbackAllowed());
+        assertEquals(1, count("dlt_intake_record WHERE cluster_alias='" + topic + "' AND state='REGISTERED' AND operation_id IS NOT NULL"));
+    }
+
+    @Test void retentionGapStopsWithoutResettingCursorOrSending() throws Exception {
+        createInput(); input(record); input(record);
+        intakeStore().cursor(intakeScope(), 0);
+        admin.deleteRecords(Map.of(new TopicPartition(inputTopic, 0), RecordsToDelete.beforeOffset(1))).all().get(10, TimeUnit.SECONDS);
+        var cycle = intakeWorker(planner(NOW)).runOnce(0, 10);
+        assertEquals("RETENTION_GAP", cycle.status()); assertEquals(1, cycle.beginningOffset()); assertEquals(0, cycle.nextOffset());
+        assertEquals(0, intakeStore().cursor(intakeScope(), 999)); assertEquals(0, records());
+        assertEquals(0, count("dlt_intake_record WHERE cluster_alias='" + topic + "'"));
+    }
+
+    @Test void unavailableHistoryKeepsArchivedWorkNewThenRecovers() throws Exception {
+        createInput(); input(record);
+        var failing = new DltRecoveryPlanner(db, (tenant, key, id) -> { throw new IllegalStateException("SQL unavailable"); },
+                Duration.ofHours(3), "source", Clock.fixed(NOW, ZoneOffset.UTC));
+        var first = intakeWorker(failing).runOnce(0, 10);
+        assertEquals(1, first.nextOffset()); assertEquals(1, first.backlog().unprocessed()); assertEquals(0, records());
+        var recovered = intakeWorker(planner(NOW)).runOnce(0, 10);
+        assertEquals(0, recovered.backlog().unprocessed()); assertEquals(1, records());
+    }
+
+    @Test void completedHistoryIsArchivedWithHoldReasonWithoutReplay() throws Exception {
+        createInput(); input(record); history(); removeOrigin();
+        var cycle = intakeWorker(planner(NOW)).runOnce(0, 10);
+        assertEquals(1, cycle.backlog().held()); assertEquals("HISTORY_FOUND", cycle.outcomes().getFirst().decision());
+        assertEquals(0, records()); assertTrue(origin().isEmpty());
+        assertEquals(0, intakeWorker(planner(NOW)).runOnce(0, 10).outcomes().size());
+    }
+
+    @Test void existingCursorRejectsChangedRoutingAndAfterEndNeverAdvances() throws Exception {
+        createInput(); intakeStore().cursor(intakeScope(), 5);
+        var changed = new DltIntakeStore.Scope(topic, inputTopic, 0, "another-source", topic);
+        assertThrows(IllegalStateException.class, () -> intakeStore().cursor(changed, 0));
+        var cycle = intakeWorker(planner(NOW)).runOnce(0, 10);
+        assertEquals("OFFSET_AFTER_END", cycle.status()); assertEquals(5, cycle.nextOffset()); assertEquals(0, records());
+    }
+
+    @Test void concurrentIntakeClassificationUsesSingleDurableOutcome() throws Exception {
+        createInput(); input(record); var intake = intakeStore(); intake.cursor(intakeScope(), 0);
+        intake.archive(intakeScope(), 0, DltInspector.readRaw(bootstrap, inputTopic, 0, 0, 10));
+        var id = intake.pending(intakeScope(), 10).getFirst();
+        var entered = new CountDownLatch(1); var release = new CountDownLatch(1); var actions = new AtomicInteger();
+        try (var executor = Executors.newSingleThreadExecutor()) {
+            var first = executor.submit(() -> intake.process(id, raw -> {
+                actions.incrementAndGet(); entered.countDown();
+                try { assertTrue(release.await(10, TimeUnit.SECONDS)); } catch (InterruptedException e) { throw new RuntimeException(e); }
+                return new DltIntakeStore.Outcome("HELD", "MANUAL_REVIEW", null);
+            }));
+            try {
+                assertTrue(entered.await(10, TimeUnit.SECONDS));
+                assertEquals("BUSY", intake.process(id, raw -> { fail("Must not run concurrently"); return null; }).decision());
+            } finally { release.countDown(); }
+            assertEquals("HELD", first.get(10, TimeUnit.SECONDS).state());
+            assertEquals("HELD", intake.process(id, raw -> { fail("Must not repeat held action"); return null; }).state());
+            assertEquals(1, actions.get());
+        }
     }
 
     DltRecoveryResumer resumer(Instant now) {
