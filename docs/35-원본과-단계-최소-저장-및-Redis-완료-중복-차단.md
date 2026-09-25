@@ -32,7 +32,11 @@ API → Kafka 접수 확인 → ORIGIN 조건부 Put
 
 Redis `delivery:due` Sorted Set은 처리 식별자와 다음 확인 시각을 저장한다. STEP이 없는 인입 시점에는 ORIGIN을 찾을 수 있는 requestKey로 인계 후보를 등록한다. PRESEND에서는 이 후보를 제거하고 실행 UUID와 실제 단계 deadline을 등록한다. 접수 응답만으로 웹훅 대기를 해제하지 않는다. 단계가 끝나면 deadline 대신 즉시 후속 처리를 확인할 후보로 바꾸며, 2차 선점 시 기존 규칙의 2차 deadline으로 교체한다. 전체 결과가 Kafka에 인계되면 일정에서 제거한다.
 
-Redis 조회는 기본 1초 주기다. Redis 일정 소실·등록 실패·worker 중단은 DDB `lifecycle_due_v1`을 기본 30초마다 조회해 복구한다. ORIGIN의 복구 인덱스를 STEP 생성 직후 따로 지우지 않아 DDB 쓰기 한 번을 절약한다. ORIGIN은 결과 확정 때 인덱스를 함께 제거한다. 그 전까지 주기 조회·조건 실패가 추가될 수 있으며 아래 직렬 계측에는 포함하지 않는다.
+Redis 조회는 기본 1초 주기다. Redis 일정 소실·등록 실패·worker 중단은 DDB `lifecycle_due_v1`을 **기본 10분(600,000ms)마다 조회**해 복구한다. 2026-09-25 사용자 결정으로 읽기 비용을 줄이기 위해 기존 30초에서 늘렸다. 시작 후 첫 tick에서는 즉시 복구 조회하고 이후 10분 간격으로 조회한다. Redis에 일부 일정만 빠진 경우도 찾아야 하므로 Redis 조회 결과가 비어 있을 때만 DDB를 조회하는 방식은 아니다.
+
+ORIGIN·STEP 각 16개 버킷을 조회하므로 worker 인스턴스 하나당 한 주기에 최대 32개 GSI Query를 호출한다. 주기 변경으로 정기 조회 횟수는 기존 대비 1/20이 되지만, 실제 읽기 비용은 항목 크기·조회 결과·후속 상세 조회·인스턴스 수에도 좌우되며 비용이 정확히 1/20이 된다는 뜻은 아니다. ORIGIN의 복구 인덱스를 STEP 생성 직후 따로 지우지 않아 DDB 쓰기 한 번을 절약한다. ORIGIN은 결과 확정 때 인덱스를 함께 제거한다. 그 전까지 주기 조회·조건 실패가 추가될 수 있으며 아래 직렬 계측에는 포함하지 않는다.
+
+Redis 누락 복구와 SQL 인계 전 최종 이벤트 재발행은 다음 복구 주기까지 기다릴 수 있다. 한 주기에는 각 버킷의 한 페이지를 읽고 다음 주기에 커서를 이어간다. 처리 용량 부족·적체·인덱스 반영 지연·장애가 있으면 여러 주기가 필요할 수 있으므로 **10분은 조회 간격이며 복구 지연 상한이 아니다.** DDB TTL 삭제 이벤트를 복구 수단으로 사용하지 않으며, SQL 저장 확인 전 원문·STEP을 보존한다.
 
 업무 만료는 DDB에 저장된 **1차 최초 인입+3시간, 2차 1차 결과 판단+4시간**이다. Redis를 재등록하거나 Kafka를 재소비해도 연장하지 않는다. Sorted Set은 후보 검색만 수행하고 실제 상태·회차·deadline은 DDB 조건으로 판정한다. 조회 주기와 장애 복구 때문에 처리/통지가 벽시계 deadline에 정확히 실행된다는 보장은 없다. 장기 장애 후에는 원래 기한으로 만료 처리한다.
 
@@ -79,11 +83,13 @@ v2는 Kafka ack를 별도 DDB Update로 저장하지 않는다. SQL 저장을 �
 
 `OriginStepDynamoDbTest`는 실제 DDB 호출 인터셉터로 네 경로를 계측한다. 그 밖에 동시 재시도 16개 중 한 번만 선점, 실제 Kafka 중복 명령/소비자 재시작, Kafka 발행 실패 후 결과 불명, 성공 웹훅이 예약 재시도를 차단, 삭제 후 늦은 Dispatch·웹훅 격리, SQL 완료 표시 실패 후 새 세대 보존을 검증한다. Ingress 시험은 실제 Redis 표식 유실과 활성 DDB 보호, 동시 접수 24건의 동일 실행 선택을 검증한다. SQL 시험은 세대별 이력·통지 분리를 확인한다.
 
+**10분 복구 주기 변경 검증(2026-09-25):** `LifecycleSchedulerTest` 2개 통과(실패·오류·skip 0). 제어 가능한 시계로 시작 직후 GSI 조회, 10분 직전까지 재조회 없음, 10분 도달 시 Redis에 없는 일정 복구, 대기 중 Redis 일정 처리 지속을 검증했다. 기존 실패 후보 뒤 페이지 진행 시험도 통과했다. 재현 명령은 JDK 21에서 `./mvnw -q -pl dispatch-worker -am -Dtest=LifecycleSchedulerTest -Dsurefire.failIfNoSpecifiedTests=false test`다. 이는 mock 저장소를 이용한 스케줄 검증이며 AWS 읽기 비용이나 10분 내 복구 완료를 실측한 결과는 아니다.
+
 ## 7. 적용 순서와 검증 한계
 
 1. SQL migration은 유지한다. 물리 테이블 분리 버전은 36번 문서의 전체 writer 중지·데이터 복사·대조 후 배포 절차를 따른다. 양 테이블에 GSI가 필요하며 구형 delivery_state 사용 앱과 혼용하지 않는다.
 2. 각 worker에 동일한 REDIS_HOST/PORT/DATABASE를 지정한다. 운영용 Kafka retry topic은 replicas와 min.insync.replicas를 장애 목표에 맞춰 설정한다. 기본 1/1은 로컬 PoC 값이다.
-3. `DISPATCH_LIFECYCLE_ENABLED=true`, `DELIVERY_CLEANUP_ENABLED=true` 및 결과 worker/고객 통지 설정을 적용해야 만료·정리까지 동작한다. 완료 TTL은 `DELIVERY_COMPLETED_RETENTION`, GSI 복구 주기는 `dispatch.lifecycle.recovery-poll-ms`로 조정한다.
+3. `DISPATCH_LIFECYCLE_ENABLED=true`, `DELIVERY_CLEANUP_ENABLED=true` 및 결과 worker/고객 통지 설정을 적용해야 만료·정리까지 동작한다. 완료 TTL은 `DELIVERY_COMPLETED_RETENTION`, GSI 복구 주기는 `DISPATCH_LIFECYCLE_RECOVERY_POLL_MS`(기본 `600000`) 또는 `dispatch.lifecycle.recovery-poll-ms`로 조정한다. 격리 PoC의 명시적 1초 복구 설정은 짧은 만료 시험용으로 유지한다.
 4. 기존 v1 완료 META를 일괄 삭제하지 않는다. 기존 요청은 v1 호환 경로와 완료 표식 정책을 유지한다. 기존 완료 요청까지 새로운 보관 정책으로 전환하는 일괄 이관은 별도 작업이다.
 
 이번 결과는 저장소·Kafka 기능 통합 시험과 쓰기 수 재계측이다. 새 코드의 부하 TPS·전체 시스템 장애 복구 시간·AWS 다중 AZ 무손실을 새로 입증한 결과가 아니다. PoC 증거 수집기는 requestKey→실행 UUID 매핑을 지원하도록 갱신했다.
@@ -95,3 +101,4 @@ v2는 Kafka ack를 별도 DDB Update로 저장하지 않는다. SQL 저장을 �
 - [Spring Kafka 발행 결과 확인](https://docs.spring.io/spring-kafka/reference/kafka/sending-messages.html): 비동기 발행 결과를 확인한 뒤 입력 처리를 넘기는 근거다.
 - [Redis keyspace notification](https://redis.io/docs/latest/develop/pubsub/keyspace-notifications/): TTL 알림은 정확한 작업 실행 시각·유실 없는 큐를 보장하지 않는다. 이 구현은 알림 대신 Sorted Set 조회와 DDB 복구 인덱스를 쓴다.
 - [Redis WAIT](https://redis.io/docs/latest/commands/wait/)와 [영속화](https://redis.io/docs/latest/operate/oss_and_stack/management/persistence/): 완료 표식을 100% 무손실로 간주하지 않는 근거다. 사용자는 그 소실 후 조건을 통과한 재발송을 허용했다.
+- [DynamoDB TTL](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/TTL.html)과 [Streams 보존 기간](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Streams.html): TTL 삭제는 통상 며칠 이내이며 2시간 이내 실행을 보장하지 않는다. 삭제 후 이벤트의 보존 기간도 24시간이므로 SQL 인계 전 원문·선점 정보를 TTL로 지우고 이 이벤트만으로 복구하는 방식을 채택하지 않는다.
