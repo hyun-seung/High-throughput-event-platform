@@ -1,0 +1,70 @@
+{
+  "date": "2026-09-26",
+  "status": "PASS",
+  "baseCommit": "03b238e91540f741c47cc1658a2eb1bed352192b",
+  "runDirectory": ".poc-results/java-test-20260925160220-26880",
+  "earlierRun": {
+    "directory": ".poc-results/java-test-20260925155953-26475",
+    "status": "PASS",
+    "executed": 356,
+    "note": "Repeated full verification after adding rejection of sub-microsecond version input"
+  },
+  "javaIntegration": {
+    "suites": 38,
+    "executed": 356,
+    "skipped": 0,
+    "failures": 0,
+    "errors": 0
+  },
+  "newTests": {
+    "dltOperationsIntegration": 8,
+    "totalDltRecoveryIntegration": 41
+  },
+  "tools": {
+    "applicationTests": "Java 21/JUnit, Maven Wrapper clean verify -Pintegration-tests",
+    "environment": "Bash + Docker Compose, fresh isolated project",
+    "performance": "Not run; k6 reserved for subsequent performance phase"
+  },
+  "infrastructure": {
+    "kafka": "apache/kafka:4.0.2",
+    "postgresql": "postgres:17-alpine",
+    "dynamodb": "amazon/dynamodb-local:2.6.1",
+    "redis": "redis:7.4-alpine"
+  },
+  "cleanup": {
+    "containersStopped": true,
+    "containersRemoved": true,
+    "networkRemoved": true,
+    "volumesRetained": true
+  },
+  "packagedCli": {
+    "usageExitCode": 2,
+    "scope": "Packaged SQL-only operations entry point usage and Bash syntax checked; behavior tested through Java integration"
+  },
+  "verified": [
+    "Bounded held-record keyset pages return metadata only and do not change scan cursor or publish",
+    "Status joins intake state, linked recovery and recent attempts without raw payload/checkpoint output",
+    "Audited recheck after Kafka retention uses archived original occurrence and fallback setting",
+    "Duplicate action ID does not queue a second recheck after the record becomes HELD again",
+    "Changed action identity, stale view and sub-microsecond version input are rejected",
+    "Two concurrent operators observing one version queue exactly one action",
+    "Reads and recheck are scoped to configured cluster",
+    "Actual SQL trigger rejects audit INSERT; intake state and audit roll back atomically",
+    "Existing history-coverage and expiry checks still govern queued records",
+    "Existing normal successful DynamoDB write budget remains five calls and seven item mutations"
+  ],
+  "notVerifiedOrImplemented": [
+    "Authenticated production operator identity/roles; actor remains a local audit string",
+    "Full CLI process SIGKILL or SQL commit response-loss boundary",
+    "Unknown-result, exhausted notification and held-cleanup operations",
+    "Raw source browsing UI, external alert routing and production capacity"
+  ],
+  "sourceSha256": {
+    "delivery-ingress-worker/src/main/java/event/delivery/ingress/dlt/DltOperations.java": "6ade91e7a97e95973b1a846d83955242169f0a2638f25aec48a27a4ade148ad6",
+    "delivery-ingress-worker/src/main/java/event/delivery/ingress/dlt/DltOperationsCli.java": "99eaf242d0036ec55453fa07a00a3a9cca9e0df7081fa68c3f6aafebb7996e24",
+    "delivery-ingress-worker/src/test/java/event/delivery/ingress/dlt/DltRecoveryIntegrationTest.java": "b42f8f4a66d2032d4dfcaf6d79499c794a66239cd78bed88d208265abd0a68e5",
+    "delivery-result-worker/src/main/resources/db/migration/V8__dlt_operator_recheck.sql": "06f73876255568f05f4904682336eb96cba60cee8bb8a8611cbdf1e8f6fb652d",
+    "scripts/operate-dlt.sh": "7eb4040eb8d78401a821f48ec52259c2bae1801f2d19accb232c17527d5f7415"
+  },
+  "postRunChanges": "Documentation and evidence only; no behavior changes after final integration"
+}
