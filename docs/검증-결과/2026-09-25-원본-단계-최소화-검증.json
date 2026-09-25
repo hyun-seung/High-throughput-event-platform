@@ -1,0 +1,384 @@
+{
+  "verifiedAtUtc": "2026-09-25T04:26:43.280481+00:00",
+  "implementationCommit": "b6b37b55a5b105d03e9878a74f918721abbe3e70",
+  "scope": "전체 package 278개 통과 후 최종 변경의 관련 통합 시험을 재실행한 누적 282개 보고서. 새로운 TPS/AWS 장애 보장 측정은 아님.",
+  "environment": {
+    "java": "Temurin 21.0.7",
+    "dynamodb": "DynamoDB Local localhost:18000",
+    "postgres": "localhost:15432/delivery, UUID별 시험 schema",
+    "kafka": "localhost:39092, UUID별 시험 topic/group",
+    "redis": "localhost:16379, 소유 키만 변경"
+  },
+  "commands": [
+    "./mvnw -q package",
+    "./mvnw -q -pl delivery-ingress-worker,dispatch-worker,delivery-result-worker -am -Dtest=DeliveryIngressDynamoDbTest,OriginStepDynamoDbTest,CleanupPostgresDynamoDbTest,RetryWiringTest -Dsurefire.failIfNoSpecifiedTests=false package",
+    "./mvnw -q -pl dispatch-worker -am -Dtest=OriginStepDynamoDbTest -Dsurefire.failIfNoSpecifiedTests=false test",
+    "python3 -m unittest discover -s scripts/poc -p 'test_*.py'"
+  ],
+  "java": {
+    "total": {
+      "tests": 282,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "modules": {
+      "delivery-ingress-worker": {
+        "tests": 24,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "delivery-result-worker": {
+        "tests": 46,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "dispatch-worker": {
+        "tests": 146,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "event-api": {
+        "tests": 9,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "event-common": {
+        "tests": 11,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "external-api-simulator": {
+        "tests": 27,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "receipt-api": {
+        "tests": 19,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    },
+    "suites": [
+      {
+        "suite": "event.delivery.ingress.consumer.DeliveryRequestConsumerTest",
+        "tests": 3,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "event.delivery.ingress.kafka.config.IngressDltKafkaTest",
+        "tests": 3,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "event.delivery.ingress.kafka.config.KafkaConsumerFailureConfigTest",
+        "tests": 5,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "event.delivery.ingress.kafka.config.KafkaProducerConfigTest",
+        "tests": 2,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "event.delivery.ingress.repository.DeliveryIngressDynamoDbTest",
+        "tests": 11,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "event.delivery.result.CleanupPostgresDynamoDbTest",
+        "tests": 9,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "event.delivery.result.FinalizedCodecTest",
+        "tests": 3,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "event.delivery.result.FinalizedPostgresTest",
+        "tests": 9,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "event.delivery.result.NotificationPostgresTest",
+        "tests": 23,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "event.delivery.result.NotificationPropertiesTest",
+        "tests": 2,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "event.delivery.dispatch.config.DispatchFailureConfigurationTest",
+        "tests": 2,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "event.delivery.dispatch.external.client.ExternalApiClientTest",
+        "tests": 21,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "event.delivery.dispatch.external.client.TcpProviderClientTest",
+        "tests": 13,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "event.delivery.dispatch.lifecycle.DynamoDbWriteBudgetTest",
+        "tests": 4,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "event.delivery.dispatch.lifecycle.LifecycleDynamoDbTest",
+        "tests": 29,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "event.delivery.dispatch.lifecycle.LifecycleSchedulerTest",
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "event.delivery.dispatch.lifecycle.OriginStepDynamoDbTest",
+        "tests": 11,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "event.delivery.dispatch.receipt.ReceiptResultDynamoDbTest",
+        "tests": 17,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "event.delivery.dispatch.repository.DispatchAttemptDynamoDbTest",
+        "tests": 28,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "event.delivery.dispatch.retry.RetryWiringTest",
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "event.delivery.dispatch.service.DispatchRetryPolicyTest",
+        "tests": 8,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "event.delivery.dispatch.service.DispatchServiceTest",
+        "tests": 11,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "event.api.delivery.service.DeliveryServiceTest",
+        "tests": 5,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "event.api.security.AsyncDeliverySecurityTest",
+        "tests": 4,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "event.common.delivery.DeliveryEventTest",
+        "tests": 4,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "event.common.dynamodb.DynamoDbAutoConfigurationTest",
+        "tests": 2,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "event.common.metrics.DeliveryMetricsTest",
+        "tests": 4,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "event.common.receipt.ReceiptEventTest",
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "external.api.simulator.customer.CustomerResultSimulatorTest",
+        "tests": 5,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "external.api.simulator.delivery.SimulatorLedgerTest",
+        "tests": 10,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "external.api.simulator.receipt.SimulatorReceiptSenderTest",
+        "tests": 9,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "external.api.simulator.tcp.TcpSimulatorServerTest",
+        "tests": 3,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "event.receipt.ReceiptHttpTest",
+        "tests": 17,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "event.receipt.ReceiptKafkaIntegrationTest",
+        "tests": 2,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    ]
+  },
+  "python": {
+    "tests": 10,
+    "failures": 0
+  },
+  "dynamodbWriteBudgets": [
+    {
+      "deleteItems": 3,
+      "successfulConditionChecks": 2,
+      "updateItems": 14,
+      "putItems": 1,
+      "successfulWriteCalls": 14,
+      "successfulReadCalls": 18,
+      "failedWriteCalls": 0,
+      "scenario": "v2_eight_no_response",
+      "mutatedItems": 18
+    },
+    {
+      "deleteItems": 2,
+      "successfulConditionChecks": 1,
+      "updateItems": 4,
+      "putItems": 1,
+      "successfulWriteCalls": 5,
+      "successfulReadCalls": 9,
+      "failedWriteCalls": 0,
+      "scenario": "v2_normal_primary",
+      "mutatedItems": 7
+    },
+    {
+      "deleteItems": 3,
+      "successfulConditionChecks": 2,
+      "updateItems": 21,
+      "putItems": 1,
+      "successfulWriteCalls": 21,
+      "successfulReadCalls": 37,
+      "failedWriteCalls": 0,
+      "scenario": "v2_eight_receipts",
+      "mutatedItems": 25
+    },
+    {
+      "deleteItems": 3,
+      "successfulConditionChecks": 2,
+      "updateItems": 24,
+      "putItems": 1,
+      "successfulWriteCalls": 24,
+      "successfulReadCalls": 46,
+      "failedWriteCalls": 0,
+      "scenario": "v2_eight_receipts_review_expiry",
+      "mutatedItems": 28
+    }
+  ],
+  "logs": [
+    {
+      "localLog": "/tmp/adr022-final-package.log",
+      "sha256": "1369bd849faa67648f819bcca82762106a89b65bc71f39297bcf5828a636dfbd"
+    },
+    {
+      "localLog": "/tmp/adr022-targeted-final.log",
+      "sha256": "dc40c152bccf2bc30989017cf8389a0ecfb5268587a68353424e6f77e06ff68c"
+    },
+    {
+      "localLog": "/tmp/adr022-origin-step-final.log",
+      "sha256": "7ce094d4d37c7b7d9481a82af2630cff43d17c8d82ec708b5b9a97129a668f47"
+    },
+    {
+      "localLog": "/tmp/adr022-python-tests.log",
+      "sha256": "643c7cfc3921e5830e047bed28578bc933677c101c9c5a9f6610b6207052d03c"
+    }
+  ],
+  "limitations": [
+    "DDB write budget는 직렬 대표 경로이며 실패 조건/주기 경합에 따른 운영 호출 상한이 아니다.",
+    "예산 시험은 ingress Put의 관련 필드를 fixture로 구성한다. Kafka/Redis/SQL은 별도 통합 시험으로 확인했다.",
+    "기존 v1 완료 META는 유지하고 신규 API v2만 새 완료 정책을 사용한다.",
+    "공용 실행 중인 애플리케이션 재배포와 신규 성능 부하 시험은 수행하지 않았다."
+  ]
+}
