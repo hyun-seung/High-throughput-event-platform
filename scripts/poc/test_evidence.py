@@ -31,6 +31,23 @@ class ReconciliationTest(unittest.TestCase):
         self.assertEqual(2, summary['submitted'])
         self.assertAlmostEqual(100, rows[0]['persistedTimestampLatencyMs'])
 
+    def test_request_key_maps_to_a_distinct_execution_in_v2(self):
+        execution = 'c1e9b6d1-47fc-4507-8406-0dcd7e780506'
+        attempt = attempt_id(execution)
+        self.items[('DELIVERY#' + self.delivery, 'META')]['delivery_id'] = {'S': execution}
+        self.items[('DELIVERY#' + execution, 'ATTEMPT#' + attempt)] = self.items.pop(('DELIVERY#' + self.delivery, 'ATTEMPT#' + self.attempt))
+        self.provider = {attempt: {'calls': 1, 'effects': 1}}
+        self.records[1] = {'topic': DISPATCH, 'deliveryId': execution, 'requestKey': self.delivery}
+        rows, summary = self.evaluate()
+        self.assertTrue(summary['consistent'])
+        self.assertEqual(execution, rows[0]['executionId'])
+
+    def test_multiple_generations_cannot_hide_behind_one_request_key(self):
+        self.records.append({'topic': DISPATCH, 'deliveryId': 'another-execution', 'requestKey': self.delivery})
+        rows, summary = self.evaluate()
+        self.assertFalse(summary['consistent'])
+        self.assertIn('multiple_execution_generations', rows[0]['problems'])
+
     def test_provider_deduplication_cannot_hide_internal_duplicate_call(self):
         self.provider[self.attempt] = {'calls': 2, 'effects': 1}
         rows, summary = self.evaluate()

@@ -23,6 +23,13 @@ public class LifecycleScheduler {
     private final Semaphore capacity;
     private final ExecutorService workers;
     private final Set<String> active = ConcurrentHashMap.newKeySet();
+    private event.common.redis.DeliveryCache cache = event.common.redis.DeliveryCache.UNAVAILABLE;
+    private java.time.Instant lastSweep;
+    private long recoveryIntervalMs;
+    public void cache(event.common.redis.DeliveryCache cache, long recoveryIntervalMs) {
+        if (recoveryIntervalMs < 1000) throw new IllegalArgumentException("Recovery interval must be >= 1000ms");
+        this.cache = cache; this.recoveryIntervalMs = recoveryIntervalMs;
+    }
     private int nextShard;
     private final Map<Integer, Map<String, AttributeValue>> cursors = new HashMap<>();
     public LifecycleScheduler(LifecycleRepository repository, LifecycleService service, Clock clock, MeterRegistry metrics,
@@ -36,6 +43,19 @@ public class LifecycleScheduler {
 
     @Scheduled(fixedDelayString = "${dispatch.lifecycle.poll-ms:1000}")
     public synchronized void tick() {
+        for (String execution : cache.due(clock.instant(), pageSize)) {
+            if (!active.add(execution)) continue;
+            if (!capacity.tryAcquire()) { active.remove(execution); break; }
+            try {
+                workers.submit(() -> {
+                    try { service.reconcile(execution); }
+                    catch (RuntimeException failure) { metrics.counter("delivery.lifecycle.events", "outcome", "work_failed").increment(); }
+                    finally { active.remove(execution); capacity.release(); }
+                });
+            } catch (RejectedExecutionException closing) { active.remove(execution); capacity.release(); return; }
+        }
+        if (lastSweep != null && clock.instant().isBefore(lastSweep.plusMillis(recoveryIntervalMs))) return;
+        lastSweep = clock.instant();
         int start = nextShard;
         nextShard = (nextShard + 1) % LifecycleIndex.SHARDS;
         for (int offset = 0; offset < LifecycleIndex.SHARDS; offset++) {

@@ -141,7 +141,9 @@ def main():
     while time.monotonic() < deadline:
         items = state(delivery_id)
         meta = [item for item in items if item["sk"]["S"] == "META"]
-        attempts = [item for item in items if item["sk"]["S"].startswith("ATTEMPT#")]
+        execution_id = meta[0].get("delivery_id", {}).get("S", delivery_id) if meta else delivery_id
+        execution_items = state(execution_id) if execution_id != delivery_id else items
+        attempts = [item for item in execution_items if item["sk"]["S"].startswith("ATTEMPT#")]
         if len(attempts) > 1:
             raise RuntimeError("More than one dispatch attempt exists")
         if meta and attempts and attempts[0].get("status", {}).get("S") == "ACCEPTED":

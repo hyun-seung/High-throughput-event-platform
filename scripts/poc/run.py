@@ -293,7 +293,7 @@ class Runner:
         deliveries = sorted({delivery_id(self.tenant, row['key']) for row in starts.values()})
         items = read_items(self.dynamo_url, deliveries)
         write_json(directory / 'db-items.json', list(items.values()))
-        provider = self.provider_counts(deliveries)
+        provider = self.provider_counts([items.get(('DELIVERY#' + delivery, 'META'), {}).get('delivery_id', {}).get('S', delivery) for delivery in deliveries])
         rows, summary = reconcile(starts, results, self.tenant, records, items, provider)
         with (directory / 'reconciliation.jsonl').open('w') as output:
             for row in rows: output.write(json.dumps(row) + '\n')

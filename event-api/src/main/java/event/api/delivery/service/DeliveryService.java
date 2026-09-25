@@ -36,7 +36,7 @@ public class DeliveryService {
                 request.payload(),
                 Instant.now(),
                 request.fallbackAllowed()
-        );
+        ).forAdmission();
 
         try {
             return metrics.measureAsync(DeliveryMetrics.Stage.API_PUBLISH, () -> deliveryEventPublisher.send(event))

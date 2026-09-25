@@ -65,14 +65,19 @@ def reconcile(starts, results, tenant, records, items, provider):
     for row in records:
         if row['deliveryId'] is None:
             raise ValueError('Unparseable Kafka record cannot be silently omitted')
-        kafka[row['topic']][row['deliveryId']] += 1
+        kafka[row['topic']][row.get('requestKey') or row['deliveryId']] += 1
+    dispatch_executions = defaultdict(set)
+    for row in records:
+        if row['topic'] == DISPATCH:
+            dispatch_executions[row.get('requestKey') or row['deliveryId']].add(row['deliveryId'])
     rows, latencies = [], []
     for key, responses in by_key.items():
         delivery = delivery_id(tenant, key)
-        attempt = attempt_id(delivery)
         pk = 'DELIVERY#' + delivery
         meta = items.get((pk, 'META'))
-        execution = items.get((pk, 'ATTEMPT#' + attempt))
+        execution_id = (meta or {}).get('delivery_id', {}).get('S', delivery)
+        attempt = attempt_id(execution_id)
+        execution = items.get(('DELIVERY#' + execution_id, 'ATTEMPT#' + attempt))
         state = execution.get('status', {}).get('S') if execution else None
         if state is None:
             state = 'META_ONLY' if meta else 'DLT' if kafka[DLT][delivery] else 'KAFKA_ONLY' if kafka[REQUESTED][delivery] else 'UNEXPLAINED'
@@ -82,7 +87,8 @@ def reconcile(starts, results, tenant, records, items, provider):
         if state != 'ACCEPTED' or not meta: errors.append('not_persisted_accepted')
         if not kafka[REQUESTED][delivery] or not kafka[DISPATCH][delivery]: errors.append('missing_kafka_evidence')
         if kafka[DLT][delivery]: errors.append('dlt_present')
-        counts = provider[attempt]
+        if len(dispatch_executions[delivery]) > 1: errors.append('multiple_execution_generations')
+        counts = provider.get(attempt, {'calls': 0, 'effects': 0})
         if counts != {'calls': 1, 'effects': 1}: errors.append('provider_call_or_effect_mismatch')
         latency = None
         if meta and execution and state == 'ACCEPTED':
@@ -91,7 +97,7 @@ def reconcile(starts, results, tenant, records, items, provider):
             latency = (end - begin).total_seconds() * 1000
             if latency < 0: errors.append('invalid_wall_clock')
             else: latencies.append(latency)
-        rows.append({'key': key, 'deliveryId': delivery, 'attemptId': attempt, 'state': state,
+        rows.append({'key': key, 'deliveryId': delivery, 'executionId': execution_id, 'attemptId': attempt, 'state': state,
                      'httpStatuses': [r['status'] for r in responses], 'provider': counts,
                      'kafka': {topic: kafka[topic][delivery] for topic in TOPICS},
                      'persistedTimestampLatencyMs': latency, 'problems': errors})
@@ -172,7 +178,7 @@ class KafkaProbe:
                 try: event = json.loads(message.value())
                 except (ValueError, TypeError): event = {}
                 rows.append({'topic': topic, 'partition': part, 'offset': message.offset(),
-                             'deliveryId': event.get('deliveryId'), 'occurredAt': event.get('occurredAt')})
+                             'deliveryId': event.get('deliveryId'), 'requestKey': event.get('requestKey'), 'occurredAt': event.get('occurredAt')})
         return rows
 
     def close(self):
@@ -191,7 +197,7 @@ def read_items(endpoint, deliveries):
     try:
         for index in range(0, len(keys), 100):
             pending = {'delivery_state': {'Keys': keys[index:index+100], 'ConsistentRead': True,
-                       'ProjectionExpression': 'pk,sk,#s,occurred_at,updated_at,attempt_id',
+                       'ProjectionExpression': 'pk,sk,#s,occurred_at,updated_at,attempt_id,delivery_id',
                        'ExpressionAttributeNames': {'#s': 'status'}}}
             for retry in range(6):
                 result = client.batch_get_item(RequestItems=pending)
@@ -201,6 +207,22 @@ def read_items(endpoint, deliveries):
                 if not pending: break
                 time.sleep(min(2, 0.1 * 2 ** retry))
             else: raise RuntimeError('Unprocessed DB keys remain; reconciliation incomplete')
+        # v2 ORIGIN maps the stable request key to its current execution partition.
+        execution_keys = [{'pk': {'S': 'DELIVERY#' + item['delivery_id']['S']},
+                           'sk': {'S': 'ATTEMPT#' + attempt_id(item['delivery_id']['S'])}}
+                          for (pk, sk), item in list(items.items())
+                          if sk == 'META' and item.get('delivery_id', {}).get('S')
+                          and pk != 'DELIVERY#' + item['delivery_id']['S']]
+        for index in range(0, len(execution_keys), 100):
+            pending = {'delivery_state': {'Keys': execution_keys[index:index+100], 'ConsistentRead': True}}
+            for retry in range(6):
+                result = client.batch_get_item(RequestItems=pending)
+                for item in result['Responses'].get('delivery_state', []):
+                    items[(item['pk']['S'], item['sk']['S'])] = item
+                pending = result.get('UnprocessedKeys', {})
+                if not pending: break
+                time.sleep(min(2, 0.1 * 2 ** retry))
+            else: raise RuntimeError('Unprocessed execution keys remain')
     finally:
         client.close()
     return items

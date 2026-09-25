@@ -9,7 +9,7 @@ import tools.jackson.databind.json.JsonMapper;
 import java.util.Set;
 import java.util.UUID;
 
-/** Strict v1 contract; Java type headers supplied by a producer are never used. */
+/** Strict v1/v2 contract; Java type headers supplied by a producer are never used. */
 @Component
 public class FinalizedCodec {
     private final JsonMapper mapper = JsonMapper.builder()
@@ -33,8 +33,8 @@ public class FinalizedCodec {
     }
 
     public void validate(DeliveryFinalized e) {
-        if (e == null || e.schemaVersion() != 1 || !"DeliveryFinalized".equals(e.eventType())
-                || !uuid(e.deliveryId()) || !DeliveryFinalized.eventId(e.deliveryId()).equals(e.eventId())
+        if (e == null || (e.schemaVersion() != 1 && e.schemaVersion() != 2) || !"DeliveryFinalized".equals(e.eventType())
+                || !uuid(e.requestKey()) || !uuid(e.deliveryId()) || !DeliveryFinalized.eventId(e.deliveryId()).equals(e.eventId())
                 || e.tenantId() <= 0 || !text(e.deliveryType(), 100)
                 || !Set.of("DELIVERED", "FAILED", "EXPIRED").contains(e.outcome() == null ? "" : e.outcome())
                 || !text(e.reason(), 200) || (e.routeOrder() != 1 && e.routeOrder() != 2)
@@ -53,5 +53,5 @@ public class FinalizedCodec {
         try { return value != null && UUID.fromString(value).toString().equals(value); }
         catch (IllegalArgumentException e) { return false; }
     }
-    private static IllegalArgumentException invalid() { return new IllegalArgumentException("Invalid DeliveryFinalized v1 contract"); }
+    private static IllegalArgumentException invalid() { return new IllegalArgumentException("Invalid DeliveryFinalized v1/v2 contract"); }
 }

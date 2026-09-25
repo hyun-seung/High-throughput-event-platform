@@ -19,7 +19,7 @@ public class CleanupConfiguration {
         scheduler.setPoolSize(1); scheduler.setThreadNamePrefix("delivery-cleanup-"); return scheduler;
     }
     @Bean CleanupRepository cleanupRepository(JdbcTemplate jdbc, PlatformTransactionManager manager) { return new CleanupRepository(jdbc, manager); }
-    @Bean DeliveryCompactor deliveryCompactor(DynamoDbClient db) { return new DeliveryCompactor(db); }
+    @Bean DeliveryCompactor deliveryCompactor(DynamoDbClient db, event.common.redis.DeliveryCache cache) { return new DeliveryCompactor(db, cache); }
     @Bean CleanupWorker cleanupWorker(CleanupRepository repository, DeliveryCompactor compactor, MeterRegistry meters) {
         return new CleanupWorker(repository, compactor, meters);
     }

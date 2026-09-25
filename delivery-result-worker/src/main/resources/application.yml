@@ -3,6 +3,13 @@ server:
   port: ${RESULT_HTTP_PORT:8095}
 
 spring:
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      database: ${REDIS_DATABASE:0}
+      connect-timeout: ${REDIS_CONNECT_TIMEOUT:200ms}
+      timeout: ${REDIS_TIMEOUT:200ms}
   application:
     name: delivery-result-worker
   datasource:
@@ -50,6 +57,7 @@ cleanup:
   poll-ms: ${DELIVERY_CLEANUP_POLL_MS:1000}
 
 delivery:
+  completed-retention: ${DELIVERY_COMPLETED_RETENTION:24h}
   dynamodb:
     enabled: ${DELIVERY_CLEANUP_ENABLED:false}
     endpoint: ${DYNAMODB_ENDPOINT:}

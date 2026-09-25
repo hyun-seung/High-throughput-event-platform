@@ -420,6 +420,7 @@ class ReceiptResultDynamoDbTest {
         var result = DeliveryEvent.requested(UUID.randomUUID().toString(), 999L, "SMS", Map.of("message", "test"), NOW, allowed).toDispatchRequested();
         var metaKey = Map.of(PK, AttributeValue.fromS("DELIVERY#" + result.deliveryId()), SK, AttributeValue.fromS("META"));
         var item = new HashMap<>(metaKey);
+        item.put("delivery_id", AttributeValue.fromS(result.deliveryId()));
         item.put(TENANT_ID, AttributeValue.fromN("999")); item.put(DELIVERY_TYPE, AttributeValue.fromS("SMS"));
         item.put(PAYLOAD, AttributeValue.fromS(mapper.writeValueAsString(result.payload())));
         item.put(OCCURRED_AT, AttributeValue.fromS(NOW.toString())); item.put(FALLBACK_ALLOWED, AttributeValue.fromBool(allowed));

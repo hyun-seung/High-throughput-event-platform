@@ -33,6 +33,11 @@ public class DispatchService {
     private final DeliveryMetrics metrics;
     private final SecondaryDispatchService secondaryDispatch;
 
+    private event.delivery.dispatch.retry.RetryPublisher retries;
+    @org.springframework.beans.factory.annotation.Autowired
+    public void retryPublisher(event.delivery.dispatch.retry.RetryPublisher retries) { this.retries = retries; }
+    public void invokeRetry(DeliveryEvent event, DispatchClaim claim) { invokeProvider(event, claim, claim.attempt().attemptId()); }
+
     public void dispatch(DeliveryEvent event) {
         metrics.measure(DeliveryMetrics.Stage.DISPATCH_PROCESS, () -> process(event));
     }
@@ -123,6 +128,11 @@ public class DispatchService {
     }
 
     private void persistFailure(DeliveryEvent event, DispatchClaim claim, String attemptId, DispatchFailureDecision decision) {
+        if (event.schemaVersion() >= 2 && decision.state() == DispatchFailureDecision.State.RETRY_SCHEDULED) {
+            retries.publish(new event.delivery.dispatch.retry.RetryCommand(event, claim.attempt(), claim.attempt().retryCount() + 1, decision.nextAttemptAt()));
+            metrics.outcome(DeliveryMetrics.Outcome.DISPATCH_RETRY_SCHEDULED);
+            return;
+        }
         metrics.measure(DeliveryMetrics.Stage.DISPATCH_STORE, () -> dispatchAttemptStore.recordFailure(claim.attempt(), decision));
         String outcome = switch (decision.state()) {
             case RETRY_SCHEDULED -> "retry_scheduled";

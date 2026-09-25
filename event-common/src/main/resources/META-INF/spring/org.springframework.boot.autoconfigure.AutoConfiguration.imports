@@ -1,2 +1,3 @@
 event.common.dynamodb.config.DynamoDbAutoConfiguration
 event.common.metrics.DeliveryMetricsAutoConfiguration
+event.common.redis.DeliveryCacheAutoConfiguration

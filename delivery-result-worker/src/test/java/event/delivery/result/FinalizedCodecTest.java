@@ -32,7 +32,7 @@ class FinalizedCodecTest {
         var e = event("DELIVERED", 1);
         String json = codec.encode(e);
         for (String invalid : new String[]{"null", "{}", "bad-json", json + " {}",
-                json.replace("\"schemaVersion\":1", "\"schemaVersion\":2"),
+                json.replace("\"schemaVersion\":1", "\"schemaVersion\":3"),
                 json.substring(0, json.length() - 1) + ",\"unexpected\":true}"}) {
             assertThrows(IllegalArgumentException.class, () -> codec.decode(e.deliveryId(), invalid.getBytes(StandardCharsets.UTF_8)));
         }

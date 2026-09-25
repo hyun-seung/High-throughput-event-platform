@@ -3,6 +3,7 @@ package event.delivery.dispatch.receipt;
 import event.common.delivery.DeliveryEvent;
 import event.common.delivery.DeliveryIds;
 import event.common.lifecycle.DeliveryCompletion;
+import event.common.lifecycle.DeliveryFinalized;
 import event.common.receipt.ReceiptEvent;
 import event.common.receipt.ReceiptOutcome;
 import event.delivery.dispatch.config.DispatchProperties;
@@ -36,6 +37,13 @@ public class ReceiptResultRepository {
         this.mapper = mapper;
     }
 
+    private event.common.redis.DeliveryCache cache = event.common.redis.DeliveryCache.UNAVAILABLE;
+    @org.springframework.beans.factory.annotation.Autowired
+    public void cache(event.common.redis.DeliveryCache cache) { this.cache = cache; }
+    private event.delivery.dispatch.retry.RetryPublisher retries;
+    @org.springframework.beans.factory.annotation.Autowired
+    public void retryPublisher(event.delivery.dispatch.retry.RetryPublisher retries) { this.retries = retries; }
+
     public ReceiptApplication apply(ReceiptEvent receipt, Instant now) {
         validate(receipt);
         String fingerprint = fingerprint(receipt);
@@ -44,9 +52,7 @@ public class ReceiptResultRepository {
         for (int race = 0; race < 3; race++) {
             var item = read(key);
             if (item.isEmpty()) {
-                if (DeliveryCompletion.compacted(read(DeliveryCompletion.metaKey(receipt.deliveryId()))))
-                    return new ReceiptApplication("late_discarded", false);
-                throw new IllegalStateException("Receipt attempt not found; retain input");
+                return new ReceiptApplication("late_discarded", false);
             }
             int route = item.containsKey(ROUTE_ORDER) ? Integer.parseInt(item.get(ROUTE_ORDER).n()) : 1;
             if (!receipt.deliveryId().equals(item.get(DELIVERY_ID).s())
@@ -57,7 +63,11 @@ public class ReceiptResultRepository {
             String deadlineName = item.containsKey(DEADLINE_AT) ? DEADLINE_AT : PRIMARY_DEADLINE;
             Instant deadline = Instant.ofEpochMilli(Long.parseLong(item.get(deadlineName).n()));
             boolean expired = !now.isBefore(deadline) || !receipt.receivedAt().isBefore(deadline);
-            var prior = read(receiptKey(receipt.eventId()));
+            boolean modern = "2".equals(item.getOrDefault("schema_version", number(1)).n());
+            if (modern && expired) return new ReceiptApplication("late_discarded", false);
+            var prior = modern ? (receipt.eventId().equals(item.getOrDefault("receipt_event_id", text("")).s())
+                    ? Map.of("fingerprint", item.get("receipt_fingerprint"), "resume_dispatch", item.get("receipt_resume")) : Map.<String, AttributeValue>of())
+                    : read(receiptKey(receipt.eventId()));
             if (!prior.isEmpty()) {
                 if (fingerprint.equals(prior.get("fingerprint").s())) {
                     // A previously committed decision must finish its handoff even after a crash/deadline.
@@ -93,6 +103,12 @@ public class ReceiptResultRepository {
                     version, retryCount, deadline, route);
             DispatchFailureDecision failure = receipt.outcome() == ReceiptOutcome.FAILED
                     ? DispatchRetryPolicy.decide(attempt, failureKind(receipt.code()), receipt.receivedAt(), properties) : null;
+            if (modern && failure != null && failure.state() == DispatchFailureDecision.State.RETRY_SCHEDULED) {
+                var active = loadDelivery(receipt.deliveryId());
+                if (active.isEmpty()) return new ReceiptApplication("late_discarded", false);
+                retries.publish(new event.delivery.dispatch.retry.RetryCommand(active.get(), attempt, retryCount + 1, failure.nextAttemptAt()));
+                return new ReceiptApplication("retry_published", false);
+            }
             String nextState = failure == null ? "DELIVERED" : failure.state().name();
             boolean resume = failure != null && (failure.state() == DispatchFailureDecision.State.RETRY_SCHEDULED
                     || (route == 1 && failure.reason().equals("FALLBACK_REQUIRED")));
@@ -126,8 +142,13 @@ public class ReceiptResultRepository {
                 expression += " REMOVE #lease, #next";
             }
             var ledger = new HashMap<>(receiptKey(receipt.eventId()));
-            expression += " ADD receipt_marker_ids :markerIds";
-            values.put(":markerIds", AttributeValue.fromSs(List.of(receipt.eventId())));
+            if (!modern) {
+                expression += " ADD receipt_marker_ids :markerIds";
+                values.put(":markerIds", AttributeValue.fromSs(List.of(receipt.eventId())));
+            } else {
+                expression = expression.replace(" REMOVE", ", receipt_fingerprint = :fingerprint, receipt_resume = :resume REMOVE");
+                values.put(":fingerprint", text(fingerprint)); values.put(":resume", AttributeValue.fromBool(resume));
+            }
             ledger.put("fingerprint", text(fingerprint));
             ledger.put("resume_dispatch", AttributeValue.fromBool(resume));
             ledger.put(DELIVERY_ID, text(receipt.deliveryId()));
@@ -135,6 +156,47 @@ public class ReceiptResultRepository {
             ledger.put("result_state", text(nextState));
             ledger.put(CREATED_AT, text(now.toString()));
             try {
+                if (modern && failure == null) {
+                    var active = loadDelivery(receipt.deliveryId());
+                    if (active.isEmpty()) return new ReceiptApplication("late_discarded", false);
+                    var event = active.get();
+                    var result = new DeliveryFinalized(2, "DeliveryFinalized",
+                            DeliveryFinalized.eventId(receipt.deliveryId()), receipt.deliveryId(), event.tenantId(),
+                            event.deliveryType(), "DELIVERED", "DELIVERED", route, receipt.attemptId(), receipt.provider(),
+                            event.occurredAt(), receipt.receivedAt(), now, deadline, event.requestKey());
+                    values.put(":result", text(mapper.writeValueAsString(result))); values.put(":pending", text("PENDING"));
+                    values.put(":closed", AttributeValue.fromBool(true));
+                    expression = expression.replace(" REMOVE", ", result_event = :result, publish_state = :pending, lifecycle_closed = :closed REMOVE");
+                    var writes = new ArrayList<TransactWriteItem>();
+                    writes.add(TransactWriteItem.builder().update(Update.builder().tableName(DELIVERY_STATE)
+                            .key(DeliveryCompletion.metaKey(event.requestKey()))
+                            .conditionExpression("delivery_id = :execution AND attribute_not_exists(completion_event_id)")
+                            .updateExpression("SET completion_event_id = :event REMOVE lifecycle_bucket, lifecycle_due")
+                            .expressionAttributeValues(Map.of(":execution", text(event.deliveryId()), ":event", text(result.eventId()))).build()).build());
+                    writes.add(TransactWriteItem.builder().update(Update.builder().tableName(DELIVERY_STATE).key(key)
+                            .conditionExpression("#state = :state AND #version = :version AND #deadline > :nowMs AND attribute_not_exists(lifecycle_closed)")
+                            .updateExpression(expression).expressionAttributeNames(names).expressionAttributeValues(values).build()).build());
+                    if (route == 2) {
+                        String parentId = secondaryParent(receipt);
+                        var parentKey = attemptKey(receipt.deliveryId(), parentId); var parent = read(parentKey);
+                        writes.add(TransactWriteItem.builder().update(Update.builder().tableName(DELIVERY_STATE).key(parentKey)
+                                .conditionExpression("#version = :version AND secondary_attempt_id = :child AND attribute_not_exists(lifecycle_closed)")
+                                .updateExpression("SET lifecycle_closed = :closed REMOVE lifecycle_bucket, lifecycle_due")
+                                .expressionAttributeNames(Map.of("#version", VERSION))
+                                .expressionAttributeValues(Map.of(":version", parent.get(VERSION), ":child", text(receipt.attemptId()), ":closed", AttributeValue.fromBool(true))).build()).build());
+                    }
+                    db.transactWriteItems(r -> r.transactItems(writes));
+                    cache.schedule(receipt.deliveryId(), Instant.EPOCH);
+                    return new ReceiptApplication("delivered", false);
+                }
+                if (modern) {
+                    db.updateItem(UpdateItemRequest.builder().tableName(DELIVERY_STATE).key(key)
+                            .conditionExpression("#state = :state AND #version = :version AND #deadline > :nowMs")
+                            .updateExpression(expression).expressionAttributeNames(names).expressionAttributeValues(values).build());
+                    cache.schedule(receipt.deliveryId(), failure == null || failure.state() == DispatchFailureDecision.State.DECISION_PENDING
+                            ? Instant.EPOCH : deadline);
+                    return new ReceiptApplication(nextState.toLowerCase(Locale.ROOT), resume);
+                }
                 db.transactWriteItems(TransactWriteItemsRequest.builder().transactItems(
                         TransactWriteItem.builder().put(Put.builder().tableName(DELIVERY_STATE).item(ledger)
                                 .conditionExpression("attribute_not_exists(pk)").build()).build(),
@@ -143,6 +205,7 @@ public class ReceiptResultRepository {
                                 .updateExpression(expression).expressionAttributeNames(names).expressionAttributeValues(values)
                                 .build()).build()).build());
                 return new ReceiptApplication(nextState.toLowerCase(Locale.ROOT), resume);
+            } catch (ConditionalCheckFailedException changed) { /* retry the state read */
             } catch (TransactionCanceledException changed) {
                 if (changed.cancellationReasons().stream().noneMatch(reason ->
                         "ConditionalCheckFailed".equals(reason.code()) || "TransactionConflict".equals(reason.code()))) throw changed;
@@ -152,13 +215,26 @@ public class ReceiptResultRepository {
     }
 
     public Optional<DeliveryEvent> loadDelivery(String deliveryId) {
-        var item = read(Map.of(PK, text("DELIVERY#" + deliveryId), SK, text("META")));
-        if (item.isEmpty()) throw new IllegalStateException("Receipt handoff source missing; retain input");
+        var item = read(DeliveryCompletion.metaKey(deliveryId));
+        if (item.isEmpty()) {
+            var page = db.query(r -> r.tableName(DELIVERY_STATE).consistentRead(true)
+                    .keyConditionExpression("pk = :pk")
+                    .expressionAttributeValues(Map.of(":pk", text("DELIVERY#" + deliveryId))).limit(1));
+            if (page.items().isEmpty() || !page.items().getFirst().containsKey("request_key")) return Optional.empty();
+            item = read(DeliveryCompletion.metaKey(page.items().getFirst().get("request_key").s()));
+            if (item.isEmpty() || !deliveryId.equals(item.get(DELIVERY_ID).s())) return Optional.empty();
+        }
         if (DeliveryCompletion.compacted(item)) return Optional.empty();
-        return Optional.of(DeliveryEvent.requested(deliveryId, Long.parseLong(item.get(TENANT_ID).n()), item.get(DELIVERY_TYPE).s(),
+        String execution = item.get(DELIVERY_ID).s();
+        String requestKey = item.getOrDefault("request_key", text(execution)).s();
+        int schema = Integer.parseInt(item.getOrDefault("schema_version", number(1)).n());
+        var original = DeliveryEvent.requested(execution, Long.parseLong(item.get(TENANT_ID).n()), item.get(DELIVERY_TYPE).s(),
                 mapper.readValue(item.get(PAYLOAD).s(), new TypeReference<Map<String, Object>>() {}),
                 Instant.parse(item.get(OCCURRED_AT).s()),
-                Boolean.TRUE.equals(item.getOrDefault(FALLBACK_ALLOWED, AttributeValue.fromBool(false)).bool())).toDispatchRequested());
+                Boolean.TRUE.equals(item.getOrDefault(FALLBACK_ALLOWED, AttributeValue.fromBool(false)).bool()));
+        return Optional.of(new DeliveryEvent(schema, original.eventId(), original.eventType(), execution, original.tenantId(),
+                original.deliveryType(), original.payload(), original.occurredAt(), requestKey, null, original.fallbackAllowed(), requestKey)
+                .toDispatchRequested());
     }
 
     public String secondaryParent(ReceiptEvent receipt) {

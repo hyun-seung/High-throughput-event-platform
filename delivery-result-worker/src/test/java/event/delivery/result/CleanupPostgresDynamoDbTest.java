@@ -56,6 +56,7 @@ class CleanupPostgresDynamoDbTest {
         if (db != null) {
             for (var e : results) for (String sk : List.of("META", "FINAL", "ATTEMPT#" + e.attemptId()))
                 db.deleteItem(r -> r.tableName(DELIVERY_STATE).key(key(e, sk)));
+            for (var e : results) db.deleteItem(r -> r.tableName(DELIVERY_STATE).key(DeliveryCompletion.metaKey(e.requestKey())));
             db.close();
         }
         if (pool != null) { try { jdbc.execute("DROP SCHEMA " + schema + " CASCADE"); } finally { pool.close(); } }
@@ -81,6 +82,58 @@ class CleanupPostgresDynamoDbTest {
     static Map<String, AttributeValue> key(DeliveryFinalized e, String sk) { return Map.of("pk", s("DELIVERY#" + e.deliveryId()), "sk", s(sk)); }
     static AttributeValue s(String value) { return AttributeValue.fromS(value); }
     CleanupWorker worker(CleanupRepository repository) { return new CleanupWorker(repository, new DeliveryCompactor(db), meters); }
+
+    DeliveryFinalized seedModern(String requestKey) {
+        var old = seed();
+        var e = new DeliveryFinalized(2, old.eventType(), old.eventId(), old.deliveryId(), old.tenantId(), old.deliveryType(),
+                old.outcome(), old.reason(), old.routeOrder(), old.attemptId(), old.provider(), old.occurredAt(), old.resultAt(),
+                java.time.Instant.now(), old.deadline(), requestKey);
+        results.add(e);
+        var origin = new HashMap<>(meta(old)); origin.putAll(DeliveryCompletion.metaKey(requestKey));
+        origin.put("schema_version", AttributeValue.fromN("2")); origin.put("request_key", s(requestKey));
+        db.putItem(r -> r.tableName(DELIVERY_STATE).item(origin));
+        db.deleteItem(r -> r.tableName(DELIVERY_STATE).key(key(old, "META")));
+        db.deleteItem(r -> r.tableName(DELIVERY_STATE).key(key(old, "FINAL")));
+        db.updateItem(r -> r.tableName(DELIVERY_STATE).key(key(old, "ATTEMPT#" + old.attemptId()))
+                .updateExpression("SET result_event = :result, publish_state = :published")
+                .expressionAttributeValues(Map.of(":result", s(new FinalizedCodec().encode(e)), ":published", s("PUBLISHED"))));
+        return e;
+    }
+    Map<String, AttributeValue> origin(DeliveryFinalized e) {
+        return db.getItem(r -> r.tableName(DELIVERY_STATE).key(DeliveryCompletion.metaKey(e.requestKey())).consistentRead(true)).item();
+    }
+    @Test void modernCleanupRequiresSqlThenDeletesOriginAndStepWithoutPermanentMarker() {
+        var e = seedModern(UUID.randomUUID().toString());
+        worker(repository).tick(); assertTrue(origin(e).containsKey("payload"));
+        store.save(e); worker(repository).tick(); assertTrue(origin(e).isEmpty());
+        assertTrue(db.query(r -> r.tableName(DELIVERY_STATE).keyConditionExpression("pk = :pk")
+                .expressionAttributeValues(Map.of(":pk", s("DELIVERY#" + e.deliveryId())))).items().isEmpty());
+        assertEquals("PENDING", jdbc.queryForObject("SELECT status FROM customer_notification_outbox", String.class));
+        assertEquals("DONE", jdbc.queryForObject("SELECT status FROM delivery_cleanup_outbox", String.class));
+    }
+    @Test void sqlDoneLossThenNewGenerationPreservesNewOriginAndSeparateHistoryAndNotifications() {
+        String requestKey = UUID.randomUUID().toString(); var first = seedModern(requestKey); store.save(first);
+        var failing = spy(repository); doThrow(new IllegalStateException("SQL done response unavailable")).when(failing).done(any());
+        worker(failing).tick(); assertTrue(origin(first).isEmpty());
+        var second = seedModern(requestKey); var before = origin(second);
+        jdbc.update("UPDATE delivery_cleanup_outbox SET next_attempt_at = clock_timestamp() - interval '1 second'");
+        worker(repository).tick(); assertEquals(before, origin(second));
+        store.save(second); worker(repository).tick();
+        assertEquals(2, jdbc.queryForObject("SELECT count(*) FROM delivery_history", Integer.class));
+        assertEquals(2, jdbc.queryForObject("SELECT count(*) FROM customer_notification_outbox", Integer.class));
+        assertEquals(2, jdbc.queryForObject("SELECT count(*) FROM delivery_cleanup_outbox WHERE status = 'DONE'", Integer.class));
+        assertEquals(FinalizedStore.Outcome.DUPLICATE, store.save(first));
+    }
+
+    @Test void legacyCompletionHashWithoutRequestKeyRemainsReadable() {
+        var e = seed(); store.save(e); worker(repository).tick();
+        var mapper = JsonMapper.builder().build();
+        var oldJson = mapper.readValue(new FinalizedCodec().encode(e), new tools.jackson.core.type.TypeReference<LinkedHashMap<String, Object>>() {});
+        oldJson.remove("requestKey");
+        db.updateItem(r -> r.tableName(DELIVERY_STATE).key(key(e, "META")).updateExpression("SET result_hash = :hash")
+                .expressionAttributeValues(Map.of(":hash", s(DeliveryCompletion.hash("result:v1", mapper.writeValueAsString(oldJson))))));
+        assertFalse(new DeliveryCompactor(db).compact(e));
+    }
 
     @Test void noSqlEvidenceOrMissingNotificationCannotDeleteOriginal() {
         var e = seed(); worker(repository).tick();

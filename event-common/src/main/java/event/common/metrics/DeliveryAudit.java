@@ -13,7 +13,7 @@ public final class DeliveryAudit {
     public static void record(DeliveryEvent event, String stage, String outcome,
                               String attemptId, String provider, String code) {
         LOG.atInfo().addKeyValue("stage", stage).addKeyValue("outcome", outcome)
-                .addKeyValue("deliveryId", event.deliveryId()).addKeyValue("tenantId", event.tenantId())
+                .addKeyValue("deliveryId", event.deliveryId()).addKeyValue("requestKey", event.requestKey()).addKeyValue("tenantId", event.tenantId())
                 .addKeyValue("attemptId", attemptId).addKeyValue("provider", provider)
                 .addKeyValue("code", code).log("Delivery stage observed");
     }

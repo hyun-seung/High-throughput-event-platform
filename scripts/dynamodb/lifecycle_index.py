@@ -59,10 +59,16 @@ def main():
             if not cursor: break
         has_attempt = any(i['sk']['S'].startswith('ATTEMPT#') for i in items)
         for item in items:
-            if 'lifecycle_bucket' in item or item.get('lifecycle_closed', {}).get('BOOL'): continue
+            if 'lifecycle_bucket' in item or 'completion_event_id' in item: continue
+            if item.get('lifecycle_closed', {}).get('BOOL') and item.get('publish_state', {}).get('S') != 'PENDING': continue
             sk = item['sk']['S']; condition = 'attribute_exists(pk) AND attribute_not_exists(lifecycle_bucket)'
             names, values = {}, {':bucket': {'S': bucket(delivery)}}
             if sk == 'META' and not has_attempt: due = 0
+            elif sk.startswith('ATTEMPT#') and item.get('publish_state', {}).get('S') == 'PENDING':
+                due = 0
+                condition += ' AND publish_state = :pending AND result_event = :event AND #version = :version'
+                names = {'#version': 'version'}
+                values.update({':pending': {'S': 'PENDING'}, ':event': item['result_event'], ':version': item['version']})
             elif sk.startswith('ATTEMPT#'):
                 state = item['status']['S']
                 if state not in ('DELIVERED', 'DECISION_PENDING', 'RETRY_SCHEDULED', 'PROCESSING', 'ACCEPTED', 'REVIEW_REQUIRED'):
