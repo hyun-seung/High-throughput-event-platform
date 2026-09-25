@@ -51,6 +51,26 @@
         </dependencies>
     </dependencyManagement>
 
+    <profiles>
+        <profile>
+            <id>integration-tests</id>
+            <build><plugins><plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <executions><execution>
+                    <id>require-integration-environment</id>
+                    <goals><goal>enforce</goal></goals>
+                    <configuration><rules>
+                        <requireProperty><property>env.DYNAMODB_TEST_ENDPOINT</property><regex>http://(localhost|127\.0\.0\.1):[0-9]+</regex><message>Use scripts/test-java.sh integration or supply an isolated local DynamoDB.</message></requireProperty>
+                        <requireProperty><property>env.KAFKA_TEST_BOOTSTRAP_SERVERS</property><regex>(localhost|127\.0\.0\.1):[0-9]+</regex></requireProperty>
+                        <requireProperty><property>env.POSTGRES_TEST_URL</property><regex>jdbc:postgresql://(localhost|127\.0\.0\.1):[0-9]+/[^?]+</regex></requireProperty>
+                        <requireProperty><property>env.REDIS_TEST_PORT</property><regex>[0-9]+</regex></requireProperty>
+                    </rules></configuration>
+                </execution></executions>
+            </plugin></plugins></build>
+        </profile>
+    </profiles>
+
     <build>
         <plugins>
             <plugin>
