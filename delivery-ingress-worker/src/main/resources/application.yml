@@ -1,4 +1,11 @@
 spring:
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      database: ${REDIS_DATABASE:0}
+      connect-timeout: ${REDIS_CONNECT_TIMEOUT:200ms}
+      timeout: ${REDIS_TIMEOUT:200ms}
   application:
     name: delivery-ingress-worker
 
@@ -29,6 +36,7 @@ spring:
         "[delivery.timeout.ms]": ${KAFKA_PUBLISH_DELIVERY_TIMEOUT_MS:10000}
 
 delivery:
+  completed-retention: ${DELIVERY_COMPLETED_RETENTION:24h}
   ingress:
     failure:
       retry-interval: ${INGRESS_RETRY_INTERVAL:1s}

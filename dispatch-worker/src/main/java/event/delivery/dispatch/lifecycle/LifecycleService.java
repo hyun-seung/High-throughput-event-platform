@@ -31,12 +31,19 @@ public class LifecycleService {
         this.config = config; this.publisher = publisher; this.clock = clock; this.metrics = metrics;
     }
 
+    private event.common.redis.DeliveryCache cache = event.common.redis.DeliveryCache.UNAVAILABLE;
+    public void cache(event.common.redis.DeliveryCache cache) { this.cache = cache; }
+
     public void reconcile(String delivery) {
         var completed = repository.read(delivery, "FINAL");
         if (!completed.isEmpty()) { publish(delivery, completed); return; }
         var active = sources.loadDelivery(delivery);
-        if (active.isEmpty()) return;
+        if (active.isEmpty()) { cache.removeSchedule(delivery); return; }
         var event = active.get();
+        if (!delivery.equals(event.deliveryId())) cache.removeSchedule(delivery);
+        delivery = event.deliveryId();
+        completed = repository.read(delivery, "FINAL");
+        if (!completed.isEmpty()) { publish(delivery, completed); return; }
         String parentId = DeliveryIds.attemptId(delivery, config.provider(), 1, 1);
         var parent = repository.read(delivery, "ATTEMPT#" + parentId);
         if (parent.isEmpty()) {
@@ -45,7 +52,7 @@ public class LifecycleService {
             parent = repository.read(delivery, "ATTEMPT#" + parentId);
             if (parent.isEmpty()) throw new IllegalStateException("Dispatch did not persist attempt");
         }
-        repository.releaseMeta(delivery, repository.read(delivery, "META"));
+        repository.releaseMeta(event.requestKey(), repository.read(event.requestKey(), "META"));
         if (repository.expire(delivery, parent, clock.instant())) {
             count("expired"); parent = repository.read(delivery, "ATTEMPT#" + parentId);
         } else {
@@ -70,7 +77,7 @@ public class LifecycleService {
             if (repository.expire(delivery, child, clock.instant())) count("expired");
             child = repository.read(delivery, "ATTEMPT#" + childId);
             if (text(child, STATUS).equals("RETRY_SCHEDULED")) { secondary.dispatch(event, parentId); return; }
-            repository.waitForSecondary(delivery, parent, child);
+            if (event.schemaVersion() < 2) repository.waitForSecondary(delivery, parent, child);
             terminal = child;
         }
         if (!Set.of("DELIVERED", "DECISION_PENDING").contains(text(terminal, STATUS))) return;
@@ -80,9 +87,13 @@ public class LifecycleService {
     }
 
     private void publish(String delivery, java.util.Map<String, software.amazon.awssdk.services.dynamodb.model.AttributeValue> item) {
-        if (!"PENDING".equals(text(item, "publish_state"))) return;
-        publisher.publish(repository.result(item));
-        repository.published(delivery, text(item, "result_event"), clock.instant());
+        if (!"PENDING".equals(text(item, "publish_state"))) { cache.removeSchedule(delivery); return; }
+        var result = repository.result(item);
+        publisher.publish(result);
+        // v2 SQL history + notification commit is the cleanup proof. No separate Kafka-ack DB write.
+        // Until SQL deletes the STEP, the durable index can republish the same immutable result after a crash.
+        if (result.schemaVersion() < 2) repository.published(delivery, text(item, "result_event"), clock.instant());
+        cache.removeSchedule(delivery);
         count("published");
     }
     private void count(String outcome) { metrics.counter("delivery.lifecycle.events", "outcome", outcome).increment(); }

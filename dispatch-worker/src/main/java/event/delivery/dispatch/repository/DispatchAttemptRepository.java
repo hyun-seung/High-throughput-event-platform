@@ -73,6 +73,10 @@ public class DispatchAttemptRepository implements DispatchAttemptStore {
 
     private final DynamoDbClient dynamoDbClient;
 
+    private event.common.redis.DeliveryCache cache = event.common.redis.DeliveryCache.UNAVAILABLE;
+    @org.springframework.beans.factory.annotation.Autowired
+    public void cache(event.common.redis.DeliveryCache cache) { this.cache = cache; }
+
     @Override
     public DispatchClaim claim(
             DeliveryEvent event,
@@ -120,7 +124,8 @@ public class DispatchAttemptRepository implements DispatchAttemptStore {
                 Map.entry(":one", number(1)),
                 Map.entry(":deadline", number(deadline.toEpochMilli())),
                 Map.entry(":route", number(routeOrder)),
-                Map.entry(":bucket", text(LifecycleIndex.bucket(event.deliveryId())))
+                Map.entry(":bucket", text(LifecycleIndex.bucket(event.deliveryId()))),
+                Map.entry(":requestKey", text(event.requestKey())), Map.entry(":schema", number(event.schemaVersion()))
         );
 
         UpdateItemRequest request = UpdateItemRequest.builder()
@@ -132,7 +137,7 @@ public class DispatchAttemptRepository implements DispatchAttemptStore {
                         + "#leaseUntil = :leaseUntil, #createdAt = if_not_exists(#createdAt, :now), "
                         + "#updatedAt = :now, #version = if_not_exists(#version, :zero) + :one, "
                         + "#retryCount = :zero, #deadline = :deadline, #route = :route, "
-                        + "lifecycle_bucket = :bucket, lifecycle_due = :deadline, receipt_tracking_version = :one")
+                        + "lifecycle_bucket = :bucket, lifecycle_due = :deadline, receipt_tracking_version = :one, request_key = :requestKey, schema_version = :schema")
                 .expressionAttributeNames(names)
                 .expressionAttributeValues(values)
                 .returnValues(ReturnValue.ALL_NEW)
@@ -141,14 +146,18 @@ public class DispatchAttemptRepository implements DispatchAttemptStore {
         try {
             dynamoDbClient.transactWriteItems(TransactWriteItemsRequest.builder().transactItems(
                     TransactWriteItem.builder().conditionCheck(ConditionCheck.builder().tableName(DELIVERY_STATE)
-                            .key(DeliveryCompletion.metaKey(event.deliveryId())).conditionExpression("attribute_not_exists(completion_event_id)").build()).build(),
+                            .key(DeliveryCompletion.metaKey(event.requestKey()))
+                            .conditionExpression("attribute_exists(pk) AND delivery_id = :execution AND attribute_not_exists(completion_event_id)")
+                            .expressionAttributeValues(Map.of(":execution", text(event.deliveryId()))).build()).build(),
                     TransactWriteItem.builder().update(Update.builder().tableName(DELIVERY_STATE).key(request.key())
                             .conditionExpression(request.conditionExpression()).updateExpression(request.updateExpression())
                             .expressionAttributeNames(request.expressionAttributeNames()).expressionAttributeValues(request.expressionAttributeValues()).build()).build()).build());
+            if (!event.requestKey().equals(event.deliveryId())) cache.removeSchedule(event.requestKey());
+            cache.schedule(event.deliveryId(), deadline);
             return DispatchClaim.claimed(new DispatchAttempt(event.deliveryId(), attemptId, provider, 1, 0, deadline, routeOrder));
         } catch (TransactionCanceledException e) {
             if (e.cancellationReasons().stream().noneMatch(r -> "ConditionalCheckFailed".equals(r.code()))) throw e;
-            if (completionRecorded(event.deliveryId())) return DispatchClaim.alreadyAccepted();
+            if (completionRecorded(event)) return DispatchClaim.alreadyAccepted();
             return existingClaim(key, now, leaseUntil);
         }
     }
@@ -161,7 +170,7 @@ public class DispatchAttemptRepository implements DispatchAttemptStore {
             var item = dynamoDbClient.getItem(GetItemRequest.builder().tableName(DELIVERY_STATE).key(key)
                     .consistentRead(true).build()).item();
             if (item.isEmpty() || !DECISION_PENDING.equals(item.get(STATUS).s())) {
-                if (completionRecorded(event.deliveryId())) return Optional.empty();
+                if (completionRecorded(event)) return Optional.empty();
                 throw new IllegalStateException("Primary decision must be durable before secondary dispatch");
             }
             if (item.containsKey("lifecycle_closed")) return Optional.empty();
@@ -190,6 +199,27 @@ public class DispatchAttemptRepository implements DispatchAttemptStore {
         throw new IllegalStateException("Secondary route changed during handoff; retry resolution");
     }
 
+    public DispatchClaim claimRetry(event.delivery.dispatch.retry.RetryCommand command, Instant now, Instant leaseUntil) {
+        var source = command.source();
+        if (!now.isBefore(source.deadline())) return DispatchClaim.decisionPending();
+        if (now.isBefore(command.notBefore())) return DispatchClaim.retryWait();
+        try {
+            var result = dynamoDbClient.updateItem(r -> r.tableName(DELIVERY_STATE).key(key(source.deliveryId(), source.attemptId()))
+                    .conditionExpression("#version = :version AND retry_count = :source AND (#status = :processing OR #status = :accepted OR #status = :review) "
+                            + "AND deadline_at = :deadline AND deadline_at > :nowMs AND attribute_not_exists(lifecycle_closed)")
+                    .updateExpression("SET #status = :processing, #version = #version + :one, retry_count = :target, "
+                            + "lease_until = :lease, updated_at = :now REMOVE next_attempt_at")
+                    .expressionAttributeNames(Map.of("#version", VERSION, "#status", STATUS))
+                    .expressionAttributeValues(Map.ofEntries(Map.entry(":version", number(source.version())),
+                            Map.entry(":source", number(source.retryCount())), Map.entry(":target", number(command.targetRetryCount())),
+                            Map.entry(":processing", text(PROCESSING)), Map.entry(":accepted", text(ACCEPTED)), Map.entry(":review", text(REVIEW_REQUIRED)),
+                            Map.entry(":deadline", number(source.deadline().toEpochMilli())), Map.entry(":nowMs", number(now.toEpochMilli())),
+                            Map.entry(":one", number(1)), Map.entry(":lease", number(leaseUntil.toEpochMilli())), Map.entry(":now", text(now.toString()))))
+                    .returnValues(ReturnValue.ALL_NEW));
+            return DispatchClaim.claimed(attempt(result.attributes()));
+        } catch (ConditionalCheckFailedException duplicateOrClosed) { return DispatchClaim.alreadyAccepted(); }
+    }
+
     @Override
     public void markAccepted(DispatchAttempt attempt, Instant providerProcessedAt, Instant now) {
         UpdateItemRequest request = UpdateItemRequest.builder()
@@ -215,6 +245,7 @@ public class DispatchAttemptRepository implements DispatchAttemptStore {
                 .build();
 
         dynamoDbClient.updateItem(request);
+        cache.schedule(attempt.deliveryId(), attempt.deadline());
     }
 
     @Override
@@ -242,6 +273,8 @@ public class DispatchAttemptRepository implements DispatchAttemptStore {
                 .key(key(attempt.deliveryId(), attempt.attemptId()))
                 .conditionExpression("#status = :processing AND #version = :version")
                 .updateExpression(update).expressionAttributeNames(names).expressionAttributeValues(values).build());
+        cache.schedule(attempt.deliveryId(), decision.state() == DispatchFailureDecision.State.DECISION_PENDING
+                ? Instant.EPOCH : attempt.deadline());
     }
 
     private DispatchClaim existingClaim(Map<String, AttributeValue> key, Instant now, Instant leaseUntil) {
@@ -279,6 +312,8 @@ public class DispatchAttemptRepository implements DispatchAttemptStore {
                 return DispatchClaim.inProgress();
             }
 
+            // v2 retry commands own the next version. An expired lease alone cannot invalidate that durable command.
+            if ("2".equals(item.getOrDefault("schema_version", number(1)).n())) return DispatchClaim.reviewRequired();
             long version = Long.parseLong(item.get(VERSION).n());
             try {
                 markReviewRequired(key, version, now);
@@ -362,9 +397,10 @@ public class DispatchAttemptRepository implements DispatchAttemptStore {
         );
     }
 
-    private boolean completionRecorded(String deliveryId) {
-        return dynamoDbClient.getItem(r -> r.tableName(DELIVERY_STATE).key(DeliveryCompletion.metaKey(deliveryId))
-                .consistentRead(true)).item().containsKey(DeliveryCompletion.FENCE);
+    private boolean completionRecorded(DeliveryEvent event) {
+        var origin = dynamoDbClient.getItem(r -> r.tableName(DELIVERY_STATE).key(DeliveryCompletion.metaKey(event.requestKey()))
+                .consistentRead(true)).item();
+        return origin.isEmpty() || !event.deliveryId().equals(origin.get(DELIVERY_ID).s()) || origin.containsKey(DeliveryCompletion.FENCE);
     }
 
     private AttributeValue text(String value) {

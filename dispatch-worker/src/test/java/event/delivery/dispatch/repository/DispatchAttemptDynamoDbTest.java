@@ -1,6 +1,7 @@
 package event.delivery.dispatch.repository;
 
 import event.common.delivery.DeliveryEvent;
+import event.common.lifecycle.DeliveryCompletion;
 import event.common.tcp.TcpFrames;
 import event.common.tcp.TcpDeliveryRequest;
 import event.common.tcp.TcpDeliveryResponse;
@@ -119,6 +120,7 @@ class DispatchAttemptDynamoDbTest {
                         SK, AttributeValue.fromS("ATTEMPT#" + parent.get("secondary_attempt_id").s()))));
             }
             client.deleteItem(request -> request.tableName(DELIVERY_STATE).key(key(ownEvent)));
+            client.deleteItem(request -> request.tableName(DELIVERY_STATE).key(DeliveryCompletion.metaKey(ownEvent.deliveryId())));
         }
     }
 
@@ -750,6 +752,9 @@ class DispatchAttemptDynamoDbTest {
     private DeliveryEvent newEvent() {
         var result = DeliveryEvent.requested(DeliveryIds.deliveryId(999L, "dispatch-test-" + UUID.randomUUID()),
                 999L, "EMAIL", Map.of("body", "test"), NOW).toDispatchRequested();
+        var origin = new java.util.HashMap<>(DeliveryCompletion.metaKey(result.deliveryId()));
+        origin.put("delivery_id", AttributeValue.fromS(result.deliveryId()));
+        client.putItem(r -> r.tableName(DELIVERY_STATE).item(origin));
         ownEvents.add(result);
         return result;
     }

@@ -20,7 +20,12 @@ public class LifecycleRepository {
     public LifecycleRepository(DynamoDbClient db, JsonMapper mapper) { this.db = db; this.mapper = mapper; }
 
     public Map<String, AttributeValue> read(String delivery, String sk) {
-        return db.getItem(r -> r.tableName(DELIVERY_STATE).key(key(delivery, sk)).consistentRead(true)).item();
+        var item = db.getItem(r -> r.tableName(DELIVERY_STATE).key(key(delivery, sk)).consistentRead(true)).item();
+        if (!sk.equals("FINAL") || !item.isEmpty()) return item;
+        return db.query(r -> r.tableName(DELIVERY_STATE).consistentRead(true)
+                .keyConditionExpression("pk = :pk AND begins_with(sk, :prefix)")
+                .expressionAttributeValues(Map.of(":pk", s("DELIVERY#" + delivery), ":prefix", s("ATTEMPT#"))))
+                .items().stream().filter(i -> i.containsKey("result_event")).findFirst().orElse(Map.of());
     }
     public void requireNoOtherPrimary(String delivery, String expectedId) {
         var items = db.query(r -> r.tableName(DELIVERY_STATE).consistentRead(true)
@@ -66,7 +71,7 @@ public class LifecycleRepository {
 
     /** Once an Attempt exists, its own durable index replaces the pre-dispatch recovery entry. */
     public void releaseMeta(String delivery, Map<String, AttributeValue> meta) {
-        if (!meta.containsKey(LifecycleIndex.BUCKET)) return;
+        if (!meta.containsKey(LifecycleIndex.BUCKET) || "2".equals(meta.getOrDefault("schema_version", n(1)).n())) return;
         db.updateItem(r -> r.tableName(DELIVERY_STATE).key(key(delivery, "META"))
                 .conditionExpression("attribute_exists(pk)")
                 .updateExpression("REMOVE lifecycle_bucket, lifecycle_due"));
@@ -91,22 +96,23 @@ public class LifecycleRepository {
         String reason = state.equals("DELIVERED") ? "DELIVERED" : text(terminal, FAILURE_REASON);
         String outcome = state.equals("DELIVERED") ? "DELIVERED" : reason.endsWith("_EXPIRED") ? "EXPIRED" : "FAILED";
         Instant resultAt = Instant.parse(text(terminal, state.equals("DELIVERED") ? "receipt_received_at" : FAILURE_OBSERVED_AT));
-        var result = new DeliveryFinalized(1, "DeliveryFinalized", DeliveryFinalized.eventId(event.deliveryId()), event.deliveryId(),
+        var result = new DeliveryFinalized(event.schemaVersion(), "DeliveryFinalized", DeliveryFinalized.eventId(event.deliveryId()), event.deliveryId(),
                 event.tenantId(), event.deliveryType(), outcome, reason, route(terminal), text(terminal, ATTEMPT_ID),
-                text(terminal, PROVIDER), event.occurredAt(), resultAt, now, deadline(terminal));
+                text(terminal, PROVIDER), event.occurredAt(), resultAt, now, deadline(terminal), event.requestKey());
         var finalItem = new HashMap<>(key(event.deliveryId(), "FINAL"));
+        finalItem.put("request_key", s(event.requestKey()));
         finalItem.put(DELIVERY_ID, s(event.deliveryId())); finalItem.put("result_event", s(mapper.writeValueAsString(result)));
         finalItem.put("publish_state", s("PENDING")); finalItem.put(CREATED_AT, s(now.toString()));
         LifecycleIndex.add(finalItem, event.deliveryId(), 0);
         var writes = new ArrayList<TransactWriteItem>();
-        writes.add(TransactWriteItem.builder().update(Update.builder().tableName(DELIVERY_STATE).key(key(event.deliveryId(), "META"))
-                .conditionExpression("attribute_exists(pk) AND attribute_not_exists(completion_event_id)")
+        writes.add(TransactWriteItem.builder().update(Update.builder().tableName(DELIVERY_STATE).key(key(event.requestKey(), "META"))
+                .conditionExpression("delivery_id = :execution AND attribute_not_exists(completion_event_id)")
                 .updateExpression("SET completion_event_id = :event REMOVE lifecycle_bucket, lifecycle_due")
-                .expressionAttributeValues(Map.of(":event", s(result.eventId()))).build()).build());
-        writes.add(TransactWriteItem.builder().put(Put.builder().tableName(DELIVERY_STATE).item(finalItem)
+                .expressionAttributeValues(Map.of(":event", s(result.eventId()), ":execution", s(event.deliveryId()))).build()).build());
+        if (event.schemaVersion() < 2) writes.add(TransactWriteItem.builder().put(Put.builder().tableName(DELIVERY_STATE).item(finalItem)
                 .conditionExpression("attribute_not_exists(pk)").build()).build());
-        writes.add(closeAttempt(event.deliveryId(), terminal, null));
-        if (route(terminal) == 2) writes.add(closeAttempt(event.deliveryId(), parent, text(terminal, ATTEMPT_ID)));
+        writes.add(closeAttempt(event.deliveryId(), terminal, null, event.schemaVersion() >= 2 ? result : null));
+        if (route(terminal) == 2) writes.add(closeAttempt(event.deliveryId(), parent, text(terminal, ATTEMPT_ID), null));
         try {
             db.transactWriteItems(r -> r.transactItems(writes));
             return true;
@@ -116,25 +122,36 @@ public class LifecycleRepository {
         }
     }
 
-    private TransactWriteItem closeAttempt(String delivery, Map<String, AttributeValue> item, String child) {
+    private TransactWriteItem closeAttempt(String delivery, Map<String, AttributeValue> item, String child, DeliveryFinalized result) {
         var values = new HashMap<>(Map.of(":version", item.get(VERSION), ":status", item.get(STATUS), ":closed", AttributeValue.fromBool(true)));
         String condition = "#version = :version AND #status = :status AND attribute_not_exists(lifecycle_closed)";
         if (child != null) { condition += " AND secondary_attempt_id = :child"; values.put(":child", s(child)); }
+        String update = "SET lifecycle_closed = :closed REMOVE lifecycle_bucket, lifecycle_due";
+        if (result != null) {
+            values.put(":result", s(mapper.writeValueAsString(result))); values.put(":pending", s("PENDING"));
+            values.put(":bucket", s(LifecycleIndex.bucket(delivery))); values.put(":zero", n(0));
+            update = "SET lifecycle_closed = :closed, result_event = :result, publish_state = :pending, lifecycle_bucket = :bucket, lifecycle_due = :zero";
+        }
         return TransactWriteItem.builder().update(Update.builder().tableName(DELIVERY_STATE).key(key(delivery, text(item, SK)))
-                .conditionExpression(condition).updateExpression("SET lifecycle_closed = :closed REMOVE lifecycle_bucket, lifecycle_due")
+                .conditionExpression(condition).updateExpression(update)
                 .expressionAttributeNames(Map.of("#version", VERSION, "#status", STATUS)).expressionAttributeValues(values).build()).build();
     }
 
     public DeliveryFinalized result(Map<String, AttributeValue> item) { return mapper.readValue(text(item, "result_event"), DeliveryFinalized.class); }
     public void published(String delivery, String event, Instant now) {
+        var publication = mapper.readValue(event, DeliveryFinalized.class);
+        String publicationKey = publication.schemaVersion() >= 2 ? "ATTEMPT#" + publication.attemptId() : "FINAL";
         try {
-            db.updateItem(r -> r.tableName(DELIVERY_STATE).key(key(delivery, "FINAL"))
+            db.updateItem(r -> r.tableName(DELIVERY_STATE).key(key(delivery, publicationKey))
                     .conditionExpression("publish_state = :pending AND result_event = :event")
                     .updateExpression("SET publish_state = :done, published_at = :now REMOVE lifecycle_bucket, lifecycle_due")
                     .expressionAttributeValues(Map.of(":pending", s("PENDING"), ":done", s("PUBLISHED"), ":event", s(event), ":now", s(now.toString()))));
         } catch (ConditionalCheckFailedException race) {
             var current = read(delivery, "FINAL");
-            var meta = read(delivery, "META");
+            var result = mapper.readValue(event, DeliveryFinalized.class);
+            var meta = read(result.requestKey(), "META");
+            if (result.schemaVersion() >= 2 && current.isEmpty()
+                    && (meta.isEmpty() || !delivery.equals(text(meta, DELIVERY_ID)))) return;
             if (DeliveryCompletion.compacted(meta)
                     && mapper.readValue(event, DeliveryFinalized.class).eventId().equals(text(meta, DeliveryCompletion.FENCE))) return;
             if (!"PUBLISHED".equals(text(current, "publish_state")) || !event.equals(text(current, "result_event"))) throw race;

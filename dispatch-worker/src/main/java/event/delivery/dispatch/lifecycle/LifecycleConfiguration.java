@@ -58,12 +58,15 @@ public class LifecycleConfiguration {
     }
     @Bean LifecycleService lifecycleService(LifecycleRepository repository, ReceiptResultRepository sources,
             DispatchService dispatch, SecondaryDispatchService secondary, DispatchProperties config,
-            FinalizedPublisher publisher, Clock clock, MeterRegistry metrics) {
-        return new LifecycleService(repository, sources, dispatch, secondary, config, publisher, clock, metrics);
+            FinalizedPublisher publisher, Clock clock, MeterRegistry metrics, event.common.redis.DeliveryCache cache) {
+        var service = new LifecycleService(repository, sources, dispatch, secondary, config, publisher, clock, metrics);
+        service.cache(cache); return service;
     }
     @Bean LifecycleScheduler lifecycleScheduler(LifecycleRepository repository, LifecycleService service, Clock clock,
             MeterRegistry metrics, @Value("${dispatch.lifecycle.page-size:100}") int pageSize,
-            @Value("${dispatch.lifecycle.concurrency:4}") int concurrency) {
-        return new LifecycleScheduler(repository, service, clock, metrics, pageSize, concurrency);
+            @Value("${dispatch.lifecycle.concurrency:4}") int concurrency,
+            event.common.redis.DeliveryCache cache, @Value("${dispatch.lifecycle.recovery-poll-ms:30000}") long recoveryMs) {
+        var scheduler = new LifecycleScheduler(repository, service, clock, metrics, pageSize, concurrency);
+        scheduler.cache(cache, recoveryMs); return scheduler;
     }
 }

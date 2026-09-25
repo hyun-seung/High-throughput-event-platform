@@ -27,6 +27,10 @@ public class SecondaryDispatchService {
     private final Clock dispatchClock;
     private final DeliveryMetrics metrics;
 
+    private event.delivery.dispatch.retry.RetryPublisher retries;
+    @org.springframework.beans.factory.annotation.Autowired
+    public void retryPublisher(event.delivery.dispatch.retry.RetryPublisher retries) { this.retries = retries; }
+
     public void dispatch(DeliveryEvent event, String primaryAttemptId) {
         var planned = store.prepareSecondary(event, primaryAttemptId, properties.provider(), properties.ttl());
         if (planned.isEmpty()) return;
@@ -56,14 +60,17 @@ public class SecondaryDispatchService {
             }
             case CLAIMED -> { }
         }
-        var attempt = claim.attempt();
+        invokeRetry(event, claim.attempt());
+    }
+
+    public void invokeRetry(DeliveryEvent event, DispatchAttempt attempt) {
         if (!dispatchClock.instant().isBefore(attempt.deadline())) {
             persistFailure(event, attempt, DispatchRetryPolicy.expired(attempt.deadline(), 2));
             return;
         }
         final ProviderDispatchResponse response;
         try {
-            response = metrics.measure(DeliveryMetrics.Stage.DISPATCH_TCP, () -> client.send(event, route.attemptId(), attempt.retryCount() + 1));
+            response = metrics.measure(DeliveryMetrics.Stage.DISPATCH_TCP, () -> client.send(event, attempt.attemptId(), attempt.retryCount() + 1));
             if (!Boolean.TRUE.equals(response.accepted())) throw new ProviderFailureException(ProviderFailureException.Kind.INVALID_RESPONSE);
         } catch (ProviderFailureException failure) {
             persistFailure(event, attempt, DispatchRetryPolicy.decide(attempt, failure.kind(), dispatchClock.instant(), dispatchProperties));
@@ -76,11 +83,16 @@ public class SecondaryDispatchService {
         metrics.measure(DeliveryMetrics.Stage.DISPATCH_STORE,
                 () -> store.markAccepted(attempt, response.processedAt(), dispatchClock.instant()));
         metrics.outcome(DeliveryMetrics.Outcome.SECONDARY_ACCEPTED);
-        DeliveryAudit.record(event, "secondary", "accepted", route.attemptId(), route.provider(), "RECEIVED");
+        DeliveryAudit.record(event, "secondary", "accepted", attempt.attemptId(), attempt.provider(), "RECEIVED");
     }
 
     private void persistFailure(DeliveryEvent event, DispatchAttempt attempt,
                                 DispatchFailureDecision decision) {
+        if (event.schemaVersion() >= 2 && decision.state() == DispatchFailureDecision.State.RETRY_SCHEDULED) {
+            retries.publish(new event.delivery.dispatch.retry.RetryCommand(event, attempt, attempt.retryCount() + 1, decision.nextAttemptAt()));
+            metrics.outcome(DeliveryMetrics.Outcome.DISPATCH_RETRY_SCHEDULED);
+            return;
+        }
         metrics.measure(DeliveryMetrics.Stage.DISPATCH_STORE, () -> store.recordFailure(attempt, decision));
         DeliveryAudit.record(event, "secondary", decision.state().name().toLowerCase(java.util.Locale.ROOT),
                 attempt.attemptId(), attempt.provider(), decision.reason());

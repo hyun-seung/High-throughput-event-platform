@@ -14,10 +14,30 @@ public record DeliveryEvent(
         Instant occurredAt,
         String correlationId,
         String causationId,
-        Boolean fallbackAllowed
+        Boolean fallbackAllowed,
+        String requestKey
 ) {
     public DeliveryEvent {
         fallbackAllowed = Boolean.TRUE.equals(fallbackAllowed);
+        requestKey = requestKey == null ? deliveryId : requestKey;
+    }
+
+    /** Compatibility constructor for v1 producers. */
+    public DeliveryEvent(int schemaVersion, String eventId, DeliveryEventType eventType, String deliveryId,
+                         Long tenantId, String deliveryType, Map<String, Object> payload, Instant occurredAt,
+                         String correlationId, String causationId, Boolean fallbackAllowed) {
+        this(schemaVersion, eventId, eventType, deliveryId, tenantId, deliveryType, payload, occurredAt,
+                correlationId, causationId, fallbackAllowed, deliveryId);
+    }
+
+    public DeliveryEvent forAdmission() {
+        return new DeliveryEvent(2, eventId, eventType, deliveryId, tenantId, deliveryType, payload,
+                occurredAt, correlationId, causationId, fallbackAllowed, requestKey);
+    }
+
+    public DeliveryEvent execution(String executionId) {
+        return new DeliveryEvent(2, DeliveryIds.eventId(executionId, eventType), eventType, executionId,
+                tenantId, deliveryType, payload, occurredAt, requestKey, eventId, fallbackAllowed, requestKey);
     }
 
     private static final int SCHEMA_VERSION = 1;
@@ -51,7 +71,7 @@ public record DeliveryEvent(
 
     public DeliveryEvent toDispatchRequested() {
         return new DeliveryEvent(
-                SCHEMA_VERSION,
+                schemaVersion,
                 DeliveryIds.eventId(deliveryId, DeliveryEventType.DISPATCH_REQUESTED),
                 DeliveryEventType.DISPATCH_REQUESTED,
                 deliveryId,
@@ -61,7 +81,8 @@ public record DeliveryEvent(
                 occurredAt,
                 correlationId,
                 eventId,
-                fallbackAllowed
+                fallbackAllowed,
+                requestKey
         );
     }
 }
