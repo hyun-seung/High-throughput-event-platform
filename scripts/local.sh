@@ -9,6 +9,7 @@ fi
 
 case "${1:-help}" in
   infra)
+    bash scripts/check-kafka-volume.sh docker compose
     docker compose up -d --wait --wait-timeout 180
     ;;
   init-db)

@@ -1,0 +1,1143 @@
+{
+  "date": "2026-09-25",
+  "status": "PASS",
+  "baseCommit": "4d5123e08f3cb339636d8e5955f90f27b6b870c3",
+  "runDirectory": ".poc-results/full-flow-4c6903717d09",
+  "validation": {
+    "pythonTests": 50,
+    "pythonTestsStatus": "PASS",
+    "recoveryRunExitCode": 0,
+    "javaArtifacts": "Same JARs as verified transport commit; no further Java changes",
+    "shellSyntax": "PASS",
+    "volumeGuard": [
+      {
+        "project": "full-flow-7d696971e984",
+        "expectedExitCode": 1,
+        "actualExitCode": 1,
+        "output": "Kafka 데이터 경로가 이전 마운트 구조입니다. 재생성 전에 실제 /var/lib/kafka/data 볼륨을 확인·백업·이관해야 합니다.\n기존 컨테이너와 볼륨은 변경하지 않았습니다. docs/47-Kafka-장애-시-접수-보류와-결과-복구-검증.md의 이관 절차를 참고하세요.",
+        "readOnly": true
+      },
+      {
+        "project": "full-flow-4c6903717d09",
+        "expectedExitCode": 0,
+        "actualExitCode": 0,
+        "output": "",
+        "readOnly": true
+      }
+    ]
+  },
+  "composeSha256": "085ed48f6c861cffad913ec1e0a28dcaab9a5daad3b37f58eec40face8c75916",
+  "initialFailure": {
+    "runDirectory": ".poc-results/full-flow-7d696971e984",
+    "reason": "Docker Mounts order changed; list comparison failed. Later inspection also found anonymous volume at actual Kafka log directory; new Compose mounts named volume there.",
+    "kafkaBefore": {
+      "id": "23e9740a8f7241d520e5944cd692860aed13a8654f077571b6bab03de9828ab7",
+      "status": "running",
+      "running": true,
+      "health": "healthy",
+      "volumes": [
+        "071cdd46cfcd11668a495ead40f896b67ec5ae7e9654a005a5c9d65784c6fc21",
+        "full-flow-7d696971e984_kafka-data",
+        "4288f40a8650c61b9cbcffba2543fc51fc541fbb84eec93609dd172d877a92fb",
+        "16fbbc5bcd211b51b3bee5ff19242f6581b0158a096c2055d3b9b61bc5e0c659"
+      ],
+      "at": "2026-09-25T13:50:31.843994+00:00"
+    },
+    "kafkaStopped": {
+      "id": "23e9740a8f7241d520e5944cd692860aed13a8654f077571b6bab03de9828ab7",
+      "status": "exited",
+      "running": false,
+      "health": "unhealthy",
+      "volumes": [
+        "full-flow-7d696971e984_kafka-data",
+        "4288f40a8650c61b9cbcffba2543fc51fc541fbb84eec93609dd172d877a92fb",
+        "16fbbc5bcd211b51b3bee5ff19242f6581b0158a096c2055d3b9b61bc5e0c659",
+        "071cdd46cfcd11668a495ead40f896b67ec5ae7e9654a005a5c9d65784c6fc21"
+      ],
+      "at": "2026-09-25T13:50:33.363000+00:00"
+    },
+    "cleanup": {
+      "ownedProcessesStopped": true,
+      "composeProject": "full-flow-7d696971e984",
+      "containersStopped": true,
+      "volumesRetained": true
+    }
+  },
+  "environment": {
+    "runId": "full-flow-4c6903717d09",
+    "ports": {
+      "kafka": 62654,
+      "redis": 62655,
+      "postgres": 62656,
+      "dynamo": 62657,
+      "tcp": 62658,
+      "provider": 62659,
+      "receipt": 62660,
+      "ingress": 62661,
+      "api": 62662,
+      "dispatch": 62663,
+      "result": 62664,
+      "provider_metrics": 62665,
+      "receipt_metrics": 62666,
+      "ingress_metrics": 62667,
+      "api_metrics": 62668,
+      "dispatch_metrics": 62669,
+      "result_metrics": 62670
+    },
+    "gitCommit": "4d5123e08f3cb339636d8e5955f90f27b6b870c3",
+    "workingTreeDirty": true,
+    "jarSha256": {
+      "provider": "108291fceaf8cb4876b547b18feabe7f309e22014eac90702f51142e4d3a830f",
+      "receipt": "fc8be6bc092655999cc1dc251ab5ff419a5da77556f06f3efc9d3f68d4525114",
+      "ingress": "c1ce9caa5efa839f72d138c875ebeb8f5bb782f497a0bdd02966653533e8d650",
+      "api": "b000504c4700197a9e207d990d7cf1cd3717e8ba987eda7916a80036b8670974",
+      "dispatch": "78c0b24b0e7104254df3af98bef6b754cb5216eaf2faa1575d65a435c74055ea",
+      "result": "202eaa624c95fa01fb7eaac08d2583a76edd19aad92d92e5400176b351ce7b82"
+    },
+    "harnessSha256": "6e874e7d2b04176d91c1a06f5ef1a23db0ab9dea820fa929271a7f59707eab33",
+    "primaryTtlSeconds": 60,
+    "secondaryTtlSeconds": 80,
+    "recoveryPollMillis": 3000,
+    "infraStartup": "compose create -> docker start init -> wait init exit 0 -> start services -> healthcheck",
+    "productionRecoveryPollMillis": 600000,
+    "providerDeduplicate": false,
+    "scope": "single Kafka broker stop and same-volume restart; not replication/AZ/ack-loss/load proof",
+    "apiProducerTimeoutsMs": {
+      "maxBlock": 2000,
+      "request": 1000,
+      "delivery": 3000
+    },
+    "kafkaRecoveryHarnessSha256": "9f2d0c20ee17029518eccfd2a905d8dad8fa23282dbb25fd16efd14050d2e231"
+  },
+  "summary": {
+    "passed": 3,
+    "historyRows": 3,
+    "resultCounts": {
+      "DELIVERED": 2,
+      "EXPIRED": 1
+    },
+    "apiUnconfirmedStatus": 503,
+    "receiptUnconfirmedStatus": 503,
+    "sameReceiptBodyRetried": true,
+    "providerCalls": 3,
+    "providerEffects": 3,
+    "applicationPidsUnchanged": true,
+    "sameKafkaContainerAndVolumes": true,
+    "finalOffsets": {
+      "delivery.requested.v1": [
+        {
+          "partition": 0,
+          "committed": 1,
+          "high": 1,
+          "lag": 0
+        },
+        {
+          "partition": 1,
+          "committed": -1001,
+          "high": 0,
+          "lag": 0
+        },
+        {
+          "partition": 2,
+          "committed": 2,
+          "high": 2,
+          "lag": 0
+        }
+      ],
+      "delivery.dispatch-requested.v1": [
+        {
+          "partition": 0,
+          "committed": 1,
+          "high": 1,
+          "lag": 0
+        },
+        {
+          "partition": 1,
+          "committed": -1001,
+          "high": 0,
+          "lag": 0
+        },
+        {
+          "partition": 2,
+          "committed": 2,
+          "high": 2,
+          "lag": 0
+        }
+      ],
+      "delivery.receipt-received.v1": [
+        {
+          "partition": 0,
+          "committed": 1,
+          "high": 1,
+          "lag": 0
+        },
+        {
+          "partition": 1,
+          "committed": -1001,
+          "high": 0,
+          "lag": 0
+        },
+        {
+          "partition": 2,
+          "committed": 1,
+          "high": 1,
+          "lag": 0
+        }
+      ],
+      "delivery.finalized.v1": [
+        {
+          "partition": 0,
+          "committed": 1,
+          "high": 1,
+          "lag": 0
+        },
+        {
+          "partition": 1,
+          "committed": -1001,
+          "high": 0,
+          "lag": 0
+        },
+        {
+          "partition": 2,
+          "committed": 3,
+          "high": 3,
+          "lag": 0
+        }
+      ]
+    },
+    "completedAt": "2026-09-25T13:55:11.319391+00:00",
+    "scope": "single local broker stop/restore, functional only; no multi-AZ or throughput claim"
+  },
+  "acceptance-before": {
+    "kafka": {
+      "id": "a820d0d7ea0d50f0002ec51a46a9d913bceb7c5887d7b4f9a7bd48f8b204a079",
+      "status": "running",
+      "running": true,
+      "health": "healthy",
+      "volumes": {
+        "/mnt/shared/config": "5a715c409c2613cb5061ed486fc6876d1ad5445080e3ffb0a552699dd7822b84",
+        "/var/lib/kafka/data": "full-flow-4c6903717d09_kafka-data",
+        "/etc/kafka/secrets": "9f0e0a73d614f476c8b18fb4b36462a1c653d932ef8be68603910fae617ea149"
+      },
+      "at": "2026-09-25T13:53:15.239781+00:00"
+    },
+    "offsets": {
+      "delivery.requested.v1": [
+        {
+          "partition": 0,
+          "committed": -1001,
+          "high": 0,
+          "lag": 0
+        },
+        {
+          "partition": 1,
+          "committed": -1001,
+          "high": 0,
+          "lag": 0
+        },
+        {
+          "partition": 2,
+          "committed": 1,
+          "high": 1,
+          "lag": 0
+        }
+      ],
+      "delivery.dispatch-requested.v1": [
+        {
+          "partition": 0,
+          "committed": 1,
+          "high": 1,
+          "lag": 0
+        },
+        {
+          "partition": 1,
+          "committed": -1001,
+          "high": 0,
+          "lag": 0
+        },
+        {
+          "partition": 2,
+          "committed": -1001,
+          "high": 0,
+          "lag": 0
+        }
+      ],
+      "delivery.receipt-received.v1": [
+        {
+          "partition": 0,
+          "committed": -1001,
+          "high": 0,
+          "lag": 0
+        },
+        {
+          "partition": 1,
+          "committed": -1001,
+          "high": 0,
+          "lag": 0
+        },
+        {
+          "partition": 2,
+          "committed": -1001,
+          "high": 0,
+          "lag": 0
+        }
+      ],
+      "delivery.finalized.v1": [
+        {
+          "partition": 0,
+          "committed": -1001,
+          "high": 0,
+          "lag": 0
+        },
+        {
+          "partition": 1,
+          "committed": -1001,
+          "high": 0,
+          "lag": 0
+        },
+        {
+          "partition": 2,
+          "committed": -1001,
+          "high": 0,
+          "lag": 0
+        }
+      ]
+    },
+    "applicationPids": {
+      "provider": 15212,
+      "receipt": 15217,
+      "ingress": 15226,
+      "api": 15231,
+      "dispatch": 15232,
+      "result": 15237
+    }
+  },
+  "acceptance-stopped": {
+    "id": "a820d0d7ea0d50f0002ec51a46a9d913bceb7c5887d7b4f9a7bd48f8b204a079",
+    "status": "exited",
+    "running": false,
+    "health": "unhealthy",
+    "volumes": {
+      "/var/lib/kafka/data": "full-flow-4c6903717d09_kafka-data",
+      "/etc/kafka/secrets": "9f0e0a73d614f476c8b18fb4b36462a1c653d932ef8be68603910fae617ea149",
+      "/mnt/shared/config": "5a715c409c2613cb5061ed486fc6876d1ad5445080e3ffb0a552699dd7822b84"
+    },
+    "at": "2026-09-25T13:53:16.569185+00:00"
+  },
+  "acceptance-restored": {
+    "id": "a820d0d7ea0d50f0002ec51a46a9d913bceb7c5887d7b4f9a7bd48f8b204a079",
+    "status": "running",
+    "running": true,
+    "health": "healthy",
+    "volumes": {
+      "/var/lib/kafka/data": "full-flow-4c6903717d09_kafka-data",
+      "/etc/kafka/secrets": "9f0e0a73d614f476c8b18fb4b36462a1c653d932ef8be68603910fae617ea149",
+      "/mnt/shared/config": "5a715c409c2613cb5061ed486fc6876d1ad5445080e3ffb0a552699dd7822b84"
+    },
+    "at": "2026-09-25T13:53:38.957506+00:00"
+  },
+  "unconfirmed": {
+    "api": {
+      "status": 503,
+      "body": {
+        "status": 503,
+        "data": {
+          "code": 9003,
+          "message": "접수 여부를 확인하지 못했습니다. 동일한 Idempotency-Key와 요청 내용으로 재요청해 주세요."
+        }
+      }
+    },
+    "receipt": {
+      "status": 503,
+      "body": {
+        "code": "RECEIPT_UNCONFIRMED",
+        "message": "저장 여부를 확인하지 못했습니다. 동일한 receiptId와 내용으로 재전송해 주세요."
+      }
+    },
+    "receiptBody": {
+      "receiptId": "full-flow-4c6903717d09-manual",
+      "deliveryId": "0f4d4aa9-e851-4a73-976b-f27d6639b965",
+      "attemptId": "6c08b4da-c731-37c6-90ae-29da36d50bbb",
+      "outcome": "DELIVERED",
+      "code": "DELIVERED",
+      "occurredAt": "2026-09-25T13:53:15.212319+00:00",
+      "invocation": 1
+    },
+    "pendingOrigin": {
+      "tenant_id": {
+        "N": "1"
+      },
+      "delivery_id": {
+        "S": "0f4d4aa9-e851-4a73-976b-f27d6639b965"
+      },
+      "created_at": {
+        "S": "2026-09-25T13:53:14.581233Z"
+      },
+      "fallback_allowed": {
+        "BOOL": false
+      },
+      "lifecycle_due": {
+        "N": "0"
+      },
+      "schema_version": {
+        "N": "2"
+      },
+      "occurred_at": {
+        "S": "2026-09-25T13:53:13.467013Z"
+      },
+      "event_id": {
+        "S": "4e5ebfc2-0a09-303c-918b-b9b8946f5ff0"
+      },
+      "event_type": {
+        "S": "DELIVERY_REQUESTED"
+      },
+      "updated_at": {
+        "S": "2026-09-25T13:53:14.581233Z"
+      },
+      "lifecycle_bucket": {
+        "S": "lifecycle-v1-0"
+      },
+      "payload": {
+        "S": "{\"simulatorReceiptCodes\":[\"NONE\"]}"
+      },
+      "delivery_type": {
+        "S": "SMS"
+      },
+      "sk": {
+        "S": "META"
+      },
+      "pk": {
+        "S": "DELIVERY#832568ab-b801-3582-8da2-f1454a87eafc"
+      },
+      "request_key": {
+        "S": "832568ab-b801-3582-8da2-f1454a87eafc"
+      },
+      "status": {
+        "S": "ACCEPTED"
+      }
+    },
+    "pendingStep": {
+      "deadline_at": {
+        "N": "1790344453467"
+      },
+      "provider_processed_at": {
+        "S": "2026-09-25T13:53:15.166513Z"
+      },
+      "delivery_id": {
+        "S": "0f4d4aa9-e851-4a73-976b-f27d6639b965"
+      },
+      "created_at": {
+        "S": "2026-09-25T13:53:14.989694Z"
+      },
+      "version": {
+        "N": "1"
+      },
+      "lifecycle_due": {
+        "N": "1790344453467"
+      },
+      "schema_version": {
+        "N": "2"
+      },
+      "event_id": {
+        "S": "e3fc7e36-c148-3453-8d27-59036a2efd68"
+      },
+      "updated_at": {
+        "S": "2026-09-25T13:53:15.192892Z"
+      },
+      "lifecycle_bucket": {
+        "S": "lifecycle-v1-0"
+      },
+      "provider": {
+        "S": "mock-provider"
+      },
+      "retry_count": {
+        "N": "0"
+      },
+      "sk": {
+        "S": "ATTEMPT#6c08b4da-c731-37c6-90ae-29da36d50bbb"
+      },
+      "attempt_id": {
+        "S": "6c08b4da-c731-37c6-90ae-29da36d50bbb"
+      },
+      "receipt_tracking_version": {
+        "N": "1"
+      },
+      "route_order": {
+        "N": "1"
+      },
+      "pk": {
+        "S": "DELIVERY#0f4d4aa9-e851-4a73-976b-f27d6639b965"
+      },
+      "request_key": {
+        "S": "832568ab-b801-3582-8da2-f1454a87eafc"
+      },
+      "status": {
+        "S": "ACCEPTED"
+      }
+    },
+    "rejectedRequestKey": "211d3485-d632-3f7e-b1dd-0062dbcd47cf",
+    "rejectedOriginAbsent": true,
+    "historyRows": 0,
+    "customerRequests": 0
+  },
+  "expiry-before": {
+    "kafka": {
+      "id": "a820d0d7ea0d50f0002ec51a46a9d913bceb7c5887d7b4f9a7bd48f8b204a079",
+      "status": "running",
+      "running": true,
+      "health": "healthy",
+      "volumes": {
+        "/var/lib/kafka/data": "full-flow-4c6903717d09_kafka-data",
+        "/etc/kafka/secrets": "9f0e0a73d614f476c8b18fb4b36462a1c653d932ef8be68603910fae617ea149",
+        "/mnt/shared/config": "5a715c409c2613cb5061ed486fc6876d1ad5445080e3ffb0a552699dd7822b84"
+      },
+      "at": "2026-09-25T13:53:41.915603+00:00"
+    },
+    "offsets": {
+      "delivery.requested.v1": [
+        {
+          "partition": 0,
+          "committed": 1,
+          "high": 1,
+          "lag": 0
+        },
+        {
+          "partition": 1,
+          "committed": -1001,
+          "high": 0,
+          "lag": 0
+        },
+        {
+          "partition": 2,
+          "committed": 2,
+          "high": 2,
+          "lag": 0
+        }
+      ],
+      "delivery.dispatch-requested.v1": [
+        {
+          "partition": 0,
+          "committed": 1,
+          "high": 1,
+          "lag": 0
+        },
+        {
+          "partition": 1,
+          "committed": -1001,
+          "high": 0,
+          "lag": 0
+        },
+        {
+          "partition": 2,
+          "committed": 2,
+          "high": 2,
+          "lag": 0
+        }
+      ],
+      "delivery.receipt-received.v1": [
+        {
+          "partition": 0,
+          "committed": 1,
+          "high": 1,
+          "lag": 0
+        },
+        {
+          "partition": 1,
+          "committed": -1001,
+          "high": 0,
+          "lag": 0
+        },
+        {
+          "partition": 2,
+          "committed": 1,
+          "high": 1,
+          "lag": 0
+        }
+      ],
+      "delivery.finalized.v1": [
+        {
+          "partition": 0,
+          "committed": 1,
+          "high": 1,
+          "lag": 0
+        },
+        {
+          "partition": 1,
+          "committed": -1001,
+          "high": 0,
+          "lag": 0
+        },
+        {
+          "partition": 2,
+          "committed": 1,
+          "high": 1,
+          "lag": 0
+        }
+      ]
+    },
+    "applicationPids": {
+      "provider": 15212,
+      "receipt": 15217,
+      "ingress": 15226,
+      "api": 15231,
+      "dispatch": 15232,
+      "result": 15237
+    }
+  },
+  "expiry-stopped": {
+    "id": "a820d0d7ea0d50f0002ec51a46a9d913bceb7c5887d7b4f9a7bd48f8b204a079",
+    "status": "exited",
+    "running": false,
+    "health": "unhealthy",
+    "volumes": {
+      "/mnt/shared/config": "5a715c409c2613cb5061ed486fc6876d1ad5445080e3ffb0a552699dd7822b84",
+      "/var/lib/kafka/data": "full-flow-4c6903717d09_kafka-data",
+      "/etc/kafka/secrets": "9f0e0a73d614f476c8b18fb4b36462a1c653d932ef8be68603910fae617ea149"
+    },
+    "at": "2026-09-25T13:53:42.811263+00:00"
+  },
+  "expiry-restored": {
+    "id": "a820d0d7ea0d50f0002ec51a46a9d913bceb7c5887d7b4f9a7bd48f8b204a079",
+    "status": "running",
+    "running": true,
+    "health": "healthy",
+    "volumes": {
+      "/var/lib/kafka/data": "full-flow-4c6903717d09_kafka-data",
+      "/etc/kafka/secrets": "9f0e0a73d614f476c8b18fb4b36462a1c653d932ef8be68603910fae617ea149",
+      "/mnt/shared/config": "5a715c409c2613cb5061ed486fc6876d1ad5445080e3ffb0a552699dd7822b84"
+    },
+    "at": "2026-09-25T13:55:05.082184+00:00"
+  },
+  "retained-expiry": {
+    "requestKey": "032c5db8-8374-30d4-b3ef-000ab71fb432",
+    "kafka": {
+      "id": "a820d0d7ea0d50f0002ec51a46a9d913bceb7c5887d7b4f9a7bd48f8b204a079",
+      "status": "exited",
+      "running": false,
+      "health": "unhealthy",
+      "volumes": {
+        "/mnt/shared/config": "5a715c409c2613cb5061ed486fc6876d1ad5445080e3ffb0a552699dd7822b84",
+        "/var/lib/kafka/data": "full-flow-4c6903717d09_kafka-data",
+        "/etc/kafka/secrets": "9f0e0a73d614f476c8b18fb4b36462a1c653d932ef8be68603910fae617ea149"
+      },
+      "at": "2026-09-25T13:54:47.568380+00:00"
+    },
+    "origin": {
+      "tenant_id": {
+        "N": "1"
+      },
+      "completion_event_id": {
+        "S": "113a2978-bc15-3305-a34a-51636a795095"
+      },
+      "delivery_id": {
+        "S": "496982f9-538d-4adb-9122-b75694f11dd1"
+      },
+      "created_at": {
+        "S": "2026-09-25T13:53:41.602969Z"
+      },
+      "fallback_allowed": {
+        "BOOL": false
+      },
+      "occurred_at": {
+        "S": "2026-09-25T13:53:41.590890Z"
+      },
+      "schema_version": {
+        "N": "2"
+      },
+      "event_id": {
+        "S": "4cc8c811-43d4-3461-a826-f4d0651bf5d7"
+      },
+      "event_type": {
+        "S": "DELIVERY_REQUESTED"
+      },
+      "updated_at": {
+        "S": "2026-09-25T13:53:41.602969Z"
+      },
+      "payload": {
+        "S": "{\"simulatorReceiptCodes\":[\"NONE\"]}"
+      },
+      "delivery_type": {
+        "S": "SMS"
+      },
+      "sk": {
+        "S": "META"
+      },
+      "pk": {
+        "S": "DELIVERY#032c5db8-8374-30d4-b3ef-000ab71fb432"
+      },
+      "request_key": {
+        "S": "032c5db8-8374-30d4-b3ef-000ab71fb432"
+      },
+      "status": {
+        "S": "ACCEPTED"
+      }
+    },
+    "step": {
+      "deadline_at": {
+        "N": "1790344481590"
+      },
+      "lifecycle_closed": {
+        "BOOL": true
+      },
+      "provider_processed_at": {
+        "S": "2026-09-25T13:53:41.630086Z"
+      },
+      "delivery_id": {
+        "S": "496982f9-538d-4adb-9122-b75694f11dd1"
+      },
+      "created_at": {
+        "S": "2026-09-25T13:53:41.620289Z"
+      },
+      "failure_reason": {
+        "S": "PRIMARY_EXPIRED"
+      },
+      "version": {
+        "N": "2"
+      },
+      "lifecycle_due": {
+        "N": "0"
+      },
+      "schema_version": {
+        "N": "2"
+      },
+      "failure_observed_at": {
+        "S": "2026-09-25T13:54:41.590Z"
+      },
+      "publish_state": {
+        "S": "PENDING"
+      },
+      "event_id": {
+        "S": "5845e09b-aad1-3886-8133-41f7c6ebc857"
+      },
+      "updated_at": {
+        "S": "2026-09-25T13:54:41.590Z"
+      },
+      "lifecycle_bucket": {
+        "S": "lifecycle-v1-10"
+      },
+      "provider": {
+        "S": "mock-provider"
+      },
+      "result_event": {
+        "S": "{\"schemaVersion\":2,\"eventType\":\"DeliveryFinalized\",\"eventId\":\"113a2978-bc15-3305-a34a-51636a795095\",\"deliveryId\":\"496982f9-538d-4adb-9122-b75694f11dd1\",\"tenantId\":1,\"deliveryType\":\"SMS\",\"outcome\":\"EXPIRED\",\"reason\":\"PRIMARY_EXPIRED\",\"routeOrder\":1,\"attemptId\":\"163a8fde-1080-3e28-9539-22dd800da1db\",\"provider\":\"mock-provider\",\"occurredAt\":\"2026-09-25T13:53:41.590890Z\",\"resultAt\":\"2026-09-25T13:54:41.590Z\",\"finalizedAt\":\"2026-09-25T13:54:42.366496Z\",\"deadline\":\"2026-09-25T13:54:41.590Z\",\"requestKey\":\"032c5db8-8374-30d4-b3ef-000ab71fb432\"}"
+      },
+      "retry_count": {
+        "N": "0"
+      },
+      "sk": {
+        "S": "ATTEMPT#163a8fde-1080-3e28-9539-22dd800da1db"
+      },
+      "attempt_id": {
+        "S": "163a8fde-1080-3e28-9539-22dd800da1db"
+      },
+      "receipt_tracking_version": {
+        "N": "1"
+      },
+      "route_order": {
+        "N": "1"
+      },
+      "pk": {
+        "S": "DELIVERY#496982f9-538d-4adb-9122-b75694f11dd1"
+      },
+      "request_key": {
+        "S": "032c5db8-8374-30d4-b3ef-000ab71fb432"
+      },
+      "status": {
+        "S": "DECISION_PENDING"
+      }
+    },
+    "initialStep": {
+      "deadline_at": {
+        "N": "1790344481590"
+      },
+      "provider_processed_at": {
+        "S": "2026-09-25T13:53:41.630086Z"
+      },
+      "delivery_id": {
+        "S": "496982f9-538d-4adb-9122-b75694f11dd1"
+      },
+      "created_at": {
+        "S": "2026-09-25T13:53:41.620289Z"
+      },
+      "version": {
+        "N": "1"
+      },
+      "lifecycle_due": {
+        "N": "1790344481590"
+      },
+      "schema_version": {
+        "N": "2"
+      },
+      "event_id": {
+        "S": "5845e09b-aad1-3886-8133-41f7c6ebc857"
+      },
+      "updated_at": {
+        "S": "2026-09-25T13:53:41.631015Z"
+      },
+      "lifecycle_bucket": {
+        "S": "lifecycle-v1-10"
+      },
+      "provider": {
+        "S": "mock-provider"
+      },
+      "retry_count": {
+        "N": "0"
+      },
+      "sk": {
+        "S": "ATTEMPT#163a8fde-1080-3e28-9539-22dd800da1db"
+      },
+      "attempt_id": {
+        "S": "163a8fde-1080-3e28-9539-22dd800da1db"
+      },
+      "receipt_tracking_version": {
+        "N": "1"
+      },
+      "route_order": {
+        "N": "1"
+      },
+      "pk": {
+        "S": "DELIVERY#496982f9-538d-4adb-9122-b75694f11dd1"
+      },
+      "request_key": {
+        "S": "032c5db8-8374-30d4-b3ef-000ab71fb432"
+      },
+      "status": {
+        "S": "ACCEPTED"
+      }
+    },
+    "publishFailuresBefore": 0.0,
+    "publishFailuresAfter": 1.0,
+    "historyRowsBefore": 2,
+    "historyRows": 2,
+    "customerRequestsBefore": 2,
+    "customerRequests": 2,
+    "provider": [
+      {
+        "calls": 1,
+        "effects": 1
+      },
+      {
+        "calls": 0,
+        "effects": 0
+      }
+    ],
+    "completedRedisTtl": -2
+  },
+  "cases": [
+    {
+      "name": "웹훅 503 뒤 동일 본문 재전송·성공 복구",
+      "requestKey": "832568ab-b801-3582-8da2-f1454a87eafc",
+      "history": {
+        "result_json": {
+          "reason": "DELIVERED",
+          "eventId": "1f2687a4-5cc8-340b-a31e-5c1abb9356fc",
+          "outcome": "DELIVERED",
+          "deadline": "2026-09-25T13:54:13.467Z",
+          "provider": "mock-provider",
+          "resultAt": "2026-09-25T13:53:38.967077Z",
+          "tenantId": 1,
+          "attemptId": "6c08b4da-c731-37c6-90ae-29da36d50bbb",
+          "eventType": "DeliveryFinalized",
+          "deliveryId": "0f4d4aa9-e851-4a73-976b-f27d6639b965",
+          "occurredAt": "2026-09-25T13:53:13.467013Z",
+          "requestKey": "832568ab-b801-3582-8da2-f1454a87eafc",
+          "routeOrder": 1,
+          "finalizedAt": "2026-09-25T13:53:39.297719Z",
+          "deliveryType": "SMS",
+          "schemaVersion": 2
+        },
+        "stored_at": "2026-09-25T13:53:39.679079+00:00",
+        "cleanup_completed_at": "2026-09-25T13:53:40.225561+00:00",
+        "notification_status": "DELIVERED",
+        "attempt_count": 1,
+        "cleanup_status": "DONE"
+      },
+      "provider": [
+        {
+          "calls": 1,
+          "effects": 1
+        },
+        {
+          "calls": 0,
+          "effects": 0
+        }
+      ],
+      "originAbsent": true,
+      "stepsAbsent": true,
+      "completedRedisPresent": true,
+      "receipt503": {
+        "status": 503,
+        "body": {
+          "code": "RECEIPT_UNCONFIRMED",
+          "message": "저장 여부를 확인하지 못했습니다. 동일한 receiptId와 내용으로 재전송해 주세요."
+        }
+      }
+    },
+    {
+      "name": "신규 접수 503 뒤 동일 ClientMsgId 재접수",
+      "requestKey": "211d3485-d632-3f7e-b1dd-0062dbcd47cf",
+      "history": {
+        "result_json": {
+          "reason": "DELIVERED",
+          "eventId": "3fce7138-8e67-3a20-8bb0-8d5717ace9a3",
+          "outcome": "DELIVERED",
+          "deadline": "2026-09-25T13:54:40.636Z",
+          "provider": "mock-provider",
+          "resultAt": "2026-09-25T13:53:40.864694Z",
+          "tenantId": 1,
+          "attemptId": "646c2af9-44b1-3b2e-92a8-2d9c59601928",
+          "eventType": "DeliveryFinalized",
+          "deliveryId": "2faac61f-8644-4756-b10d-33f550066d47",
+          "occurredAt": "2026-09-25T13:53:40.636119Z",
+          "requestKey": "211d3485-d632-3f7e-b1dd-0062dbcd47cf",
+          "routeOrder": 1,
+          "finalizedAt": "2026-09-25T13:53:40.876729Z",
+          "deliveryType": "SMS",
+          "schemaVersion": 2
+        },
+        "stored_at": "2026-09-25T13:53:40.928556+00:00",
+        "cleanup_completed_at": "2026-09-25T13:53:41.254288+00:00",
+        "notification_status": "DELIVERED",
+        "attempt_count": 1,
+        "cleanup_status": "DONE"
+      },
+      "provider": [
+        {
+          "calls": 1,
+          "effects": 1
+        },
+        {
+          "calls": 0,
+          "effects": 0
+        }
+      ],
+      "originAbsent": true,
+      "stepsAbsent": true,
+      "completedRedisPresent": true,
+      "api503": {
+        "status": 503,
+        "body": {
+          "status": 503,
+          "data": {
+            "code": 9003,
+            "message": "접수 여부를 확인하지 못했습니다. 동일한 Idempotency-Key와 요청 내용으로 재요청해 주세요."
+          }
+        }
+      }
+    },
+    {
+      "name": "Kafka 중단 중 만료 결과 저장·복구 후 고객 전달",
+      "requestKey": "032c5db8-8374-30d4-b3ef-000ab71fb432",
+      "history": {
+        "result_json": {
+          "reason": "PRIMARY_EXPIRED",
+          "eventId": "113a2978-bc15-3305-a34a-51636a795095",
+          "outcome": "EXPIRED",
+          "deadline": "2026-09-25T13:54:41.590Z",
+          "provider": "mock-provider",
+          "resultAt": "2026-09-25T13:54:41.590Z",
+          "tenantId": 1,
+          "attemptId": "163a8fde-1080-3e28-9539-22dd800da1db",
+          "eventType": "DeliveryFinalized",
+          "deliveryId": "496982f9-538d-4adb-9122-b75694f11dd1",
+          "occurredAt": "2026-09-25T13:53:41.590890Z",
+          "requestKey": "032c5db8-8374-30d4-b3ef-000ab71fb432",
+          "routeOrder": 1,
+          "finalizedAt": "2026-09-25T13:54:42.366496Z",
+          "deliveryType": "SMS",
+          "schemaVersion": 2
+        },
+        "stored_at": "2026-09-25T13:55:02.404583+00:00",
+        "cleanup_completed_at": "2026-09-25T13:55:03.078173+00:00",
+        "notification_status": "DELIVERED",
+        "attempt_count": 1,
+        "cleanup_status": "DONE"
+      },
+      "provider": [
+        {
+          "calls": 1,
+          "effects": 1
+        },
+        {
+          "calls": 0,
+          "effects": 0
+        }
+      ],
+      "originAbsent": true,
+      "stepsAbsent": true,
+      "completedRedisPresent": true
+    }
+  ],
+  "history": [
+    {
+      "result_json": {
+        "reason": "DELIVERED",
+        "eventId": "1f2687a4-5cc8-340b-a31e-5c1abb9356fc",
+        "outcome": "DELIVERED",
+        "deadline": "2026-09-25T13:54:13.467Z",
+        "provider": "mock-provider",
+        "resultAt": "2026-09-25T13:53:38.967077Z",
+        "tenantId": 1,
+        "attemptId": "6c08b4da-c731-37c6-90ae-29da36d50bbb",
+        "eventType": "DeliveryFinalized",
+        "deliveryId": "0f4d4aa9-e851-4a73-976b-f27d6639b965",
+        "occurredAt": "2026-09-25T13:53:13.467013Z",
+        "requestKey": "832568ab-b801-3582-8da2-f1454a87eafc",
+        "routeOrder": 1,
+        "finalizedAt": "2026-09-25T13:53:39.297719Z",
+        "deliveryType": "SMS",
+        "schemaVersion": 2
+      },
+      "stored_at": "2026-09-25T13:53:39.679079+00:00",
+      "cleanup_completed_at": "2026-09-25T13:53:40.225561+00:00",
+      "notification_status": "DELIVERED",
+      "attempt_count": 1,
+      "cleanup_status": "DONE"
+    },
+    {
+      "result_json": {
+        "reason": "DELIVERED",
+        "eventId": "3fce7138-8e67-3a20-8bb0-8d5717ace9a3",
+        "outcome": "DELIVERED",
+        "deadline": "2026-09-25T13:54:40.636Z",
+        "provider": "mock-provider",
+        "resultAt": "2026-09-25T13:53:40.864694Z",
+        "tenantId": 1,
+        "attemptId": "646c2af9-44b1-3b2e-92a8-2d9c59601928",
+        "eventType": "DeliveryFinalized",
+        "deliveryId": "2faac61f-8644-4756-b10d-33f550066d47",
+        "occurredAt": "2026-09-25T13:53:40.636119Z",
+        "requestKey": "211d3485-d632-3f7e-b1dd-0062dbcd47cf",
+        "routeOrder": 1,
+        "finalizedAt": "2026-09-25T13:53:40.876729Z",
+        "deliveryType": "SMS",
+        "schemaVersion": 2
+      },
+      "stored_at": "2026-09-25T13:53:40.928556+00:00",
+      "cleanup_completed_at": "2026-09-25T13:53:41.254288+00:00",
+      "notification_status": "DELIVERED",
+      "attempt_count": 1,
+      "cleanup_status": "DONE"
+    },
+    {
+      "result_json": {
+        "reason": "PRIMARY_EXPIRED",
+        "eventId": "113a2978-bc15-3305-a34a-51636a795095",
+        "outcome": "EXPIRED",
+        "deadline": "2026-09-25T13:54:41.590Z",
+        "provider": "mock-provider",
+        "resultAt": "2026-09-25T13:54:41.590Z",
+        "tenantId": 1,
+        "attemptId": "163a8fde-1080-3e28-9539-22dd800da1db",
+        "eventType": "DeliveryFinalized",
+        "deliveryId": "496982f9-538d-4adb-9122-b75694f11dd1",
+        "occurredAt": "2026-09-25T13:53:41.590890Z",
+        "requestKey": "032c5db8-8374-30d4-b3ef-000ab71fb432",
+        "routeOrder": 1,
+        "finalizedAt": "2026-09-25T13:54:42.366496Z",
+        "deliveryType": "SMS",
+        "schemaVersion": 2
+      },
+      "stored_at": "2026-09-25T13:55:02.404583+00:00",
+      "cleanup_completed_at": "2026-09-25T13:55:03.078173+00:00",
+      "notification_status": "DELIVERED",
+      "attempt_count": 1,
+      "cleanup_status": "DONE"
+    }
+  ],
+  "customer-receipts": [
+    {
+      "body": {
+        "schemaVersion": 1,
+        "batchId": "61d7dbd6-cc9a-45c3-acd7-4aa8fa097298",
+        "tenantId": 1,
+        "results": [
+          {
+            "schemaVersion": 2,
+            "eventType": "DeliveryFinalized",
+            "eventId": "1f2687a4-5cc8-340b-a31e-5c1abb9356fc",
+            "deliveryId": "0f4d4aa9-e851-4a73-976b-f27d6639b965",
+            "tenantId": 1,
+            "deliveryType": "SMS",
+            "outcome": "DELIVERED",
+            "reason": "DELIVERED",
+            "routeOrder": 1,
+            "attemptId": "6c08b4da-c731-37c6-90ae-29da36d50bbb",
+            "provider": "mock-provider",
+            "occurredAt": "2026-09-25T13:53:13.467013Z",
+            "resultAt": "2026-09-25T13:53:38.967077Z",
+            "finalizedAt": "2026-09-25T13:53:39.297719Z",
+            "deadline": "2026-09-25T13:54:13.467Z",
+            "requestKey": "832568ab-b801-3582-8da2-f1454a87eafc"
+          }
+        ]
+      },
+      "status": 204,
+      "receivedAt": "2026-09-25T13:53:39.803641+00:00"
+    },
+    {
+      "body": {
+        "schemaVersion": 1,
+        "batchId": "81754954-b40b-4f99-a551-de1f1b434861",
+        "tenantId": 1,
+        "results": [
+          {
+            "schemaVersion": 2,
+            "eventType": "DeliveryFinalized",
+            "eventId": "3fce7138-8e67-3a20-8bb0-8d5717ace9a3",
+            "deliveryId": "2faac61f-8644-4756-b10d-33f550066d47",
+            "tenantId": 1,
+            "deliveryType": "SMS",
+            "outcome": "DELIVERED",
+            "reason": "DELIVERED",
+            "routeOrder": 1,
+            "attemptId": "646c2af9-44b1-3b2e-92a8-2d9c59601928",
+            "provider": "mock-provider",
+            "occurredAt": "2026-09-25T13:53:40.636119Z",
+            "resultAt": "2026-09-25T13:53:40.864694Z",
+            "finalizedAt": "2026-09-25T13:53:40.876729Z",
+            "deadline": "2026-09-25T13:54:40.636Z",
+            "requestKey": "211d3485-d632-3f7e-b1dd-0062dbcd47cf"
+          }
+        ]
+      },
+      "status": 204,
+      "receivedAt": "2026-09-25T13:53:40.993795+00:00"
+    },
+    {
+      "body": {
+        "schemaVersion": 1,
+        "batchId": "0355c20b-12c6-4b11-b9f9-4f8ed7dd7345",
+        "tenantId": 1,
+        "results": [
+          {
+            "schemaVersion": 2,
+            "eventType": "DeliveryFinalized",
+            "eventId": "113a2978-bc15-3305-a34a-51636a795095",
+            "deliveryId": "496982f9-538d-4adb-9122-b75694f11dd1",
+            "tenantId": 1,
+            "deliveryType": "SMS",
+            "outcome": "EXPIRED",
+            "reason": "PRIMARY_EXPIRED",
+            "routeOrder": 1,
+            "attemptId": "163a8fde-1080-3e28-9539-22dd800da1db",
+            "provider": "mock-provider",
+            "occurredAt": "2026-09-25T13:53:41.590890Z",
+            "resultAt": "2026-09-25T13:54:41.590Z",
+            "finalizedAt": "2026-09-25T13:54:42.366496Z",
+            "deadline": "2026-09-25T13:54:41.590Z",
+            "requestKey": "032c5db8-8374-30d4-b3ef-000ab71fb432"
+          }
+        ]
+      },
+      "status": 204,
+      "receivedAt": "2026-09-25T13:55:02.423441+00:00"
+    }
+  ],
+  "cleanup": {
+    "ownedProcessesStopped": true,
+    "composeProject": "full-flow-4c6903717d09",
+    "containersStopped": true,
+    "volumesRetained": true
+  }
+}
