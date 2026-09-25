@@ -1,0 +1,751 @@
+{
+  "date": "2026-09-25",
+  "status": "PASS",
+  "baseCommit": "7c51b743c04bfbe1182c0a18bbcc45a85156977f",
+  "runDirectory": ".poc-results/full-flow-4896c83ceb0b",
+  "validation": {
+    "pythonTests": 41,
+    "pythonTestsStatus": "PASS",
+    "mavenPackage": "PASS (-DskipTests; Java production sources unchanged)",
+    "recoveryRunExitCode": 0
+  },
+  "summary": {
+    "passed": 2,
+    "historyRows": 2,
+    "providerCalls": 2,
+    "providerEffects": 2,
+    "applicationPidsUnchanged": true,
+    "claimBlockedWithoutSend": true,
+    "originalDeadlinePreserved": true,
+    "resultCounts": {
+      "DELIVERED": 1,
+      "EXPIRED": 1
+    },
+    "finalOffsets": {
+      "delivery.requested.v1": [
+        {
+          "partition": 0,
+          "committed": -1001,
+          "high": 0,
+          "lag": 0
+        },
+        {
+          "partition": 1,
+          "committed": -1001,
+          "high": 0,
+          "lag": 0
+        },
+        {
+          "partition": 2,
+          "committed": 2,
+          "high": 2,
+          "lag": 0
+        }
+      ],
+      "delivery.dispatch-requested.v1": [
+        {
+          "partition": 0,
+          "committed": 1,
+          "high": 1,
+          "lag": 0
+        },
+        {
+          "partition": 1,
+          "committed": -1001,
+          "high": 0,
+          "lag": 0
+        },
+        {
+          "partition": 2,
+          "committed": 1,
+          "high": 1,
+          "lag": 0
+        }
+      ],
+      "delivery.receipt-received.v1": [
+        {
+          "partition": 0,
+          "committed": 1,
+          "high": 1,
+          "lag": 0
+        },
+        {
+          "partition": 1,
+          "committed": -1001,
+          "high": 0,
+          "lag": 0
+        },
+        {
+          "partition": 2,
+          "committed": -1001,
+          "high": 0,
+          "lag": 0
+        }
+      ],
+      "delivery.finalized.v1": [
+        {
+          "partition": 0,
+          "committed": 1,
+          "high": 1,
+          "lag": 0
+        },
+        {
+          "partition": 1,
+          "committed": -1001,
+          "high": 0,
+          "lag": 0
+        },
+        {
+          "partition": 2,
+          "committed": 1,
+          "high": 1,
+          "lag": 0
+        }
+      ]
+    },
+    "completedAt": "2026-09-25T10:14:18.339122+00:00",
+    "scope": "DynamoDB Local stop/start before claim and across deadline; not managed-service/PITR/HA/load proof"
+  },
+  "environment": {
+    "runId": "full-flow-4896c83ceb0b",
+    "ports": {
+      "kafka": 57587,
+      "redis": 57588,
+      "postgres": 57589,
+      "dynamo": 57590,
+      "tcp": 57591,
+      "provider": 57592,
+      "receipt": 57593,
+      "ingress": 57594,
+      "api": 57595,
+      "dispatch": 57596,
+      "result": 57597,
+      "provider_metrics": 57598,
+      "receipt_metrics": 57599,
+      "ingress_metrics": 57600,
+      "api_metrics": 57601,
+      "dispatch_metrics": 57602,
+      "result_metrics": 57603
+    },
+    "gitCommit": "7c51b743c04bfbe1182c0a18bbcc45a85156977f",
+    "workingTreeDirty": true,
+    "jarSha256": {
+      "provider": "2c32cccc284b31a8c83dd1b27594146540c66de7e4cf159510cfd947900b4ae9",
+      "receipt": "2c9f0a48a73a5847690ca54754322d78dba1069be35abf385fe6043940bca812",
+      "ingress": "908c043760e8cc44a44fed241d6981df552f63a258682632bb46cee03de3fd48",
+      "api": "41335a64611edfd7bfcd6958c4c8e323e4cd77bcdf66580d9268fbf6277fab58",
+      "dispatch": "e217c2f69167c004fbfd4514cd135326772e58f6ff2d9a08c3cf274be353c9da",
+      "result": "23496c28bd4fcf26c6df281bce7b65ab80438b40892e9d7879b797fc8d8bc244"
+    },
+    "harnessSha256": "6e874e7d2b04176d91c1a06f5ef1a23db0ab9dea820fa929271a7f59707eab33",
+    "primaryTtlSeconds": 90,
+    "secondaryTtlSeconds": 40,
+    "recoveryPollMillis": 3000,
+    "infraStartup": "compose create -> docker start init -> wait init exit 0 -> start services -> healthcheck",
+    "productionRecoveryPollMillis": 600000,
+    "providerDeduplicate": false,
+    "scope": "local DynamoDB endpoint unavailable with intact volume; not managed-service/AZ/PITR proof",
+    "dynamoRecoveryHarnessSha256": "91abbe81c522bb33580fdc6c492c5e91775c05123c63e500fd9e77475786d25f",
+    "sharedRecoveryHarnessSha256": "946f379a8b22da68a9ab2a015dc8204b5c19abbd142b1c37d2474aefb51e729c"
+  },
+  "dispatchSignals": [
+    {
+      "pid": 8420,
+      "signal": "SIGSTOP",
+      "at": "2026-09-25T10:12:21.857365+00:00"
+    },
+    {
+      "pid": 8420,
+      "signal": "SIGCONT",
+      "at": "2026-09-25T10:12:24.091740+00:00"
+    }
+  ],
+  "boundaries": {
+    "claim-before": {
+      "applicationPids": {
+        "provider": 8396,
+        "receipt": 8401,
+        "ingress": 8402,
+        "api": 8403,
+        "dispatch": 8420,
+        "result": 8425
+      },
+      "metrics": {
+        "claimFailed": 0.0,
+        "dynamoFailed": 0.0,
+        "lifecycleFailed": 0.0
+      },
+      "dispatchOffsets": [
+        {
+          "partition": 0,
+          "committed": -1001,
+          "high": 1,
+          "lag": 1
+        },
+        {
+          "partition": 1,
+          "committed": -1001,
+          "high": 0,
+          "lag": 0
+        },
+        {
+          "partition": 2,
+          "committed": -1001,
+          "high": 0,
+          "lag": 0
+        }
+      ],
+      "requestKey": "72d89623-be18-3825-9834-4e56e4aff50c",
+      "origin": {
+        "tenant_id": {
+          "N": "1"
+        },
+        "delivery_id": {
+          "S": "3c289969-3b42-4e97-aa19-9a7acabb92f1"
+        },
+        "created_at": {
+          "S": "2026-09-25T10:12:23.103401Z"
+        },
+        "fallback_allowed": {
+          "BOOL": false
+        },
+        "lifecycle_due": {
+          "N": "0"
+        },
+        "schema_version": {
+          "N": "2"
+        },
+        "occurred_at": {
+          "S": "2026-09-25T10:12:22.005340Z"
+        },
+        "event_id": {
+          "S": "65284b5e-a01b-34da-ab53-67196b1c562e"
+        },
+        "event_type": {
+          "S": "DELIVERY_REQUESTED"
+        },
+        "updated_at": {
+          "S": "2026-09-25T10:12:23.103401Z"
+        },
+        "lifecycle_bucket": {
+          "S": "lifecycle-v1-7"
+        },
+        "payload": {
+          "S": "{}"
+        },
+        "delivery_type": {
+          "S": "SMS"
+        },
+        "sk": {
+          "S": "META"
+        },
+        "pk": {
+          "S": "DELIVERY#72d89623-be18-3825-9834-4e56e4aff50c"
+        },
+        "request_key": {
+          "S": "72d89623-be18-3825-9834-4e56e4aff50c"
+        },
+        "status": {
+          "S": "ACCEPTED"
+        }
+      },
+      "stepAbsent": true
+    },
+    "claim-outage-start": {
+      "before": {
+        "id": "f2ec18c36166474ce0ddc2dd109358f63dfe7c5b7ba6b7e69d56ca3f14a485aa",
+        "status": "running",
+        "running": true,
+        "health": "healthy",
+        "volumes": [
+          "full-flow-4896c83ceb0b_dynamodb-data"
+        ],
+        "observedAt": "2026-09-25T10:12:23.394455+00:00"
+      },
+      "stopped": {
+        "id": "f2ec18c36166474ce0ddc2dd109358f63dfe7c5b7ba6b7e69d56ca3f14a485aa",
+        "status": "exited",
+        "running": false,
+        "health": "unhealthy",
+        "volumes": [
+          "full-flow-4896c83ceb0b_dynamodb-data"
+        ],
+        "observedAt": "2026-09-25T10:12:24.087452+00:00"
+      },
+      "probeFailure": "EndpointConnectionError"
+    },
+    "claim-during": {
+      "dynamo": {
+        "id": "f2ec18c36166474ce0ddc2dd109358f63dfe7c5b7ba6b7e69d56ca3f14a485aa",
+        "status": "exited",
+        "running": false,
+        "health": "unhealthy",
+        "volumes": [
+          "full-flow-4896c83ceb0b_dynamodb-data"
+        ],
+        "observedAt": "2026-09-25T10:12:35.167777+00:00"
+      },
+      "applicationPids": {
+        "provider": 8396,
+        "receipt": 8401,
+        "ingress": 8402,
+        "api": 8403,
+        "dispatch": 8420,
+        "result": 8425
+      },
+      "metrics": {
+        "claimFailed": 2.0,
+        "dynamoFailed": 7.0,
+        "lifecycleFailed": 1.0
+      },
+      "dispatchOffsets": [
+        {
+          "partition": 0,
+          "committed": -1001,
+          "high": 1,
+          "lag": 1
+        },
+        {
+          "partition": 1,
+          "committed": -1001,
+          "high": 0,
+          "lag": 0
+        },
+        {
+          "partition": 2,
+          "committed": -1001,
+          "high": 0,
+          "lag": 0
+        }
+      ],
+      "provider": [
+        {
+          "calls": 0,
+          "effects": 0
+        },
+        {
+          "calls": 0,
+          "effects": 0
+        }
+      ],
+      "historyRows": 0,
+      "customerResults": 0,
+      "completedRedisTtl": -2
+    },
+    "claim-restored": {
+      "id": "f2ec18c36166474ce0ddc2dd109358f63dfe7c5b7ba6b7e69d56ca3f14a485aa",
+      "status": "running",
+      "running": true,
+      "health": "healthy",
+      "volumes": [
+        "full-flow-4896c83ceb0b_dynamodb-data"
+      ],
+      "observedAt": "2026-09-25T10:12:40.984812+00:00"
+    },
+    "expiry-before": {
+      "requestKey": "d3416ff8-7f04-3007-a4b0-e7f28943046b",
+      "origin": {
+        "tenant_id": {
+          "N": "1"
+        },
+        "delivery_id": {
+          "S": "97b8746b-6dbc-41e7-b495-5a189def2de3"
+        },
+        "created_at": {
+          "S": "2026-09-25T10:12:41.435245Z"
+        },
+        "fallback_allowed": {
+          "BOOL": false
+        },
+        "lifecycle_due": {
+          "N": "0"
+        },
+        "schema_version": {
+          "N": "2"
+        },
+        "occurred_at": {
+          "S": "2026-09-25T10:12:41.385472Z"
+        },
+        "event_id": {
+          "S": "096bca17-3f09-3c72-aa30-cecbcc7bd5bb"
+        },
+        "event_type": {
+          "S": "DELIVERY_REQUESTED"
+        },
+        "updated_at": {
+          "S": "2026-09-25T10:12:41.435245Z"
+        },
+        "lifecycle_bucket": {
+          "S": "lifecycle-v1-14"
+        },
+        "payload": {
+          "S": "{\"simulatorReceiptCodes\":[\"NONE\"]}"
+        },
+        "delivery_type": {
+          "S": "SMS"
+        },
+        "sk": {
+          "S": "META"
+        },
+        "pk": {
+          "S": "DELIVERY#d3416ff8-7f04-3007-a4b0-e7f28943046b"
+        },
+        "request_key": {
+          "S": "d3416ff8-7f04-3007-a4b0-e7f28943046b"
+        },
+        "status": {
+          "S": "ACCEPTED"
+        }
+      },
+      "step": {
+        "deadline_at": {
+          "N": "1790331251385"
+        },
+        "provider_processed_at": {
+          "S": "2026-09-25T10:12:41.503899Z"
+        },
+        "delivery_id": {
+          "S": "97b8746b-6dbc-41e7-b495-5a189def2de3"
+        },
+        "created_at": {
+          "S": "2026-09-25T10:12:41.482781Z"
+        },
+        "version": {
+          "N": "1"
+        },
+        "lifecycle_due": {
+          "N": "1790331251385"
+        },
+        "schema_version": {
+          "N": "2"
+        },
+        "event_id": {
+          "S": "0080c9c4-4c64-3df0-961e-a86633d7556d"
+        },
+        "updated_at": {
+          "S": "2026-09-25T10:12:41.505661Z"
+        },
+        "lifecycle_bucket": {
+          "S": "lifecycle-v1-14"
+        },
+        "provider": {
+          "S": "mock-provider"
+        },
+        "retry_count": {
+          "N": "0"
+        },
+        "sk": {
+          "S": "ATTEMPT#590ce8f1-cfeb-33ff-a89e-f6a17ce087ab"
+        },
+        "attempt_id": {
+          "S": "590ce8f1-cfeb-33ff-a89e-f6a17ce087ab"
+        },
+        "receipt_tracking_version": {
+          "N": "1"
+        },
+        "route_order": {
+          "N": "1"
+        },
+        "pk": {
+          "S": "DELIVERY#97b8746b-6dbc-41e7-b495-5a189def2de3"
+        },
+        "request_key": {
+          "S": "d3416ff8-7f04-3007-a4b0-e7f28943046b"
+        },
+        "status": {
+          "S": "ACCEPTED"
+        }
+      },
+      "applicationPids": {
+        "provider": 8396,
+        "receipt": 8401,
+        "ingress": 8402,
+        "api": 8403,
+        "dispatch": 8420,
+        "result": 8425
+      },
+      "metrics": {
+        "claimFailed": 2.0,
+        "dynamoFailed": 8.0,
+        "lifecycleFailed": 1.0
+      }
+    },
+    "expiry-outage-start": {
+      "before": {
+        "id": "f2ec18c36166474ce0ddc2dd109358f63dfe7c5b7ba6b7e69d56ca3f14a485aa",
+        "status": "running",
+        "running": true,
+        "health": "healthy",
+        "volumes": [
+          "full-flow-4896c83ceb0b_dynamodb-data"
+        ],
+        "observedAt": "2026-09-25T10:12:41.572678+00:00"
+      },
+      "stopped": {
+        "id": "f2ec18c36166474ce0ddc2dd109358f63dfe7c5b7ba6b7e69d56ca3f14a485aa",
+        "status": "exited",
+        "running": false,
+        "health": "unhealthy",
+        "volumes": [
+          "full-flow-4896c83ceb0b_dynamodb-data"
+        ],
+        "observedAt": "2026-09-25T10:12:42.177381+00:00"
+      },
+      "probeFailure": "EndpointConnectionError"
+    },
+    "expiry-during": {
+      "dynamo": {
+        "id": "f2ec18c36166474ce0ddc2dd109358f63dfe7c5b7ba6b7e69d56ca3f14a485aa",
+        "status": "exited",
+        "running": false,
+        "health": "unhealthy",
+        "volumes": [
+          "full-flow-4896c83ceb0b_dynamodb-data"
+        ],
+        "observedAt": "2026-09-25T10:14:11.916236+00:00"
+      },
+      "applicationPids": {
+        "provider": 8396,
+        "receipt": 8401,
+        "ingress": 8402,
+        "api": 8403,
+        "dispatch": 8420,
+        "result": 8425
+      },
+      "metrics": {
+        "claimFailed": 2.0,
+        "dynamoFailed": 809.0,
+        "lifecycleFailed": 2.0
+      },
+      "dispatchOffsets": [
+        {
+          "partition": 0,
+          "committed": 1,
+          "high": 1,
+          "lag": 0
+        },
+        {
+          "partition": 1,
+          "committed": -1001,
+          "high": 0,
+          "lag": 0
+        },
+        {
+          "partition": 2,
+          "committed": 1,
+          "high": 1,
+          "lag": 0
+        }
+      ],
+      "provider": [
+        {
+          "effects": 1,
+          "calls": 1
+        },
+        {
+          "calls": 0,
+          "effects": 0
+        }
+      ],
+      "historyRows": 0,
+      "customerResults": 0,
+      "completedRedisTtl": -2
+    },
+    "expiry-restored": {
+      "id": "f2ec18c36166474ce0ddc2dd109358f63dfe7c5b7ba6b7e69d56ca3f14a485aa",
+      "status": "running",
+      "running": true,
+      "health": "healthy",
+      "volumes": [
+        "full-flow-4896c83ceb0b_dynamodb-data"
+      ],
+      "observedAt": "2026-09-25T10:14:17.633397+00:00"
+    }
+  },
+  "cases": [
+    {
+      "name": "선점 전 DDB 장애: 호출 보류·입력 보존 후 1회 발송",
+      "requestKey": "72d89623-be18-3825-9834-4e56e4aff50c",
+      "history": {
+        "result_json": {
+          "reason": "DELIVERED",
+          "eventId": "442ee71b-216e-3636-8d81-7d459a8bde70",
+          "outcome": "DELIVERED",
+          "deadline": "2026-09-25T10:13:52.005Z",
+          "provider": "mock-provider",
+          "resultAt": "2026-09-25T10:12:39.918088Z",
+          "tenantId": 1,
+          "attemptId": "059ddefb-dc3d-3b74-8cf7-2772fa33b7e5",
+          "eventType": "DeliveryFinalized",
+          "deliveryId": "3c289969-3b42-4e97-aa19-9a7acabb92f1",
+          "occurredAt": "2026-09-25T10:12:22.005340Z",
+          "requestKey": "72d89623-be18-3825-9834-4e56e4aff50c",
+          "routeOrder": 1,
+          "finalizedAt": "2026-09-25T10:12:40.245783Z",
+          "deliveryType": "SMS",
+          "schemaVersion": 2
+        },
+        "stored_at": "2026-09-25T10:12:40.700226+00:00",
+        "cleanup_completed_at": "2026-09-25T10:12:40.991493+00:00",
+        "notification_status": "DELIVERED",
+        "attempt_count": 1,
+        "cleanup_status": "DONE"
+      },
+      "provider": [
+        {
+          "effects": 1,
+          "calls": 1
+        },
+        {
+          "calls": 0,
+          "effects": 0
+        }
+      ],
+      "originAbsent": true,
+      "stepsAbsent": true,
+      "completedRedisPresent": true
+    },
+    {
+      "name": "접수 후 DDB 장애: 기한 경과 후 재발송 없이 만료",
+      "requestKey": "d3416ff8-7f04-3007-a4b0-e7f28943046b",
+      "history": {
+        "result_json": {
+          "reason": "PRIMARY_EXPIRED",
+          "eventId": "fef1e06f-b1fa-3285-b339-5827a259c7a4",
+          "outcome": "EXPIRED",
+          "deadline": "2026-09-25T10:14:11.385Z",
+          "provider": "mock-provider",
+          "resultAt": "2026-09-25T10:14:11.385Z",
+          "tenantId": 1,
+          "attemptId": "590ce8f1-cfeb-33ff-a89e-f6a17ce087ab",
+          "eventType": "DeliveryFinalized",
+          "deliveryId": "97b8746b-6dbc-41e7-b495-5a189def2de3",
+          "occurredAt": "2026-09-25T10:12:41.385472Z",
+          "requestKey": "d3416ff8-7f04-3007-a4b0-e7f28943046b",
+          "routeOrder": 1,
+          "finalizedAt": "2026-09-25T10:14:16.149493Z",
+          "deliveryType": "SMS",
+          "schemaVersion": 2
+        },
+        "stored_at": "2026-09-25T10:14:16.239739+00:00",
+        "cleanup_completed_at": "2026-09-25T10:14:17.171671+00:00",
+        "notification_status": "DELIVERED",
+        "attempt_count": 1,
+        "cleanup_status": "DONE"
+      },
+      "provider": [
+        {
+          "effects": 1,
+          "calls": 1
+        },
+        {
+          "calls": 0,
+          "effects": 0
+        }
+      ],
+      "originAbsent": true,
+      "stepsAbsent": true,
+      "completedRedisPresent": true
+    }
+  ],
+  "customerReceipts": [
+    {
+      "body": {
+        "schemaVersion": 1,
+        "batchId": "04cac7ba-0b52-49cd-9110-5d78cf8bbc16",
+        "tenantId": 1,
+        "results": [
+          {
+            "schemaVersion": 2,
+            "eventType": "DeliveryFinalized",
+            "eventId": "442ee71b-216e-3636-8d81-7d459a8bde70",
+            "deliveryId": "3c289969-3b42-4e97-aa19-9a7acabb92f1",
+            "tenantId": 1,
+            "deliveryType": "SMS",
+            "outcome": "DELIVERED",
+            "reason": "DELIVERED",
+            "routeOrder": 1,
+            "attemptId": "059ddefb-dc3d-3b74-8cf7-2772fa33b7e5",
+            "provider": "mock-provider",
+            "occurredAt": "2026-09-25T10:12:22.005340Z",
+            "resultAt": "2026-09-25T10:12:39.918088Z",
+            "finalizedAt": "2026-09-25T10:12:40.245783Z",
+            "deadline": "2026-09-25T10:13:52.005Z",
+            "requestKey": "72d89623-be18-3825-9834-4e56e4aff50c"
+          }
+        ]
+      },
+      "status": 204,
+      "receivedAt": "2026-09-25T10:12:40.767446+00:00"
+    },
+    {
+      "body": {
+        "schemaVersion": 1,
+        "batchId": "057be8e4-3bff-47b7-99c8-4d2fbd2ded43",
+        "tenantId": 1,
+        "results": [
+          {
+            "schemaVersion": 2,
+            "eventType": "DeliveryFinalized",
+            "eventId": "fef1e06f-b1fa-3285-b339-5827a259c7a4",
+            "deliveryId": "97b8746b-6dbc-41e7-b495-5a189def2de3",
+            "tenantId": 1,
+            "deliveryType": "SMS",
+            "outcome": "EXPIRED",
+            "reason": "PRIMARY_EXPIRED",
+            "routeOrder": 1,
+            "attemptId": "590ce8f1-cfeb-33ff-a89e-f6a17ce087ab",
+            "provider": "mock-provider",
+            "occurredAt": "2026-09-25T10:12:41.385472Z",
+            "resultAt": "2026-09-25T10:14:11.385Z",
+            "finalizedAt": "2026-09-25T10:14:16.149493Z",
+            "deadline": "2026-09-25T10:14:11.385Z",
+            "requestKey": "d3416ff8-7f04-3007-a4b0-e7f28943046b"
+          }
+        ]
+      },
+      "status": 204,
+      "receivedAt": "2026-09-25T10:14:16.275520+00:00"
+    }
+  ],
+  "cleanup": {
+    "ownedProcessesStopped": true,
+    "composeProject": "full-flow-4896c83ceb0b",
+    "containersStopped": true,
+    "volumesRetained": true
+  },
+  "containerStopVerification": "All five owned containers inspected Exited after test; shared environments untouched and volumes retained.",
+  "metrics": {
+    "claim-during.prom": {
+      "sha256": "a3bb51c4cfd4a844aca9e1cc36f3c5d4f33a23d7f6722aa1f396902f03da5154",
+      "samples": [
+        "delivery_dynamodb_duration_seconds_count{application=\"dispatch-worker\",operation=\"get_item\",result=\"failure\"} 1",
+        "delivery_dynamodb_duration_seconds_count{application=\"dispatch-worker\",operation=\"query\",result=\"failure\"} 4",
+        "delivery_dynamodb_duration_seconds_count{application=\"dispatch-worker\",operation=\"transact_write_items\",result=\"failure\"} 2",
+        "delivery_lifecycle_events_total{application=\"dispatch-worker\",outcome=\"query_failed\"} 4.0",
+        "delivery_lifecycle_events_total{application=\"dispatch-worker\",outcome=\"work_failed\"} 1.0",
+        "delivery_stage_duration_seconds_count{application=\"dispatch-worker\",result=\"failure\",stage=\"dispatch_claim\"} 2",
+        "delivery_stage_duration_seconds_count{application=\"dispatch-worker\",result=\"success\",stage=\"dispatch_claim\"} 0"
+      ]
+    },
+    "expiry-during.prom": {
+      "sha256": "366e7ada14eb078b1a11c2d86faa2329316a626e9ddd04c9c366f8b3b4aa9234",
+      "samples": [
+        "delivery_dynamodb_duration_seconds_count{application=\"dispatch-worker\",operation=\"get_item\",result=\"failure\"} 2",
+        "delivery_dynamodb_duration_seconds_count{application=\"dispatch-worker\",operation=\"query\",result=\"failure\"} 805",
+        "delivery_dynamodb_duration_seconds_count{application=\"dispatch-worker\",operation=\"transact_write_items\",result=\"failure\"} 2",
+        "delivery_lifecycle_events_total{application=\"dispatch-worker\",outcome=\"query_failed\"} 805.0",
+        "delivery_lifecycle_events_total{application=\"dispatch-worker\",outcome=\"work_failed\"} 2.0",
+        "delivery_stage_duration_seconds_count{application=\"dispatch-worker\",result=\"failure\",stage=\"dispatch_claim\"} 2",
+        "delivery_stage_duration_seconds_count{application=\"dispatch-worker\",result=\"success\",stage=\"dispatch_claim\"} 2"
+      ]
+    }
+  },
+  "finding": "During expiry outage, cumulative dispatch DynamoDB failed logical SDK calls rose from 8 to 809 under test-only 3s recovery polling. 805 cumulative failures were queries at the final outage sample. Not network-attempt counts, per-request cost, or production 10-minute polling measurements. Failure backoff remains a follow-up.",
+  "limitations": [
+    "DynamoDB Local service stop/start using same container and volume, not AWS service failover/PITR/throttling/write-ACK ambiguity.",
+    "Both inputs already have ORIGIN; pre-ORIGIN Ingress DLT recovery not tested.",
+    "First boundary uses owned dispatch SIGSTOP/SIGCONT before injecting storage outage; proof requires resumed worker claim failures. No JVM restart.",
+    "Two requests with fallback disabled; no Redis/Kafka/AZ/load or 10,000 TPS claim."
+  ]
+}
