@@ -12,7 +12,7 @@ import java.util.*;
 public final class DeliveryOperations {
     public record Page<T>(List<T> records, UUID nextAfterId, boolean hasMore) { }
     public record Notification(UUID batchId, long tenantId, int itemCount, int attempts, String lastError, Instant updatedAt) { }
-    public record Cleanup(UUID resultEventId, UUID deliveryId, String requestKey, String attention,
+    public record Cleanup(UUID resultEventId, UUID deliveryId, String requestKey, String attention, long version,
                           Instant nextAttemptAt, Instant leaseUntil, Instant createdAt) { }
     public record History(UUID deliveryId, UUID resultEventId, String outcome, String reason, Instant deadline,
                           String notificationState, Integer notificationAttempts, UUID batchId, String cleanupState) { }
@@ -42,14 +42,14 @@ public final class DeliveryOperations {
     public Page<Cleanup> cleanup(long tenant, UUID after, int limit) {
         bounds(tenant, limit); Instant now = clock.instant();
         var rows = sql.query("SELECT c.result_event_id,h.delivery_id,COALESCE(h.result_json->>'requestKey',h.delivery_id::text),"
-                        + "c.next_attempt_at,c.lease_until,c.created_at,n.result_event_id AS notification_id FROM delivery_cleanup_outbox c "
+                        + "c.next_attempt_at,c.lease_until,c.created_at,n.result_event_id AS notification_id,c.version FROM delivery_cleanup_outbox c "
                         + "JOIN delivery_history h ON h.result_event_id=c.result_event_id LEFT JOIN customer_notification_outbox n ON n.result_event_id=c.result_event_id "
                         + "WHERE h.tenant_id=? AND c.status='PENDING' " + (after == null ? "" : "AND c.result_event_id>? ") + "ORDER BY c.result_event_id LIMIT ?",
                 (r, n) -> {
                     Instant due = time(r.getTimestamp(4)), lease = time(r.getTimestamp(5));
                     String attention = r.getObject(7) == null ? "MISSING_NOTIFICATION" : lease != null && lease.isAfter(now) ? "LEASED"
                             : due.isAfter(now) ? "BACKOFF" : lease != null ? "LEASE_EXPIRED" : "DUE";
-                    return new Cleanup(r.getObject(1, UUID.class), r.getObject(2, UUID.class), r.getString(3), attention, due, lease, time(r.getTimestamp(6)));
+                    return new Cleanup(r.getObject(1, UUID.class), r.getObject(2, UUID.class), r.getString(3), attention, r.getLong(8), due, lease, time(r.getTimestamp(6)));
                 }, after == null ? new Object[]{tenant, limit + 1} : new Object[]{tenant, after, limit + 1});
         boolean more = rows.size() > limit; if (more) rows.removeLast();
         return new Page<>(List.copyOf(rows), more ? rows.getLast().resultEventId() : null, more);
