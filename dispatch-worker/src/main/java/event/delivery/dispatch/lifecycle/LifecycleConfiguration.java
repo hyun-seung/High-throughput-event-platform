@@ -65,7 +65,7 @@ public class LifecycleConfiguration {
     @Bean LifecycleScheduler lifecycleScheduler(LifecycleRepository repository, LifecycleService service, Clock clock,
             MeterRegistry metrics, @Value("${dispatch.lifecycle.page-size:100}") int pageSize,
             @Value("${dispatch.lifecycle.concurrency:4}") int concurrency,
-            event.common.redis.DeliveryCache cache, @Value("${dispatch.lifecycle.recovery-poll-ms:30000}") long recoveryMs) {
+            event.common.redis.DeliveryCache cache, @Value("${dispatch.lifecycle.recovery-poll-ms:600000}") long recoveryMs) {
         var scheduler = new LifecycleScheduler(repository, service, clock, metrics, pageSize, concurrency);
         scheduler.cache(cache, recoveryMs); return scheduler;
     }
