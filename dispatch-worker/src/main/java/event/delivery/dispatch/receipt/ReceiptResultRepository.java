@@ -71,7 +71,9 @@ public class ReceiptResultRepository {
             if (!prior.isEmpty()) {
                 if (fingerprint.equals(prior.get("fingerprint").s())) {
                     // A previously committed decision must finish its handoff even after a crash/deadline.
-                    return new ReceiptApplication("duplicate", prior.get("resume_dispatch").bool());
+                    return new ReceiptApplication("duplicate", prior.get("resume_dispatch").bool(),
+                            modern && item.containsKey("result_event")
+                                    ? mapper.readValue(item.get("result_event").s(), DeliveryFinalized.class) : null);
                 }
                 if (expired) return new ReceiptApplication("late_discarded", false);
                 throw new IllegalStateException("Provider receipt ID reused with different content; retain conflict");
@@ -187,7 +189,9 @@ public class ReceiptResultRepository {
                     }
                     db.transactWriteItems(r -> r.transactItems(writes));
                     cache.schedule(receipt.deliveryId(), Instant.EPOCH);
-                    return new ReceiptApplication("delivered", false);
+                    // Return only the result whose STEP + ORIGIN transaction has committed.
+                    // A replay returns the same stored result without another read or write.
+                    return new ReceiptApplication("delivered", false, result);
                 }
                 if (modern) {
                     db.updateItem(UpdateItemRequest.builder().tableName(STEP).key(key)
