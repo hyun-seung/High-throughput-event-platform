@@ -18,14 +18,16 @@ import java.util.concurrent.TimeUnit;
 
 /** Local PoC operations only. Credentials are read from environment, never from positional arguments or output. */
 public final class DltRecoveryCli {
+    public record IntakeCycle(DltIntakeWorker.Cycle intake, DltRecoveryResumer.Cycle resumed) { }
     public static void main(String[] args) {
         System.exit(run(args));
     }
 
     private static int run(String[] args) {
         boolean resume = args.length == 3 && Set.of("resume", "resume-once").contains(args[0]);
-        if (!((args.length == 4 && args[0].equals("plan")) || (args.length == 7 && args[0].equals("apply")) || resume)) {
-            System.err.println("Usage: recover-dlt.sh plan <topic> <partition> <offset> OR apply <topic> <partition> <offset> <valueSha256> <actor> <reason> OR resume[-once] <limit:1..100> <intervalSeconds:1..3600>");
+        boolean intake = args.length == 6 && Set.of("intake", "intake-once").contains(args[0]);
+        if (!((args.length == 4 && args[0].equals("plan")) || (args.length == 7 && args[0].equals("apply")) || resume || intake)) {
+            System.err.println("Usage: recover-dlt.sh plan <topic> <partition> <offset> OR apply <topic> <partition> <offset> <valueSha256> <actor> <reason> OR resume[-once] <limit:1..100> <intervalSeconds:1..3600> OR intake[-once] <topic> <partition> <initialOffset> <limit:1..100> <intervalSeconds:1..3600>");
             return 2;
         }
         try {
@@ -40,14 +42,15 @@ public final class DltRecoveryCli {
             jdbc.setProperty("user", required("DLT_DB_USER")); jdbc.setProperty("password", required("DLT_DB_PASSWORD"));
             jdbc.setProperty("connectTimeout", "5"); jdbc.setProperty("socketTimeout", "15");
             jdbc.setProperty("options", "-c statement_timeout=5000");
-            var store = new DltRecoveryStore(() -> DriverManager.getConnection(sqlUrl, jdbc),
-                    System.getenv().getOrDefault("DLT_DB_SCHEMA", "delivery_results"));
+            String schema = System.getenv().getOrDefault("DLT_DB_SCHEMA", "delivery_results");
+            DltRecoveryStore.Connections connections = () -> DriverManager.getConnection(sqlUrl, jdbc);
+            var store = new DltRecoveryStore(connections, schema);
             Duration ttl = Duration.parse(required("DLT_PRIMARY_TTL"));
             String sourceTopic = System.getenv().getOrDefault("DLT_SOURCE_TOPIC", DeliveryTopics.DELIVERY_REQUESTED);
-            int limit = resume ? Integer.parseInt(args[1]) : 0;
-            int seconds = resume ? Integer.parseInt(args[2]) : 0;
-            if (resume && (limit < 1 || limit > 100 || seconds < 1 || seconds > 3600)) throw new IllegalArgumentException("Invalid resume bounds");
-            var record = resume ? null : DltInspector.fetchExact(bootstrap, args[1], Integer.parseInt(args[2]), Long.parseLong(args[3]));
+            int limit = intake ? Integer.parseInt(args[4]) : resume ? Integer.parseInt(args[1]) : 0;
+            int seconds = intake ? Integer.parseInt(args[5]) : resume ? Integer.parseInt(args[2]) : 0;
+            if ((resume || intake) && (limit < 1 || limit > 100 || seconds < 1 || seconds > 3600)) throw new IllegalArgumentException("Invalid worker bounds");
+            var record = resume || intake ? null : DltInspector.fetchExact(bootstrap, args[1], Integer.parseInt(args[2]), Long.parseLong(args[3]));
             var mapper = JsonMapper.builder().build();
             try (var db = DynamoDbClient.builder().endpointOverride(URI.create(endpoint)).region(Region.AP_NORTHEAST_2)
                     .credentialsProvider(StaticCredentialsProvider.create(AwsBasicCredentials.create("dummy", "dummy")))
@@ -55,9 +58,9 @@ public final class DltRecoveryCli {
                             .connectionAcquisitionTimeout(Duration.ofSeconds(2)).socketTimeout(Duration.ofSeconds(5)))
                     .overrideConfiguration(c -> c.apiCallTimeout(Duration.ofSeconds(10)).apiCallAttemptTimeout(Duration.ofSeconds(5))).build()) {
                 var planner = new DltRecoveryPlanner(db, store, ttl, sourceTopic, Clock.systemUTC());
-                var plan = resume ? null : planner.plan(record);
+                var plan = resume || intake ? null : planner.plan(record);
                 if (args[0].equals("plan")) { System.out.println(mapper.writeValueAsString(plan.preview())); return 0; }
-                if (!resume && (!plan.eligible() || !plan.preview().dlt().valueSha256().equals(args[4]))) {
+                if (!resume && !intake && (!plan.eligible() || !plan.preview().dlt().valueSha256().equals(args[4]))) {
                     System.out.println(mapper.writeValueAsString(plan.preview())); return 3;
                 }
                 var config = Map.<String, Object>of("bootstrap.servers", bootstrap, "acks", "all", "enable.idempotence", true,
@@ -68,6 +71,30 @@ public final class DltRecoveryCli {
                                 mapper.writeValueAsBytes(command))).get(12, TimeUnit.SECONDS);
                         return new DltRecoveryStore.Ack(ack.topic(), ack.partition(), ack.offset());
                     };
+                    if (intake) {
+                        var scope = new DltIntakeStore.Scope(cluster, args[1], Integer.parseInt(args[2]), sourceTopic, DeliveryTopics.DISPATCH_REQUESTED);
+                        long initialOffset = Long.parseLong(args[3]);
+                        if (initialOffset < 0) throw new IllegalArgumentException("Initial offset required");
+                        var worker = new DltIntakeWorker(new DltIntakeStore(connections, schema), store, planner, scope,
+                                (offset, count) -> DltInspector.readRaw(bootstrap, scope.topic(), scope.partition(), offset, count), publisher);
+                        var resumer = new DltRecoveryResumer(store, planner, cluster, DeliveryTopics.DISPATCH_REQUESTED, sourceTopic, publisher);
+                        do {
+                            try {
+                                var cycle = worker.runOnce(initialOffset, limit);
+                                var resumed = resumer.runOnce(limit, Duration.ofSeconds(seconds));
+                                System.out.println(mapper.writeValueAsString(new IntakeCycle(cycle, resumed)));
+                                if (Set.of("RETENTION_GAP", "OFFSET_AFTER_END").contains(cycle.status())) return 3;
+                                if (args[0].equals("intake-once")) return cycle.backlog().held() == 0 && cycle.backlog().unprocessed() == 0
+                                        && resumed.results().stream().allMatch(r -> Set.of("ACKNOWLEDGED", "ALREADY_ACKNOWLEDGED", "SKIPPED_CHANGED").contains(r.status())) ? 0 : 3;
+                            } catch (RuntimeException failure) {
+                                if (args[0].equals("intake-once")) throw failure;
+                                System.err.println("DLT intake cycle unavailable: " + failure.getClass().getSimpleName());
+                            }
+                            if (Thread.currentThread().isInterrupted()) return 3;
+                            Thread.sleep(seconds * 1000L);
+                        } while (!Thread.currentThread().isInterrupted());
+                        return 3;
+                    }
                     if (resume) {
                         var worker = new DltRecoveryResumer(store, planner, cluster, DeliveryTopics.DISPATCH_REQUESTED, sourceTopic, publisher);
                         do {
