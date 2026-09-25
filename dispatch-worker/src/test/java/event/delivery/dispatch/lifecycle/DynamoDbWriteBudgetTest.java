@@ -25,7 +25,7 @@ import java.net.URI;
 import java.time.*;
 import java.util.*;
 
-import static event.common.dynamodb.DynamoDbTableNames.DELIVERY_STATE;
+import static event.common.dynamodb.DynamoDbTableNames.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 /** Counts real DB operations for serialized business paths, not AWS billing or scheduler replay. */
@@ -78,7 +78,7 @@ class DynamoDbWriteBudgetTest {
         item.put("occurred_at", AttributeValue.fromS(START.toString()));
         item.put("fallback_allowed", AttributeValue.fromBool(fallback));
         LifecycleIndex.add(item, event.deliveryId(), 0);
-        db.putItem(r -> r.tableName(DELIVERY_STATE).item(item).conditionExpression("attribute_not_exists(pk)"));
+        db.putItem(r -> r.tableName(tableForKey(item)).item(item).conditionExpression("attribute_not_exists(pk)"));
     }
 
     @Test void normalPrimaryThroughCompaction() {
@@ -144,11 +144,12 @@ class DynamoDbWriteBudgetTest {
         assertEquals(calls, budget.writeCalls, name);
         assertEquals(mutations, budget.puts + budget.updates + budget.deletes, name);
         assertEquals(failedClaims, budget.failedWrites, name);
+        if (event.schemaVersion() == 2) assertEquals(Map.of(ORIGIN, 3, STEP, mutations - 3), budget.mutationsByTable, name);
         assertEquals(event.fallbackAllowed() ? 2 : 1, budget.conditionChecks, name);
         System.out.println("DDB_WRITE_BUDGET " + name + " " + mapper.writeValueAsString(Map.of(
                 "successfulWriteCalls", budget.writeCalls, "failedWriteCalls", budget.failedWrites,
                 "putItems", budget.puts, "updateItems", budget.updates, "deleteItems", budget.deletes,
-                "successfulConditionChecks", budget.conditionChecks, "successfulReadCalls", budget.readCalls)));
+                "successfulConditionChecks", budget.conditionChecks, "successfulReadCalls", budget.readCalls, "mutationsByTable", budget.mutationsByTable)));
     }
     String id(int route) { return DeliveryIds.attemptId(event.deliveryId(), route == 1 ? PRIMARY : SECONDARY, route, 1); }
 
@@ -156,8 +157,8 @@ class DynamoDbWriteBudgetTest {
         budget.enabled = false;
         if (event != null) {
             for (String sk : List.of("META", "FINAL", "ATTEMPT#" + id(1), "ATTEMPT#" + id(2)))
-                db.deleteItem(r -> r.tableName(DELIVERY_STATE).key(LifecycleRepository.key(event.deliveryId(), sk)));
-            for (String id : receiptIds) db.deleteItem(r -> r.tableName(DELIVERY_STATE).key(ReceiptResultRepository.receiptKey(id)));
+                db.deleteItem(r -> r.tableName(tableForKey(LifecycleRepository.key(event.deliveryId(), sk))).key(LifecycleRepository.key(event.deliveryId(), sk)));
+            for (String id : receiptIds) db.deleteItem(r -> r.tableName(tableForKey(ReceiptResultRepository.receiptKey(id))).key(ReceiptResultRepository.receiptKey(id)));
         }
         db.close(); meters.close();
     }
@@ -169,20 +170,22 @@ class DynamoDbWriteBudgetTest {
     }
     static class Budget implements ExecutionInterceptor {
         boolean enabled;
+        final Map<String, Integer> mutationsByTable = new HashMap<>();
+        void changed(String table) { mutationsByTable.merge(table, 1, Integer::sum); }
         int writeCalls, failedWrites, puts, updates, deletes, conditionChecks, readCalls;
         @Override public void afterExecution(Context.AfterExecution ctx, ExecutionAttributes attrs) {
             if (!enabled) return;
             if (ctx.request() instanceof TransactWriteItemsRequest tx) {
                 writeCalls++;
                 for (var item : tx.transactItems()) {
-                    if (item.put() != null) puts++;
-                    if (item.update() != null) updates++;
-                    if (item.delete() != null) deletes++;
+                    if (item.put() != null) { puts++; changed(item.put().tableName()); }
+                    if (item.update() != null) { updates++; changed(item.update().tableName()); }
+                    if (item.delete() != null) { deletes++; changed(item.delete().tableName()); }
                     if (item.conditionCheck() != null) conditionChecks++;
                 }
-            } else if (ctx.request() instanceof PutItemRequest) { writeCalls++; puts++; }
-            else if (ctx.request() instanceof UpdateItemRequest) { writeCalls++; updates++; }
-            else if (ctx.request() instanceof DeleteItemRequest) { writeCalls++; deletes++; }
+            } else if (ctx.request() instanceof PutItemRequest put) { writeCalls++; puts++; changed(put.tableName()); }
+            else if (ctx.request() instanceof UpdateItemRequest update) { writeCalls++; updates++; changed(update.tableName()); }
+            else if (ctx.request() instanceof DeleteItemRequest delete) { writeCalls++; deletes++; changed(delete.tableName()); }
             else if (ctx.request() instanceof GetItemRequest || ctx.request() instanceof QueryRequest) readCalls++;
         }
         @Override public void onExecutionFailure(Context.FailedExecution ctx, ExecutionAttributes attrs) {

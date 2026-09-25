@@ -16,7 +16,7 @@ import software.amazon.awssdk.services.dynamodb.model.ScalarAttributeType;
 
 import static event.common.dynamodb.DynamoDbAttributeNames.PK;
 import static event.common.dynamodb.DynamoDbAttributeNames.SK;
-import static event.common.dynamodb.DynamoDbTableNames.DELIVERY_STATE;
+import static event.common.dynamodb.DynamoDbTableNames.*;
 
 @Slf4j
 @RequiredArgsConstructor
@@ -26,13 +26,17 @@ public class DynamoDbTableInitializer implements ApplicationRunner {
 
     @Override
     public void run(ApplicationArguments args) {
-        if (tableExists()) {
-            log.debug("DynamoDB table already exists. table={}", DELIVERY_STATE);
+        for (String table : java.util.List.of(ORIGIN, STEP)) createIfMissing(table);
+    }
+
+    private void createIfMissing(String table) {
+        if (tableExists(table)) {
+            log.debug("DynamoDB table already exists. table={}", table);
             return;
         }
 
         CreateTableRequest request = CreateTableRequest.builder()
-                .tableName(DELIVERY_STATE)
+                .tableName(table)
                 .attributeDefinitions(
                         AttributeDefinition.builder().attributeName(PK).attributeType(ScalarAttributeType.S).build(),
                         AttributeDefinition.builder().attributeName(SK).attributeType(ScalarAttributeType.S).build(),
@@ -48,14 +52,14 @@ public class DynamoDbTableInitializer implements ApplicationRunner {
                 .build();
 
         dynamoDbClient.createTable(request);
-        dynamoDbClient.waiter().waitUntilTableExists(builder -> builder.tableName(DELIVERY_STATE));
+        dynamoDbClient.waiter().waitUntilTableExists(builder -> builder.tableName(table));
 
-        log.info("DynamoDB table created. table={}", DELIVERY_STATE);
+        log.info("DynamoDB table created. table={}", table);
     }
 
-    private boolean tableExists() {
+    private boolean tableExists(String table) {
         try {
-            dynamoDbClient.describeTable(builder -> builder.tableName(DELIVERY_STATE));
+            dynamoDbClient.describeTable(builder -> builder.tableName(table));
             return true;
         } catch (ResourceNotFoundException e) {
             return false;
