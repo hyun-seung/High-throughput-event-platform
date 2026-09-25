@@ -81,7 +81,13 @@ public final class DltRecoveryPlanner {
 
     /** Called only after the SQL operation and STARTED attempt are committed by DltRecoveryStore. */
     public Plan prepare(ConsumerRecord<byte[], byte[]> record) {
+        return prepare(record, null);
+    }
+
+    public Plan prepare(ConsumerRecord<byte[], byte[]> record, DeliveryEvent expectedCommand) {
         var before = plan(record);
+        // A persisted operation must never activate a replacement generation before its identity is compared.
+        if (expectedCommand != null && !expectedCommand.equals(before.command())) return before;
         if (before.preview().decision() != Decision.RESTORE_ORIGIN) return before;
         var admission = mapper.readValue(record.value(), DeliveryEvent.class);
         String id = recoveryId(before.preview().dlt());
