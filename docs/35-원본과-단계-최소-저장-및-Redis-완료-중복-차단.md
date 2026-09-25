@@ -64,6 +64,8 @@ v2 웹훅은 STEP의 실행·업체·단계·invocation·version·deadline으로
 
 v2는 Kafka ack를 별도 DDB Update로 저장하지 않는다. SQL 저장을 기다리는 STEP의 `publish_state=PENDING`과 복구 인덱스를 유지한다. SQL 인계가 늦으면 같은 최종 이벤트가 주기적으로 Kafka에 다시 발행될 수 있다. PostgreSQL은 동일 이벤트를 한 번만 이력·통지 예약으로 저장하고, 이미 진행한 고객 통지를 초기화하지 않는다. **SQL commit 자체가 인계 증거**이므로 그 결과와 STEP의 저장 결과가 일치하면 삭제할 수 있다.
 
+v2 성공 웹훅은 STEP·ORIGIN 저장 직후 같은 소비자가 결과를 Kafka로 즉시 인계한다. Redis 후보는 실패 시 복구를 위해 먼저 등록하고 Kafka ack 뒤 제거한다. 발행 확인 실패 시 같은 입력을 재처리하며 STEP에 저장된 결과를 추가 쓰기 없이 재사용한다. 기존 Redis·10분 DDB 복구도 유지한다. [처리 순서·장애 경계·검증](39-성공-결과의-즉시-Kafka-인계와-복구-검증.md).
+
 정리 worker는 SQL 이력+통지+정리 예약을 확인한 뒤 해당 실행의 ORIGIN·STEP만 트랜잭션 삭제한다. DDB 삭제 후 SQL 정리 완료 표시에 실패해도 재시도에서 이미 삭제된 실행을 확인하고 완료할 수 있다. 그 사이 같은 requestKey의 새 ORIGIN이 생겨도 이전 정리 작업은 건드리지 않는다.
 
 ## 6. DynamoDB 계측과 시험
