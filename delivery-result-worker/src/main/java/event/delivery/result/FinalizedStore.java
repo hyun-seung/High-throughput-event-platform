@@ -68,10 +68,13 @@ public class FinalizedStore {
             if (!e.equals(codec.stored(saved))) throw new Conflict();
             Integer pending = jdbc.queryForObject("SELECT count(*) FROM customer_notification_outbox WHERE result_event_id = ?", Integer.class, eventId);
             if (pending == null || pending != 1) throw new IllegalStateException("Finalized history has no notification reservation");
+            Integer cleanup = jdbc.queryForObject("SELECT count(*) FROM delivery_cleanup_outbox WHERE result_event_id = ?", Integer.class, eventId);
+            if (cleanup == null || cleanup != 1) throw new IllegalStateException("Finalized history has no cleanup reservation");
             // Never reset a notification's progress, even when a Kafka offset was lost.
             return Outcome.DUPLICATE;
         }
         jdbc.update("INSERT INTO customer_notification_outbox(result_event_id) VALUES (?)", eventId);
+        jdbc.update("INSERT INTO delivery_cleanup_outbox(result_event_id) VALUES (?)", eventId);
         return Outcome.STORED;
     }
 

@@ -2,6 +2,7 @@ package event.delivery.dispatch.receipt;
 
 import event.common.delivery.DeliveryEvent;
 import event.common.delivery.DeliveryIds;
+import event.common.lifecycle.DeliveryCompletion;
 import event.common.receipt.ReceiptEvent;
 import event.common.receipt.ReceiptOutcome;
 import event.delivery.dispatch.config.DispatchProperties;
@@ -42,7 +43,11 @@ public class ReceiptResultRepository {
         // Bound immediate CAS retries. The Kafka handler retains input if the race continues.
         for (int race = 0; race < 3; race++) {
             var item = read(key);
-            if (item.isEmpty()) throw new IllegalStateException("Receipt attempt not found; retain input");
+            if (item.isEmpty()) {
+                if (DeliveryCompletion.compacted(read(DeliveryCompletion.metaKey(receipt.deliveryId()))))
+                    return new ReceiptApplication("late_discarded", false);
+                throw new IllegalStateException("Receipt attempt not found; retain input");
+            }
             int route = item.containsKey(ROUTE_ORDER) ? Integer.parseInt(item.get(ROUTE_ORDER).n()) : 1;
             if (!receipt.deliveryId().equals(item.get(DELIVERY_ID).s())
                     || !receipt.attemptId().equals(item.get(ATTEMPT_ID).s())
@@ -121,6 +126,8 @@ public class ReceiptResultRepository {
                 expression += " REMOVE #lease, #next";
             }
             var ledger = new HashMap<>(receiptKey(receipt.eventId()));
+            expression += " ADD receipt_marker_ids :markerIds";
+            values.put(":markerIds", AttributeValue.fromSs(List.of(receipt.eventId())));
             ledger.put("fingerprint", text(fingerprint));
             ledger.put("resume_dispatch", AttributeValue.fromBool(resume));
             ledger.put(DELIVERY_ID, text(receipt.deliveryId()));
@@ -144,13 +151,14 @@ public class ReceiptResultRepository {
         throw new IllegalStateException("Receipt state kept changing; retain input for retry");
     }
 
-    public DeliveryEvent loadDelivery(String deliveryId) {
+    public Optional<DeliveryEvent> loadDelivery(String deliveryId) {
         var item = read(Map.of(PK, text("DELIVERY#" + deliveryId), SK, text("META")));
         if (item.isEmpty()) throw new IllegalStateException("Receipt handoff source missing; retain input");
-        return DeliveryEvent.requested(deliveryId, Long.parseLong(item.get(TENANT_ID).n()), item.get(DELIVERY_TYPE).s(),
+        if (DeliveryCompletion.compacted(item)) return Optional.empty();
+        return Optional.of(DeliveryEvent.requested(deliveryId, Long.parseLong(item.get(TENANT_ID).n()), item.get(DELIVERY_TYPE).s(),
                 mapper.readValue(item.get(PAYLOAD).s(), new TypeReference<Map<String, Object>>() {}),
                 Instant.parse(item.get(OCCURRED_AT).s()),
-                Boolean.TRUE.equals(item.getOrDefault(FALLBACK_ALLOWED, AttributeValue.fromBool(false)).bool())).toDispatchRequested();
+                Boolean.TRUE.equals(item.getOrDefault(FALLBACK_ALLOWED, AttributeValue.fromBool(false)).bool())).toDispatchRequested());
     }
 
     public String secondaryParent(ReceiptEvent receipt) {

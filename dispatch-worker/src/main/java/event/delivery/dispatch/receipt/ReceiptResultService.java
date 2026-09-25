@@ -47,7 +47,9 @@ public class ReceiptResultService {
             }
             audit.log("Provider receipt decision observed");
             if (!result.resumeDispatch()) return;
-            var event = repository.loadDelivery(receipt.deliveryId());
+            var active = repository.loadDelivery(receipt.deliveryId());
+            if (active.isEmpty()) return;
+            var event = active.get();
             if (receipt.routeOrder() == 1) {
                 if (!receipt.provider().equals(properties.provider())) {
                     throw new IllegalStateException("Receipt primary provider no longer configured; retain handoff");

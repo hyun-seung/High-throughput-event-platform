@@ -258,7 +258,11 @@ class NotificationPostgresTest {
         String url = System.getenv("POSTGRES_TEST_URL");
         String user = System.getenv().getOrDefault("POSTGRES_TEST_USER", "delivery"), password = System.getenv().getOrDefault("POSTGRES_TEST_PASSWORD", "delivery");
         Flyway.configure().dataSource(url, user, password).defaultSchema(schema).schemas(schema).target("1").load().migrate();
-        var event = save(42);
+        var event = FinalizedCodecTest.event("DELIVERED", 1);
+        jdbc.update("INSERT INTO delivery_history(delivery_id, result_event_id, tenant_id, delivery_type, outcome, reason, route_order, attempt_id, provider, occurred_at, result_at, finalized_at, deadline, result_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CAST(? AS jsonb))",
+                UUID.fromString(event.deliveryId()), UUID.fromString(event.eventId()), event.tenantId(), event.deliveryType(), event.outcome(), event.reason(), event.routeOrder(), UUID.fromString(event.attemptId()), event.provider(),
+                event.occurredAt().atOffset(java.time.ZoneOffset.UTC), event.resultAt().atOffset(java.time.ZoneOffset.UTC), event.finalizedAt().atOffset(java.time.ZoneOffset.UTC), event.deadline().atOffset(java.time.ZoneOffset.UTC), new FinalizedCodec().encode(event));
+        jdbc.update("INSERT INTO customer_notification_outbox(result_event_id) VALUES (?)", UUID.fromString(event.eventId()));
         Flyway.configure().dataSource(url, user, password).defaultSchema(schema).schemas(schema).load().migrate();
         service().deliver(42);
         assertEquals(1, count("DELIVERED"));

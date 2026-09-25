@@ -1,0 +1,234 @@
+{
+  "recordedAt": "2026-09-25T02:53:15.473996+00:00",
+  "baseCommit": "f440f9ec82362c22ad6ff0d468c336643de885d1",
+  "workingTreeDirty": true,
+  "command": "DYNAMODB_TEST_ENDPOINT=http://localhost:18000 POSTGRES_TEST_URL=jdbc:postgresql://localhost:15432/delivery KAFKA_TEST_BOOTSTRAP_SERVERS=localhost:39092 JAVA_HOME=<JDK21> ./mvnw -q package",
+  "exitCode": 0,
+  "environment": {
+    "java": "21.0.7",
+    "springBoot": "4.1.0",
+    "postgresql": "17.11",
+    "postgresqlPort": 15432,
+    "kafkaBroker": "4.0.2",
+    "kafkaPort": 39092,
+    "dynamoDbLocalPort": 18000,
+    "http": "Actual loopback HTTP server",
+    "isolation": "UUID test-owned SQL schemas, DynamoDB keys, Kafka topics/groups; temporary contexts closed"
+  },
+  "totals": {
+    "tests": 260,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "modules": {
+    "delivery-ingress-worker": {
+      "tests": 21,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "delivery-result-worker": {
+      "tests": 43,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "dispatch-worker": {
+      "tests": 130,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "event-api": {
+      "tests": 9,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "event-common": {
+      "tests": 11,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "external-api-simulator": {
+      "tests": 27,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "receipt-api": {
+      "tests": 19,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "newTests": [
+    {
+      "className": "event.delivery.ingress.repository.DeliveryIngressDynamoDbTest",
+      "name": "finalizedButNotCompactedRequestAlsoSkipsNewDispatch",
+      "seconds": 0.035,
+      "passed": true
+    },
+    {
+      "className": "event.delivery.ingress.repository.DeliveryIngressDynamoDbTest",
+      "name": "compactedSameRequestSkipsPublicationButChangedPayloadOrFallbackIsConflict",
+      "seconds": 0.03,
+      "passed": true
+    },
+    {
+      "className": "event.delivery.result.CleanupPostgresDynamoDbTest",
+      "name": "noSqlEvidenceOrMissingNotificationCannotDeleteOriginal",
+      "seconds": 0.389,
+      "passed": true
+    },
+    {
+      "className": "event.delivery.result.CleanupPostgresDynamoDbTest",
+      "name": "compactedOriginalStillAllowsPendingCustomerHttpAndDuplicateFinalDoesNotResetState",
+      "seconds": 0.447,
+      "passed": true
+    },
+    {
+      "className": "event.delivery.result.CleanupPostgresDynamoDbTest",
+      "name": "dynamoSuccessBeforeSqlDoneFailureRecoversFromSmallCompletionWithoutDeletingAgain",
+      "seconds": 0.725,
+      "passed": true
+    },
+    {
+      "className": "event.delivery.result.CleanupPostgresDynamoDbTest",
+      "name": "sqlLeaseLimitsConcurrencyAndOriginalReservationRecoversAfterExpiry",
+      "seconds": 0.232,
+      "passed": true
+    },
+    {
+      "className": "event.delivery.result.CleanupPostgresDynamoDbTest",
+      "name": "cleanupReservationFailureRollsBackHistoryAndNotificationTogether",
+      "seconds": 0.161,
+      "passed": true
+    },
+    {
+      "className": "event.delivery.result.CleanupPostgresDynamoDbTest",
+      "name": "actualApplicationRunsCleanupOnDedicatedScheduler",
+      "seconds": 1.607,
+      "passed": true
+    },
+    {
+      "className": "event.delivery.dispatch.lifecycle.LifecycleDynamoDbTest",
+      "name": "retryReceiptManifestDeletesAllMarkersNotOnlyLatestOne",
+      "seconds": 0.175,
+      "passed": true
+    },
+    {
+      "className": "event.delivery.dispatch.lifecycle.LifecycleDynamoDbTest",
+      "name": "completionFenceStopsNewClaimsEvenBeforeSqlAllowsCompaction",
+      "seconds": 0.053,
+      "passed": true
+    },
+    {
+      "className": "event.delivery.dispatch.lifecycle.LifecycleDynamoDbTest",
+      "name": "mismatchingSqlResultCannotCompactOrAcknowledgeExistingCompletion",
+      "seconds": 0.054,
+      "passed": true
+    },
+    {
+      "className": "event.delivery.dispatch.lifecycle.LifecycleDynamoDbTest",
+      "name": "compactedPrimaryBlocksOldDispatchChangedProviderLateReceiptAndLateResultWrite",
+      "seconds": 0.071,
+      "passed": true
+    },
+    {
+      "className": "event.delivery.dispatch.lifecycle.LifecycleDynamoDbTest",
+      "name": "bothRoutesCompactAndStaleSecondaryPlanCannotRecreateAttempt",
+      "seconds": 0.08,
+      "passed": true
+    },
+    {
+      "className": "event.delivery.dispatch.lifecycle.LifecycleDynamoDbTest",
+      "name": "unpublishedOrLegacyUntrackedExecutionIsRetained",
+      "seconds": 0.061,
+      "passed": true
+    },
+    {
+      "className": "event.delivery.dispatch.lifecycle.LifecycleDynamoDbTest",
+      "name": "claimPausedBeforeTransactionCannotRecreateDeletedAttempt",
+      "seconds": 0.05,
+      "passed": true
+    },
+    {
+      "className": "event.delivery.dispatch.lifecycle.LifecycleDynamoDbTest",
+      "name": "lostCompactionResponseIsResolvedByStableSmallCompletionRecord",
+      "seconds": 0.05,
+      "passed": true
+    },
+    {
+      "className": "event.delivery.dispatch.lifecycle.LifecycleDynamoDbTest",
+      "name": "failedConditionalDeleteRollsBackEntireCompaction",
+      "seconds": 0.063,
+      "passed": true
+    },
+    {
+      "className": "event.delivery.dispatch.lifecycle.LifecycleDynamoDbTest",
+      "name": "lostInitialTransactionalClaimDoesNotPermitBlindResend",
+      "seconds": 0.02,
+      "passed": true
+    }
+  ],
+  "verified": [
+    "Same request after full completion or compacted META does not republish Dispatch; changed request conflicts",
+    "Completed primary/secondary and changed-provider claims cannot recreate deleted attempts",
+    "Delayed receipt and late result updates do not recreate state after compaction",
+    "All tracked receipt markers from multiple retries are deleted atomically",
+    "Unpublished FINAL, mismatching result and legacy untracked attempts remain intact",
+    "Failed receipt ownership condition rolls back all DynamoDB compaction actions",
+    "Committed DynamoDB transaction followed by response loss resolves via completion META on replay",
+    "Initial claim response loss retains PROCESSING then REVIEW_REQUIRED without blind resend",
+    "Claim paused before transaction cannot create attempt after concurrent compaction",
+    "Third SQL reservation insert failure rolls back history and notification",
+    "No committed SQL history/notification proof prevents cleanup claim",
+    "Compaction before customer HTTP notification does not lose the result; final replay does not reset DONE/DELIVERED",
+    "SQL DONE failure after DynamoDB compaction recovers via matching completion META",
+    "Twelve concurrent SQL claims have one owner, expired lease recovers, stale token cannot reset DONE",
+    "Actual Spring application migrates V3 and scheduled cleanup reaches DONE"
+  ],
+  "notVerified": [
+    "Actual JVM SIGKILL",
+    "Production DynamoDB capacity or transaction latency",
+    "PostgreSQL disk loss / multi-AZ failover",
+    "Legacy DynamoDB automatic migration",
+    "Whole-flow high-TPS benchmark including cleanup",
+    "Grafana panels for notification and cleanup",
+    "Cancellation of a paused worker already authorized to call external provider",
+    "Absolute customer receipt deadline during outages"
+  ],
+  "rawLog": {
+    "localPath": "/tmp/delivery-cleanup-final-package.log",
+    "sha256": "2173c4507f5db013ba447746d6555b96a8f708c55b3934d419fa84e3d06ccdec"
+  },
+  "sourceSha256": {
+    "delivery-ingress-worker/src/main/java/event/delivery/ingress/consumer/DeliveryRequestConsumer.java": "4e4bd5230225a52c0b4c2d482a853eb76be3c70af39138e17f33d202b2331fcd",
+    "delivery-ingress-worker/src/main/java/event/delivery/ingress/repository/DeliveryRepository.java": "99ab875e7a09a168779983adb32e4e68c0161cdffb873d23a0d16485015046ea",
+    "delivery-ingress-worker/src/test/java/event/delivery/ingress/consumer/DeliveryRequestConsumerTest.java": "a8958c69559e7b9c0337ca7defde6f9582fda52cb4881148d6308ee0f34865b9",
+    "delivery-ingress-worker/src/test/java/event/delivery/ingress/repository/DeliveryIngressDynamoDbTest.java": "8ddb74fe8b6f1a153a5bb47c4c04118fec60e08dbcf7414ae20c0dd08356f483",
+    "delivery-result-worker/src/main/java/event/delivery/result/FinalizedStore.java": "13c2fabd4a7f7c141583cdfbc9cb25276252a0a2af71744ab835d7b93b4ae3ab",
+    "delivery-result-worker/src/main/java/event/delivery/result/cleanup/CleanupConfiguration.java": "e72cfbf49880e1311c0239c9c8b19f880e3d1f1c5d83b030bd3b51618fe5659a",
+    "delivery-result-worker/src/main/java/event/delivery/result/cleanup/CleanupRepository.java": "f254c9a1ca5581f37125b428acf207c0d2da01dff16538c66aa2666260535cec",
+    "delivery-result-worker/src/main/java/event/delivery/result/cleanup/CleanupWorker.java": "688dbfb3943ba4ade77f8500d04dd8c5f7ad950488c5fb306b05d3544410db07",
+    "delivery-result-worker/src/main/java/event/delivery/result/notification/NotificationConfiguration.java": "b93cc74c63fffb023829cef1efdd99d272f53c9a4e6efe6743748643dc53d118",
+    "delivery-result-worker/src/main/java/event/delivery/result/notification/NotificationScheduler.java": "d0bbf63ea1125281da5df57968d2b8054a507023d4d54b1a4cbebcadf1ec1e4f",
+    "delivery-result-worker/src/main/resources/application.yml": "c55d80c3b2f403f2e6fe55dde32faaef7e9c8d21e873f4513aabdc80975cde46",
+    "delivery-result-worker/src/main/resources/db/migration/V3__delivery_cleanup_reservations.sql": "9a3a494f063aa4f13e92eac02fdae520fbe97e847a3985edf6d6c69d2b3afbe5",
+    "delivery-result-worker/src/test/java/event/delivery/result/CleanupPostgresDynamoDbTest.java": "2116d59b275dde0aa7c058f361147b79327ed770f2883a71997b9357817f3953",
+    "delivery-result-worker/src/test/java/event/delivery/result/NotificationPostgresTest.java": "cd99c491a38f53daeb0ac0a1ab095448d892479fce7703258c4b91c1d517325f",
+    "dispatch-worker/src/main/java/event/delivery/dispatch/lifecycle/LifecycleRepository.java": "82c6882a2e993a0e23f39e464ba0405b6eec509338e04109b8ce8312dc47b603",
+    "dispatch-worker/src/main/java/event/delivery/dispatch/lifecycle/LifecycleService.java": "dd4a10948c435ec505ad6a14c38bc0bb44e27d2ef3105f09a9005beb5addf8e8",
+    "dispatch-worker/src/main/java/event/delivery/dispatch/receipt/ReceiptResultRepository.java": "644ce108a7e727ff1f9f9a3c2e45f1948d7a0644898de83d9facebd77ac85443",
+    "dispatch-worker/src/main/java/event/delivery/dispatch/receipt/ReceiptResultService.java": "1ed3d9ecba11663af55bd4729d83d9a54d8c9edd62d333566fa2e9a9df9b0272",
+    "dispatch-worker/src/main/java/event/delivery/dispatch/repository/DispatchAttemptRepository.java": "f8ad08647f07dee2c2bb8ded2b3fa23c8d62d96ac7614a73aad4b2fed7084383",
+    "dispatch-worker/src/test/java/event/delivery/dispatch/lifecycle/LifecycleDynamoDbTest.java": "5bfee67c7c4561555e4287b148341bba0479b0d89e3afec65bf8c61c22d9ccb7",
+    "event-common/pom.xml": "786de63de7d26fe70e270dfc5791f5ee4bf6a526a2514c3305179927220e82ab",
+    "event-common/src/main/java/event/common/lifecycle/DeliveryCompactor.java": "f0bc788ee84c5fed1367684fa0390389931f3b548270ed573d0ca7c3e9ef3142",
+    "event-common/src/main/java/event/common/lifecycle/DeliveryCompletion.java": "1ce5146cb7f8d7f4439f6d4687bac7c99cf98e296f62344c7cca7bcd380bece5"
+  }
+}
