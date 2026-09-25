@@ -55,6 +55,8 @@ notification:
 cleanup:
   enabled: ${DELIVERY_CLEANUP_ENABLED:false}
   poll-ms: ${DELIVERY_CLEANUP_POLL_MS:1000}
+  concurrency: ${DELIVERY_CLEANUP_CONCURRENCY:4}
+  batch-size: ${DELIVERY_CLEANUP_BATCH_SIZE:20}
 
 delivery:
   completed-retention: ${DELIVERY_COMPLETED_RETENTION:24h}
@@ -78,3 +80,4 @@ management:
       percentiles-histogram:
         "[delivery.result.store.duration]": true
         "[delivery.notification.http.duration]": true
+        "[delivery.cleanup.duration]": true

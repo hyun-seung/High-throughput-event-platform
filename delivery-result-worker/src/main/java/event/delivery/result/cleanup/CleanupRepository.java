@@ -32,11 +32,11 @@ public class CleanupRepository {
             return Optional.of(new Claim(result, token));
         }));
     }
-    public void done(Claim claim) {
-        jdbc.update("""
+    public boolean done(Claim claim) {
+        return jdbc.update("""
                 UPDATE delivery_cleanup_outbox SET status = 'DONE', completed_at = clock_timestamp(), lease_token = NULL, lease_until = NULL
                 WHERE result_event_id = ? AND status = 'PENDING' AND lease_token = ?
-                """, UUID.fromString(claim.result().eventId()), claim.token());
+                """, UUID.fromString(claim.result().eventId()), claim.token()) == 1;
     }
     public void retry(Claim claim) {
         jdbc.update("""

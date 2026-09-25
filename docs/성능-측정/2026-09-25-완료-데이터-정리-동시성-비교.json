@@ -1,0 +1,858 @@
+{
+  "date": "2026-09-25",
+  "status": "PASS",
+  "baseCommit": "bcfa150",
+  "tests": {
+    "event-common": {
+      "totals": {
+        "tests": 11,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "skippedCases": [],
+      "cleanupCasesPassed": []
+    },
+    "delivery-result-worker": {
+      "totals": {
+        "tests": 54,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 3
+      },
+      "skippedCases": [
+        "event.delivery.result.FinalizedPostgresTest.kafkaKeepsOffsetOnSqlRollbackThenRecoversAndDeduplicatesAfterCommittedStoreRestart",
+        "event.delivery.result.FinalizedPostgresTest.malformedRecordAndContentConflictKeepOffsetWithoutDropping",
+        "event.delivery.result.FinalizedPostgresTest.applicationStartsMigratesConsumesAndExposesPrometheus"
+      ],
+      "cleanupCasesPassed": [
+        "event.delivery.result.CleanupPostgresDynamoDbTest.noSqlEvidenceOrMissingNotificationCannotDeleteOriginal",
+        "event.delivery.result.CleanupPostgresDynamoDbTest.compactedOriginalStillAllowsPendingCustomerHttpAndDuplicateFinalDoesNotResetState",
+        "event.delivery.result.CleanupPostgresDynamoDbTest.dynamoSuccessBeforeSqlDoneFailureRecoversFromSmallCompletionWithoutDeletingAgain",
+        "event.delivery.result.CleanupPostgresDynamoDbTest.sqlLeaseLimitsConcurrencyAndOriginalReservationRecoversAfterExpiry",
+        "event.delivery.result.CleanupPostgresDynamoDbTest.legacyCompletionHashWithoutRequestKeyRemainsReadable",
+        "event.delivery.result.CleanupPostgresDynamoDbTest.cleanupReservationFailureRollsBackHistoryAndNotificationTogether",
+        "event.delivery.result.CleanupPostgresDynamoDbTest.staleOwnerCannotCompleteOrPostponeNewOwnersClaim",
+        "event.delivery.result.CleanupPostgresDynamoDbTest.sqlDoneLossThenNewGenerationPreservesNewOriginAndSeparateHistoryAndNotifications",
+        "event.delivery.result.CleanupPostgresDynamoDbTest.actualApplicationRunsCleanupOnDedicatedScheduler",
+        "event.delivery.result.CleanupPostgresDynamoDbTest.concurrentWorkersClaimDistinctResultsAndDeleteOnlyAfterSqlCommit",
+        "event.delivery.result.CleanupPostgresDynamoDbTest.modernCleanupRequiresSqlThenDeletesOriginAndStepWithoutPermanentMarker",
+        "event.delivery.result.cleanup.CleanupWorkerTest.boundedLanesDoNotPreclaimOrOverlapTicks",
+        "event.delivery.result.cleanup.CleanupWorkerTest.interruptedTickRetainsClaimAndStopsFurtherWork",
+        "event.delivery.result.cleanup.CleanupWorkerTest.failedDeletionAndFailedRetryUpdateLeaveClaimForLeaseRecovery",
+        "event.delivery.result.cleanup.CleanupWorkerTest.invalidLimitsFailBeforeStartingWorkers",
+        "event.delivery.result.cleanup.CleanupWorkerTest.sqlOutageStopsEachLaneWithoutBusyRetryAndClosedWorkerDoesNotClaim",
+        "event.delivery.result.cleanup.CleanupWorkerTest.lostLeaseDoesNotCountAsCompletedCleanup"
+      ]
+    }
+  },
+  "pythonTests": {
+    "passed": 29,
+    "failed": 0
+  },
+  "package": "PASS all modules, tests separately executed",
+  "testCommand": "JAVA_HOME=<JDK21> DYNAMODB_TEST_ENDPOINT=http://localhost:18000 POSTGRES_TEST_URL=jdbc:postgresql://localhost:15432/delivery ./mvnw -pl delivery-result-worker -am test",
+  "functional": {
+    "directory": ".poc-results/full-flow-2626f4921959",
+    "environment": {
+      "runId": "full-flow-2626f4921959",
+      "ports": {
+        "kafka": 63852,
+        "redis": 63853,
+        "postgres": 63854,
+        "dynamo": 63855,
+        "tcp": 63856,
+        "provider": 63857,
+        "receipt": 63858,
+        "ingress": 63859,
+        "api": 63860,
+        "dispatch": 63861,
+        "result": 63862,
+        "provider_metrics": 63863,
+        "receipt_metrics": 63864,
+        "ingress_metrics": 63865,
+        "api_metrics": 63866,
+        "dispatch_metrics": 63867,
+        "result_metrics": 63868
+      },
+      "gitCommit": "bcfa150356efb21b768291c391a2e423a9d4bbee",
+      "workingTreeDirty": true,
+      "jarSha256": {
+        "provider": "2c32cccc284b31a8c83dd1b27594146540c66de7e4cf159510cfd947900b4ae9",
+        "receipt": "2c9f0a48a73a5847690ca54754322d78dba1069be35abf385fe6043940bca812",
+        "ingress": "908c043760e8cc44a44fed241d6981df552f63a258682632bb46cee03de3fd48",
+        "api": "41335a64611edfd7bfcd6958c4c8e323e4cd77bcdf66580d9268fbf6277fab58",
+        "dispatch": "e217c2f69167c004fbfd4514cd135326772e58f6ff2d9a08c3cf274be353c9da",
+        "result": "23496c28bd4fcf26c6df281bce7b65ab80438b40892e9d7879b797fc8d8bc244"
+      },
+      "harnessSha256": "517334f056f2897337b67b80906c2df711252fbcca1fc56e3848d140d6ada5cf",
+      "primaryTtlSeconds": 8,
+      "secondaryTtlSeconds": 12,
+      "recoveryPollMillis": 3000,
+      "infraStartup": "compose create -> docker start init -> wait init exit 0 -> start services -> healthcheck",
+      "productionRecoveryPollMillis": 600000,
+      "providerDeduplicate": false,
+      "scope": "small-count functional proof, not load/HA/production timing proof"
+    },
+    "summary": {
+      "passed": 6,
+      "historyRows": 6,
+      "completedDuplicateBlocked": true,
+      "customerRetrySameBatch": true,
+      "redisScheduleLossRecovered": true,
+      "resultCounts": {
+        "DELIVERED": 4,
+        "EXPIRED": 2
+      },
+      "completedAt": "2026-09-25T09:15:23.430909+00:00",
+      "scope": "functional small-count, not TPS benchmark"
+    },
+    "cleanup": {
+      "ownedProcessesStopped": true,
+      "composeProject": "full-flow-2626f4921959",
+      "containersStopped": true,
+      "volumesRetained": true
+    }
+  },
+  "runs": [
+    {
+      "directory": ".poc-results/full-flow-2b04503e20b8",
+      "environment": {
+        "runId": "full-flow-2b04503e20b8",
+        "ports": {
+          "kafka": 64323,
+          "redis": 64324,
+          "postgres": 64325,
+          "dynamo": 64326,
+          "tcp": 64327,
+          "provider": 64328,
+          "receipt": 64329,
+          "ingress": 64330,
+          "api": 64331,
+          "dispatch": 64332,
+          "result": 64333,
+          "provider_metrics": 64334,
+          "receipt_metrics": 64335,
+          "ingress_metrics": 64336,
+          "api_metrics": 64337,
+          "dispatch_metrics": 64338,
+          "result_metrics": 64339
+        },
+        "gitCommit": "bcfa150356efb21b768291c391a2e423a9d4bbee",
+        "workingTreeDirty": true,
+        "jarSha256": {
+          "provider": "2c32cccc284b31a8c83dd1b27594146540c66de7e4cf159510cfd947900b4ae9",
+          "receipt": "2c9f0a48a73a5847690ca54754322d78dba1069be35abf385fe6043940bca812",
+          "ingress": "908c043760e8cc44a44fed241d6981df552f63a258682632bb46cee03de3fd48",
+          "api": "41335a64611edfd7bfcd6958c4c8e323e4cd77bcdf66580d9268fbf6277fab58",
+          "dispatch": "e217c2f69167c004fbfd4514cd135326772e58f6ff2d9a08c3cf274be353c9da",
+          "result": "23496c28bd4fcf26c6df281bce7b65ab80438b40892e9d7879b797fc8d8bc244"
+        },
+        "harnessSha256": "517334f056f2897337b67b80906c2df711252fbcca1fc56e3848d140d6ada5cf",
+        "primaryTtlSeconds": 10800,
+        "secondaryTtlSeconds": 14400,
+        "recoveryPollMillis": 600000,
+        "infraStartup": "compose create -> docker start init -> wait init exit 0 -> start services -> healthcheck",
+        "productionRecoveryPollMillis": 600000,
+        "providerDeduplicate": false,
+        "scope": "short normal primary-success full-flow load; not sustained capacity/HA proof",
+        "lifecyclePollMillis": 1000,
+        "workerConcurrency": 3,
+        "k6": "k6 v1.8.1 (commit/73b044f9f9, go1.26.5, darwin/arm64)",
+        "cleanupConcurrency": 1,
+        "cleanupBatchSize": 20,
+        "rates": [
+          10,
+          100
+        ],
+        "secondsPerPhase": 5,
+        "loadHarnessSha256": "25eb871711652726dac4bf6b241d0368e1ddb5a39e859250ffcabc4c01ab5887",
+        "loadScriptSha256": "54af50203c2e90d4c0bafee0398364a6d164fd744812396c12ffbd2959240a54"
+      },
+      "phases": [
+        {
+          "rate": 10,
+          "inputSeconds": 5,
+          "requests": 51,
+          "apiLatencyMillis": {
+            "p(50)": 34.599,
+            "p(95)": 794.5204999999997,
+            "p(99)": 992.9335,
+            "avg": 145.06015686274515,
+            "min": 14.23,
+            "med": 34.599,
+            "max": 1042.455
+          },
+          "latencyFromClientStartMillis": {
+            "providerResult": {
+              "p50": 1004.7509670257568,
+              "p95": 2778.3384323120117,
+              "p99": 2965.1429653167725,
+              "max": 2992.732048034668
+            },
+            "finalized": {
+              "p50": 1950.3319263458252,
+              "p95": 3504.569411277771,
+              "p99": 3584.35595035553,
+              "max": 3589.4289016723633
+            },
+            "sqlStored": {
+              "p50": 2101.62615776062,
+              "p95": 3657.1558713912964,
+              "p99": 3751.4865398406982,
+              "max": 3794.480085372925
+            },
+            "customerReceived": {
+              "p50": 2162.1928215026855,
+              "p95": 3770.4139947891235,
+              "p99": 3817.3071146011353,
+              "max": 3854.400157928467
+            },
+            "cleanup": {
+              "p50": 4038.3808612823486,
+              "p95": 5259.592890739441,
+              "p99": 5608.365416526794,
+              "max": 5878.691911697388
+            }
+          },
+          "inputAndDrainSeconds": 9.643466374953277,
+          "completionTpsIncludingDrain": 5.288554759983501,
+          "maxKafkaLag": {
+            "delivery.requested.v1": 1,
+            "delivery.dispatch-requested.v1": 21,
+            "delivery.receipt-received.v1": 0,
+            "delivery.finalized.v1": 0
+          },
+          "maxRedisDue": 31,
+          "allRequestsReconciled": true,
+          "providerCallsExactlyOnce": true,
+          "originAndStepsAbsent": true,
+          "sampleCount": 4,
+          "baselineCounts": {
+            "time": 1790327812.379444,
+            "history": 0,
+            "notified": 0,
+            "cleaned": 0,
+            "kafkaLag": {
+              "delivery.requested.v1": 0,
+              "delivery.dispatch-requested.v1": 0,
+              "delivery.receipt-received.v1": 0,
+              "delivery.finalized.v1": 0
+            },
+            "providerCalls": 0.0,
+            "redisDue": 0,
+            "collectionSeconds": 1.610751667059958
+          },
+          "finalCounts": {
+            "time": 1790327822.081395,
+            "history": 51,
+            "notified": 51,
+            "cleaned": 51,
+            "kafkaLag": {
+              "delivery.requested.v1": 0,
+              "delivery.dispatch-requested.v1": 0,
+              "delivery.receipt-received.v1": 0,
+              "delivery.finalized.v1": 0
+            },
+            "providerCalls": 51.0,
+            "redisDue": 0,
+            "collectionSeconds": 0.8875797500368208
+          }
+        },
+        {
+          "rate": 100,
+          "inputSeconds": 5,
+          "requests": 501,
+          "apiLatencyMillis": {
+            "avg": 20.824071856287414,
+            "min": 5.399,
+            "med": 16.933,
+            "max": 96.534,
+            "p(50)": 16.933,
+            "p(95)": 45.544,
+            "p(99)": 74.84
+          },
+          "latencyFromClientStartMillis": {
+            "providerResult": {
+              "p50": 8952.889204025269,
+              "p95": 13529.005765914917,
+              "p99": 13723.286151885986,
+              "max": 13774.67393875122
+            },
+            "finalized": {
+              "p50": 10646.687030792236,
+              "p95": 14227.936029434204,
+              "p99": 14388.864994049072,
+              "max": 14484.122037887573
+            },
+            "sqlStored": {
+              "p50": 10769.777059555054,
+              "p95": 14256.433963775635,
+              "p99": 14415.542125701904,
+              "max": 14524.14608001709
+            },
+            "customerReceived": {
+              "p50": 10805.240154266357,
+              "p95": 14296.051979064941,
+              "p99": 14480.637073516846,
+              "max": 14593.451023101807
+            },
+            "cleanup": {
+              "p50": 26116.658926010132,
+              "p95": 39831.4049243927,
+              "p99": 40711.23194694519,
+              "max": 41740.35906791687
+            }
+          },
+          "inputAndDrainSeconds": 49.25335037498735,
+          "completionTpsIncludingDrain": 10.171896859516508,
+          "maxKafkaLag": {
+            "delivery.requested.v1": 258,
+            "delivery.dispatch-requested.v1": 284,
+            "delivery.receipt-received.v1": 59,
+            "delivery.finalized.v1": 1
+          },
+          "maxRedisDue": 310,
+          "allRequestsReconciled": true,
+          "providerCallsExactlyOnce": true,
+          "originAndStepsAbsent": true,
+          "sampleCount": 17,
+          "baselineCounts": {
+            "time": 1790327823.702548,
+            "history": 51,
+            "notified": 51,
+            "cleaned": 51,
+            "kafkaLag": {
+              "delivery.requested.v1": 0,
+              "delivery.dispatch-requested.v1": 0,
+              "delivery.receipt-received.v1": 0,
+              "delivery.finalized.v1": 0
+            },
+            "providerCalls": 51.0,
+            "redisDue": 0,
+            "collectionSeconds": 1.0637007500045002
+          },
+          "finalCounts": {
+            "time": 1790327872.989022,
+            "history": 552,
+            "notified": 552,
+            "cleaned": 552,
+            "kafkaLag": {
+              "delivery.requested.v1": 0,
+              "delivery.dispatch-requested.v1": 0,
+              "delivery.receipt-received.v1": 0,
+              "delivery.finalized.v1": 0
+            },
+            "providerCalls": 552.0,
+            "redisDue": 0,
+            "collectionSeconds": 1.0643751670140773
+          }
+        }
+      ],
+      "businessDynamoApiCalls": {
+        "requests": 552,
+        "readCalls": 4766,
+        "successfulWriteCalls": 2760,
+        "failedTransactionCalls": 73,
+        "byApplication": {
+          "ingress": [
+            {
+              "operation": "create_table",
+              "result": "success",
+              "calls": 0
+            },
+            {
+              "operation": "describe_table",
+              "result": "failure",
+              "calls": 0
+            },
+            {
+              "operation": "describe_table",
+              "result": "success",
+              "calls": 0
+            },
+            {
+              "operation": "put_item",
+              "result": "success",
+              "calls": 552
+            }
+          ],
+          "dispatch": [
+            {
+              "operation": "describe_table",
+              "result": "success",
+              "calls": 0
+            },
+            {
+              "operation": "get_item",
+              "result": "success",
+              "calls": 2322
+            },
+            {
+              "operation": "query",
+              "result": "success",
+              "calls": 788
+            },
+            {
+              "operation": "transact_write_items",
+              "result": "failure",
+              "calls": 73
+            },
+            {
+              "operation": "transact_write_items",
+              "result": "success",
+              "calls": 1104
+            },
+            {
+              "operation": "update_item",
+              "result": "success",
+              "calls": 552
+            }
+          ],
+          "result": [
+            {
+              "operation": "get_item",
+              "result": "success",
+              "calls": 1104
+            },
+            {
+              "operation": "query",
+              "result": "success",
+              "calls": 552
+            },
+            {
+              "operation": "transact_write_items",
+              "result": "success",
+              "calls": 552
+            }
+          ]
+        },
+        "sampleBoundary": "first 10tps sample to last 100tps sample; startup and external verification excluded",
+        "readsPerRequest": 8.634057971014492,
+        "successfulWritesPerRequest": 5.0
+      },
+      "observations": {
+        "sampledMaxActiveCleanup": 1.0,
+        "sampledMaxSqlConnectionsPending": 0.0,
+        "sampledMaxSqlConnectionsActive": 1.0,
+        "sqlConnectionTimeouts": 0.0,
+        "cleanupDurationCount": 552.0,
+        "meanCleanupSecondsIncludingClaim": 0.04158673586956522,
+        "cleanupEventsAtEnd": [
+          {
+            "labels": {
+              "application": "delivery-result-worker",
+              "outcome": "compacted"
+            },
+            "count": 552.0
+          }
+        ],
+        "resultWorkerMeanDynamoMillis": {
+          "get_item": 6.1270844483695655,
+          "query": 6.368807371376811,
+          "transact_write_items": 13.687385324275363
+        }
+      },
+      "sampleWithCustomerCompleteButCleanupPending": {
+        "time": 1790327846.133621,
+        "history": 552,
+        "notified": 552,
+        "cleaned": 211,
+        "kafkaLag": {
+          "delivery.requested.v1": 0,
+          "delivery.dispatch-requested.v1": 0,
+          "delivery.receipt-received.v1": 0,
+          "delivery.finalized.v1": 0
+        },
+        "providerCalls": 552.0,
+        "redisDue": 0,
+        "collectionSeconds": 0.9342203330015764
+      },
+      "cleanup": {
+        "ownedProcessesStopped": true,
+        "composeProject": "full-flow-2b04503e20b8",
+        "containersStopped": true,
+        "volumesRetained": true
+      }
+    },
+    {
+      "directory": ".poc-results/full-flow-30f9055cab1c",
+      "environment": {
+        "runId": "full-flow-30f9055cab1c",
+        "ports": {
+          "kafka": 51358,
+          "redis": 51359,
+          "postgres": 51360,
+          "dynamo": 51361,
+          "tcp": 51362,
+          "provider": 51363,
+          "receipt": 51364,
+          "ingress": 51365,
+          "api": 51366,
+          "dispatch": 51367,
+          "result": 51368,
+          "provider_metrics": 51369,
+          "receipt_metrics": 51370,
+          "ingress_metrics": 51371,
+          "api_metrics": 51372,
+          "dispatch_metrics": 51373,
+          "result_metrics": 51374
+        },
+        "gitCommit": "bcfa150356efb21b768291c391a2e423a9d4bbee",
+        "workingTreeDirty": true,
+        "jarSha256": {
+          "provider": "2c32cccc284b31a8c83dd1b27594146540c66de7e4cf159510cfd947900b4ae9",
+          "receipt": "2c9f0a48a73a5847690ca54754322d78dba1069be35abf385fe6043940bca812",
+          "ingress": "908c043760e8cc44a44fed241d6981df552f63a258682632bb46cee03de3fd48",
+          "api": "41335a64611edfd7bfcd6958c4c8e323e4cd77bcdf66580d9268fbf6277fab58",
+          "dispatch": "e217c2f69167c004fbfd4514cd135326772e58f6ff2d9a08c3cf274be353c9da",
+          "result": "23496c28bd4fcf26c6df281bce7b65ab80438b40892e9d7879b797fc8d8bc244"
+        },
+        "harnessSha256": "517334f056f2897337b67b80906c2df711252fbcca1fc56e3848d140d6ada5cf",
+        "primaryTtlSeconds": 10800,
+        "secondaryTtlSeconds": 14400,
+        "recoveryPollMillis": 600000,
+        "infraStartup": "compose create -> docker start init -> wait init exit 0 -> start services -> healthcheck",
+        "productionRecoveryPollMillis": 600000,
+        "providerDeduplicate": false,
+        "scope": "short normal primary-success full-flow load; not sustained capacity/HA proof",
+        "lifecyclePollMillis": 1000,
+        "workerConcurrency": 3,
+        "k6": "k6 v1.8.1 (commit/73b044f9f9, go1.26.5, darwin/arm64)",
+        "cleanupConcurrency": 4,
+        "cleanupBatchSize": 20,
+        "rates": [
+          10,
+          100
+        ],
+        "secondsPerPhase": 5,
+        "loadHarnessSha256": "25eb871711652726dac4bf6b241d0368e1ddb5a39e859250ffcabc4c01ab5887",
+        "loadScriptSha256": "54af50203c2e90d4c0bafee0398364a6d164fd744812396c12ffbd2959240a54"
+      },
+      "phases": [
+        {
+          "rate": 10,
+          "inputSeconds": 5,
+          "requests": 50,
+          "apiLatencyMillis": {
+            "p(99)": 1195.50912,
+            "avg": 188.3166399999999,
+            "min": 13.726,
+            "med": 27.604,
+            "max": 1241.967,
+            "p(50)": 27.604,
+            "p(95)": 1000.2568499999998
+          },
+          "latencyFromClientStartMillis": {
+            "providerResult": {
+              "p50": 891.4345502853394,
+              "p95": 2547.057604789734,
+              "p99": 2657.3761439323425,
+              "max": 2706.0909271240234
+            },
+            "finalized": {
+              "p50": 1501.776933670044,
+              "p95": 3418.1342244148254,
+              "p99": 3647.7745532989497,
+              "max": 3708.388090133667
+            },
+            "sqlStored": {
+              "p50": 1687.7548694610596,
+              "p95": 3502.950477600097,
+              "p99": 3758.7883234024043,
+              "max": 3824.583053588867
+            },
+            "customerReceived": {
+              "p50": 1799.6283769607544,
+              "p95": 3609.6376299858093,
+              "p99": 3839.652619361877,
+              "max": 3947.3109245300293
+            },
+            "cleanup": {
+              "p50": 2581.6439390182495,
+              "p95": 4630.59891462326,
+              "p99": 4878.687634468079,
+              "max": 4942.3229694366455
+            }
+          },
+          "inputAndDrainSeconds": 6.408282166928984,
+          "completionTpsIncludingDrain": 7.802402999361263,
+          "maxKafkaLag": {
+            "delivery.requested.v1": 1,
+            "delivery.dispatch-requested.v1": 22,
+            "delivery.receipt-received.v1": 0,
+            "delivery.finalized.v1": 0
+          },
+          "maxRedisDue": 29,
+          "allRequestsReconciled": true,
+          "providerCallsExactlyOnce": true,
+          "originAndStepsAbsent": true,
+          "sampleCount": 3,
+          "baselineCounts": {
+            "time": 1790327963.576303,
+            "history": 0,
+            "notified": 0,
+            "cleaned": 0,
+            "kafkaLag": {
+              "delivery.requested.v1": 0,
+              "delivery.dispatch-requested.v1": 0,
+              "delivery.receipt-received.v1": 0,
+              "delivery.finalized.v1": 0
+            },
+            "providerCalls": 0.0,
+            "redisDue": 0,
+            "collectionSeconds": 1.2824104590108618
+          },
+          "finalCounts": {
+            "time": 1790327969.960052,
+            "history": 50,
+            "notified": 50,
+            "cleaned": 50,
+            "kafkaLag": {
+              "delivery.requested.v1": 0,
+              "delivery.dispatch-requested.v1": 0,
+              "delivery.receipt-received.v1": 0,
+              "delivery.finalized.v1": 0
+            },
+            "providerCalls": 50.0,
+            "redisDue": 0,
+            "collectionSeconds": 1.0967918339883909
+          }
+        },
+        {
+          "rate": 100,
+          "inputSeconds": 5,
+          "requests": 501,
+          "apiLatencyMillis": {
+            "avg": 18.41353892215569,
+            "min": 6.003,
+            "med": 16.887,
+            "max": 78.517,
+            "p(50)": 16.887,
+            "p(95)": 32.467,
+            "p(99)": 59.326
+          },
+          "latencyFromClientStartMillis": {
+            "providerResult": {
+              "p50": 10018.77498626709,
+              "p95": 17333.360195159912,
+              "p99": 17553.08985710144,
+              "max": 17736.518144607544
+            },
+            "finalized": {
+              "p50": 11154.321908950806,
+              "p95": 18519.413948059082,
+              "p99": 18745.054006576538,
+              "max": 18763.959169387817
+            },
+            "sqlStored": {
+              "p50": 11234.457969665527,
+              "p95": 18565.39821624756,
+              "p99": 18768.874883651733,
+              "max": 18790.940046310425
+            },
+            "customerReceived": {
+              "p50": 11275.542974472046,
+              "p95": 18649.224996566772,
+              "p99": 18817.568063735962,
+              "max": 18868.003129959106
+            },
+            "cleanup": {
+              "p50": 12855.906963348389,
+              "p95": 20268.502950668335,
+              "p99": 21961.8980884552,
+              "max": 22160.094022750854
+            }
+          },
+          "inputAndDrainSeconds": 27.206870750058442,
+          "completionTpsIncludingDrain": 18.4144661325641,
+          "maxKafkaLag": {
+            "delivery.requested.v1": 264,
+            "delivery.dispatch-requested.v1": 325,
+            "delivery.receipt-received.v1": 75,
+            "delivery.finalized.v1": 1
+          },
+          "maxRedisDue": 352,
+          "allRequestsReconciled": true,
+          "providerCallsExactlyOnce": true,
+          "originAndStepsAbsent": true,
+          "sampleCount": 9,
+          "baselineCounts": {
+            "time": 1790327971.507346,
+            "history": 50,
+            "notified": 50,
+            "cleaned": 50,
+            "kafkaLag": {
+              "delivery.requested.v1": 0,
+              "delivery.dispatch-requested.v1": 0,
+              "delivery.receipt-received.v1": 0,
+              "delivery.finalized.v1": 0
+            },
+            "providerCalls": 50.0,
+            "redisDue": 0,
+            "collectionSeconds": 0.87412462499924
+          },
+          "finalCounts": {
+            "time": 1790327999.2891278,
+            "history": 551,
+            "notified": 551,
+            "cleaned": 551,
+            "kafkaLag": {
+              "delivery.requested.v1": 0,
+              "delivery.dispatch-requested.v1": 0,
+              "delivery.receipt-received.v1": 0,
+              "delivery.finalized.v1": 0
+            },
+            "providerCalls": 551.0,
+            "redisDue": 0,
+            "collectionSeconds": 0.8647600000258535
+          }
+        }
+      ],
+      "businessDynamoApiCalls": {
+        "requests": 551,
+        "readCalls": 4736,
+        "successfulWriteCalls": 2755,
+        "failedTransactionCalls": 68,
+        "byApplication": {
+          "ingress": [
+            {
+              "operation": "create_table",
+              "result": "success",
+              "calls": 0
+            },
+            {
+              "operation": "describe_table",
+              "result": "failure",
+              "calls": 0
+            },
+            {
+              "operation": "describe_table",
+              "result": "success",
+              "calls": 0
+            },
+            {
+              "operation": "put_item",
+              "result": "success",
+              "calls": 551
+            }
+          ],
+          "dispatch": [
+            {
+              "operation": "describe_table",
+              "result": "success",
+              "calls": 0
+            },
+            {
+              "operation": "get_item",
+              "result": "success",
+              "calls": 2303
+            },
+            {
+              "operation": "query",
+              "result": "success",
+              "calls": 780
+            },
+            {
+              "operation": "transact_write_items",
+              "result": "failure",
+              "calls": 68
+            },
+            {
+              "operation": "transact_write_items",
+              "result": "success",
+              "calls": 1102
+            },
+            {
+              "operation": "update_item",
+              "result": "success",
+              "calls": 551
+            }
+          ],
+          "result": [
+            {
+              "operation": "get_item",
+              "result": "success",
+              "calls": 1102
+            },
+            {
+              "operation": "query",
+              "result": "success",
+              "calls": 551
+            },
+            {
+              "operation": "transact_write_items",
+              "result": "success",
+              "calls": 551
+            }
+          ]
+        },
+        "sampleBoundary": "first 10tps sample to last 100tps sample; startup and external verification excluded",
+        "readsPerRequest": 8.595281306715064,
+        "successfulWritesPerRequest": 5.0
+      },
+      "observations": {
+        "sampledMaxActiveCleanup": 4.0,
+        "sampledMaxSqlConnectionsPending": 0.0,
+        "sampledMaxSqlConnectionsActive": 2.0,
+        "sqlConnectionTimeouts": 0.0,
+        "cleanupDurationCount": 551.0,
+        "meanCleanupSecondsIncludingClaim": 0.12095136596733214,
+        "cleanupEventsAtEnd": [
+          {
+            "labels": {
+              "application": "delivery-result-worker",
+              "outcome": "compacted"
+            },
+            "count": 551.0
+          }
+        ],
+        "resultWorkerMeanDynamoMillis": {
+          "get_item": 18.426225827586205,
+          "query": 16.28342443738657,
+          "transact_write_items": 54.038039232304904
+        }
+      },
+      "sampleWithCustomerCompleteButCleanupPending": {
+        "time": 1790327995.8631911,
+        "history": 551,
+        "notified": 551,
+        "cleaned": 451,
+        "kafkaLag": {
+          "delivery.requested.v1": 0,
+          "delivery.dispatch-requested.v1": 0,
+          "delivery.receipt-received.v1": 0,
+          "delivery.finalized.v1": 0
+        },
+        "providerCalls": 551.0,
+        "redisDue": 0,
+        "collectionSeconds": 0.8352986669633538
+      },
+      "cleanup": {
+        "ownedProcessesStopped": true,
+        "composeProject": "full-flow-30f9055cab1c",
+        "containersStopped": true,
+        "volumesRetained": true
+      }
+    }
+  ],
+  "sourceSha256": {
+    "delivery-result-worker/src/main/java/event/delivery/result/cleanup/CleanupWorker.java": "2dec1d91c82cdcf098c2becc479aa7ac13ed8fa788c177c441944802e787ce4d",
+    "delivery-result-worker/src/main/java/event/delivery/result/cleanup/CleanupRepository.java": "8a8e8db0304876c8bd7b847b9c582c65d2d43fdaf4c04122cb618e14142425b4",
+    "delivery-result-worker/src/main/java/event/delivery/result/cleanup/CleanupConfiguration.java": "7fb7b8a744f3166c4bd5c926c1c4da3d2fc663274cb1b2b9c8ac1b7f25ca16b7",
+    "delivery-result-worker/src/main/resources/application.yml": "301f8c23215246e9ffcab1e4fcc8127d17aa6603090ffd126e2d15fd8c148135",
+    "delivery-result-worker/src/test/java/event/delivery/result/cleanup/CleanupWorkerTest.java": "8d8714b27278df34faba965aba783e5cb21a4ff12f747bd0058af9d0e681cb51",
+    "delivery-result-worker/src/test/java/event/delivery/result/CleanupPostgresDynamoDbTest.java": "2a25de112f06567907d3e7043cc1ef3a4068bb8bb15bb68390895aa01f184c54",
+    "scripts/poc/full_flow_load.py": "25eb871711652726dac4bf6b241d0368e1ddb5a39e859250ffcabc4c01ab5887",
+    "scripts/poc/full_flow.py": "517334f056f2897337b67b80906c2df711252fbcca1fc56e3848d140d6ada5cf",
+    "scripts/poc/load.js": "54af50203c2e90d4c0bafee0398364a6d164fd744812396c12ffbd2959240a54"
+  },
+  "limitations": [
+    "10/100 TPS for 5 seconds each, single run per configuration; not sustained capacity or HA proof.",
+    "No isolated claim that all differences are due to concurrency: local contention and warm-up vary.",
+    "DynamoDB Local API counters are not AWS RCU/WCU or costs. Failed transactions counted separately.",
+    "Gauge maxima are sampled and may miss short SQL connection waits.",
+    "Three Kafka environment-dependent unit/integration cases were skipped; full-flow tests use real Kafka.",
+    "Each owned environment used the documented Created-state Docker start retry; root cause unconfirmed."
+  ]
+}

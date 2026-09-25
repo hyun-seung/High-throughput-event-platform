@@ -3,6 +3,7 @@ package event.delivery.result.cleanup;
 import event.common.lifecycle.DeliveryCompactor;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -20,7 +21,8 @@ public class CleanupConfiguration {
     }
     @Bean CleanupRepository cleanupRepository(JdbcTemplate jdbc, PlatformTransactionManager manager) { return new CleanupRepository(jdbc, manager); }
     @Bean DeliveryCompactor deliveryCompactor(DynamoDbClient db, event.common.redis.DeliveryCache cache) { return new DeliveryCompactor(db, cache); }
-    @Bean CleanupWorker cleanupWorker(CleanupRepository repository, DeliveryCompactor compactor, MeterRegistry meters) {
-        return new CleanupWorker(repository, compactor, meters);
+    @Bean CleanupWorker cleanupWorker(CleanupRepository repository, DeliveryCompactor compactor, MeterRegistry meters,
+            @Value("${cleanup.concurrency:4}") int concurrency, @Value("${cleanup.batch-size:20}") int batchSize) {
+        return new CleanupWorker(repository, compactor, meters, concurrency, batchSize);
     }
 }

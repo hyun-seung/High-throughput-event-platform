@@ -71,6 +71,7 @@ class LoadRun(FullFlow):
 
     def application_overrides(self):
         return {'INGRESS_CONCURRENCY': '3', 'DISPATCH_CONCURRENCY': '3', 'RESULT_CONCURRENCY': '3',
+                'DELIVERY_CLEANUP_CONCURRENCY': str(self.args.cleanup_concurrency), 'DELIVERY_CLEANUP_BATCH_SIZE': '20',
                 'DISPATCH_PRIMARY_TTL': '3h', 'SECONDARY_TTL': '4h',
                 'DISPATCH_LIFECYCLE_RECOVERY_POLL_MS': '600000',
                 'DISPATCH_LIFECYCLE_POLL_MS': str(self.args.lifecycle_poll_ms)}
@@ -85,6 +86,7 @@ class LoadRun(FullFlow):
         env = json.loads((self.directory / 'environment.json').read_text())
         env.update({'primaryTtlSeconds': 10800, 'secondaryTtlSeconds': 14400, 'recoveryPollMillis': 600000,
                     'lifecyclePollMillis': self.args.lifecycle_poll_ms, 'workerConcurrency': 3, 'k6': version,
+                    'cleanupConcurrency': self.args.cleanup_concurrency, 'cleanupBatchSize': 20,
                     'rates': self.args.rates, 'secondsPerPhase': self.args.seconds,
                     'scope': 'short normal primary-success full-flow load; not sustained capacity/HA proof',
                     'loadHarnessSha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
@@ -203,10 +205,12 @@ def main():
     parser.add_argument('--seconds', type=int, default=5)
     parser.add_argument('--drain-timeout', type=int, default=300)
     parser.add_argument('--lifecycle-poll-ms', type=int, default=1000)
+    parser.add_argument('--cleanup-concurrency', type=int, default=4)
     args = parser.parse_args()
     if len(set(args.rates)) != len(args.rates) or not all(1 <= r <= 100 for r in args.rates) or not 1 <= args.seconds <= 30:
         parser.error('Distinct rates 1..100 TPS and seconds 1..30 required')
     if not 1 <= args.drain_timeout <= 600 or not 10 <= args.lifecycle_poll_ms <= 1000: parser.error('Invalid time limits')
+    if not 1 <= args.cleanup_concurrency <= 16: parser.error('Cleanup concurrency must be 1..16')
     run = LoadRun(args)
     print('EVIDENCE', run.directory, flush=True)
     try: run.initialize(); run.suite()
