@@ -5,6 +5,7 @@ import event.common.delivery.*;
 import event.common.lifecycle.*;
 import event.delivery.result.cleanup.*;
 import event.delivery.result.notification.*;
+import event.delivery.result.operations.DeliveryOperations;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.*;
@@ -19,6 +20,9 @@ import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import tools.jackson.databind.json.JsonMapper;
 import java.net.URI;
 import java.time.Duration;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.*;
 import java.util.concurrent.*;
 import static event.common.dynamodb.DynamoDbTableNames.*;
@@ -108,6 +112,132 @@ class CleanupPostgresDynamoDbTest {
     Map<String, AttributeValue> origin(DeliveryFinalized e) {
         return db.getItem(r -> r.tableName(tableForKey(DeliveryCompletion.metaKey(e.requestKey()))).key(DeliveryCompletion.metaKey(e.requestKey())).consistentRead(true)).item();
     }
+    DeliveryOperations operations(Instant now) { return new DeliveryOperations(jdbc, db, Clock.fixed(now, ZoneOffset.UTC)); }
+    void activeStep(DeliveryFinalized e, String state, Instant deadline, Instant lease) {
+        db.updateItem(r -> r.tableName(ORIGIN).key(DeliveryCompletion.metaKey(e.requestKey()))
+                .updateExpression("REMOVE completion_event_id"));
+        db.updateItem(r -> r.tableName(STEP).key(key(e, "ATTEMPT#" + e.attemptId()))
+                .updateExpression("SET #status=:state, deadline_at=:deadline, lease_until=:lease, review_reason=:reason, provider=:provider, route_order=:route "
+                        + "REMOVE lifecycle_closed,result_event,publish_state")
+                .expressionAttributeNames(Map.of("#status", "status"))
+                .expressionAttributeValues(Map.of(":state", s(state), ":deadline", AttributeValue.fromN(Long.toString(deadline.toEpochMilli())),
+                        ":lease", AttributeValue.fromN(Long.toString(lease.toEpochMilli())), ":reason", s("LEASE_EXPIRED_WITHOUT_RESULT"),
+                        ":provider", s("test-provider"), ":route", AttributeValue.fromN("1"))));
+    }
+
+    @Test void exhaustedOperationsAreTenantScopedPagedAndDoNotResetAttempts() {
+        jdbc.update("INSERT INTO customer_notification_lane(tenant_id) VALUES (42),(43)");
+        for (int i = 0; i < 4; i++) jdbc.update("INSERT INTO customer_notification_batch(batch_id,tenant_id,destination_url,request_body,item_count,status,attempt_count,last_error) "
+                        + "VALUES (?,?,?, ?,1,'EXHAUSTED',21,'HTTP_503')", UUID.randomUUID(), i == 3 ? 43L : 42L, "http://private-customer", "private-request-body");
+        var before = jdbc.queryForList("SELECT * FROM customer_notification_batch ORDER BY batch_id");
+        var operations = new DeliveryOperations(jdbc, null, Clock.systemUTC());
+        var first = operations.exhausted(42, null, 2); assertEquals(2, first.records().size()); assertTrue(first.hasMore());
+        var second = operations.exhausted(42, first.nextAfterId(), 2); assertEquals(1, second.records().size()); assertFalse(second.hasMore());
+        assertNotEquals(first.records().getFirst().batchId(), second.records().getFirst().batchId());
+        assertEquals(21, second.records().getFirst().attempts()); assertEquals("HTTP_503", second.records().getFirst().lastError());
+        String json = JsonMapper.builder().build().writeValueAsString(first);
+        assertFalse(json.contains("private-request-body")); assertFalse(json.contains("private-customer"));
+        assertEquals(before, jdbc.queryForList("SELECT * FROM customer_notification_batch ORDER BY batch_id"));
+        assertThrows(IllegalArgumentException.class, () -> operations.exhausted(42, null, 101));
+    }
+
+    @Test void cleanupOperationsDistinguishDueBackoffLeaseAndMissingNotificationWithoutClaiming() {
+        var due = seedModern(UUID.randomUUID().toString()); store.save(due);
+        var backoff = seedModern(UUID.randomUUID().toString()); store.save(backoff);
+        var leased = seedModern(UUID.randomUUID().toString()); store.save(leased);
+        var expired = seedModern(UUID.randomUUID().toString()); store.save(expired);
+        var missing = seedModern(UUID.randomUUID().toString()); store.save(missing);
+        jdbc.update("UPDATE delivery_cleanup_outbox SET next_attempt_at=clock_timestamp()+interval '10 minutes' WHERE result_event_id=?", UUID.fromString(backoff.eventId()));
+        jdbc.update("UPDATE delivery_cleanup_outbox SET lease_token=?,lease_until=clock_timestamp()+interval '10 minutes' WHERE result_event_id=?", UUID.randomUUID(), UUID.fromString(leased.eventId()));
+        jdbc.update("UPDATE delivery_cleanup_outbox SET lease_token=?,lease_until=clock_timestamp()-interval '10 minutes' WHERE result_event_id=?", UUID.randomUUID(), UUID.fromString(expired.eventId()));
+        jdbc.update("DELETE FROM customer_notification_outbox WHERE result_event_id=?", UUID.fromString(missing.eventId()));
+        var before = jdbc.queryForList("SELECT * FROM delivery_cleanup_outbox ORDER BY result_event_id");
+        var operations = operations(Instant.now().plusSeconds(1));
+        var first = operations.cleanup(42, null, 2); var second = operations.cleanup(42, first.nextAfterId(), 100);
+        var rows = new ArrayList<>(first.records()); rows.addAll(second.records()); assertEquals(5, rows.size());
+        var states = new HashMap<UUID, String>(); rows.forEach(row -> states.put(row.resultEventId(), row.attention()));
+        assertEquals("DUE", states.get(UUID.fromString(due.eventId()))); assertEquals("BACKOFF", states.get(UUID.fromString(backoff.eventId())));
+        assertEquals("LEASED", states.get(UUID.fromString(leased.eventId()))); assertEquals("LEASE_EXPIRED", states.get(UUID.fromString(expired.eventId())));
+        assertEquals("MISSING_NOTIFICATION", states.get(UUID.fromString(missing.eventId())));
+        assertTrue(operations.cleanup(43, null, 100).records().isEmpty());
+        assertEquals(before, jdbc.queryForList("SELECT * FROM delivery_cleanup_outbox ORDER BY result_event_id"));
+    }
+
+    @Test void requestOperationsObserveUnconfirmedLeaseWithoutWritingOrExposingPayload() {
+        var e = seedModern(UUID.randomUUID().toString()); Instant now = Instant.now();
+        activeStep(e, "PROCESSING", now.plusSeconds(3600), now.minusSeconds(10));
+        var beforeOrigin = origin(e);
+        var beforeStep = db.getItem(r -> r.tableName(STEP).key(key(e, "ATTEMPT#" + e.attemptId())).consistentRead(true)).item();
+        var view = operations(now).request(42, e.requestKey());
+        assertEquals("ACTIVE", view.active().observation()); assertEquals(e.deliveryId(), view.active().executionId());
+        assertEquals("RESULT_UNCONFIRMED", view.active().attempts().getFirst().attention());
+        assertEquals("PROCESSING", view.active().attempts().getFirst().state()); assertTrue(view.recentHistory().isEmpty());
+        assertFalse(JsonMapper.builder().build().writeValueAsString(view).contains("payload"));
+        assertEquals(beforeOrigin, origin(e));
+        assertEquals(beforeStep, db.getItem(r -> r.tableName(STEP).key(key(e, "ATTEMPT#" + e.attemptId())).consistentRead(true)).item());
+    }
+
+    @Test void requestOperationsKeepReviewAndExpiryAsObservationsInsteadOfFinalResults() {
+        var e = seedModern(UUID.randomUUID().toString()); Instant now = Instant.now();
+        activeStep(e, "REVIEW_REQUIRED", now.plusSeconds(3600), now.minusSeconds(10));
+        var operations = operations(now);
+        assertEquals("REVIEW_REQUIRED", operations.request(42, e.requestKey()).active().attempts().getFirst().attention());
+        activeStep(e, "REVIEW_REQUIRED", now.minusSeconds(1), now.minusSeconds(10));
+        var expired = operations.request(42, e.requestKey());
+        assertEquals("EXPIRY_DUE", expired.active().attempts().getFirst().attention());
+        assertEquals("REVIEW_REQUIRED", expired.active().attempts().getFirst().state()); assertTrue(expired.recentHistory().isEmpty());
+    }
+
+    @Test void requestOperationsFindCommittedHistoryAfterNormalDynamoCleanup() {
+        var e = seedModern(UUID.randomUUID().toString()); store.save(e); worker(repository).tick();
+        var view = operations(Instant.now()).request(42, e.requestKey());
+        assertEquals("NO_ACTIVE_ORIGIN", view.active().observation()); assertEquals(1, view.recentHistory().size());
+        assertEquals("DELIVERED", view.recentHistory().getFirst().outcome()); assertEquals("DONE", view.recentHistory().getFirst().cleanupState());
+        assertEquals("PENDING", view.recentHistory().getFirst().notificationState());
+        assertTrue(operations(Instant.now()).cleanup(42, null, 10).records().isEmpty());
+        var absent = operations(Instant.now()).request(42, UUID.randomUUID().toString());
+        assertEquals("NO_ACTIVE_ORIGIN", absent.active().observation()); assertTrue(absent.recentHistory().isEmpty());
+    }
+
+    @Test void requestOperationsSeparateGenerationsAndHideOtherTenants() {
+        String requestKey = UUID.randomUUID().toString(); var first = seedModern(requestKey); store.save(first);
+        var current = seedModern(requestKey); store.save(current);
+        var view = operations(Instant.now()).request(42, requestKey);
+        assertEquals(current.deliveryId(), view.active().executionId()); assertEquals(2, view.recentHistory().size());
+        assertEquals(current.attemptId(), view.active().attempts().getFirst().attemptId());
+        var other = operations(Instant.now()).request(43, requestKey);
+        assertEquals("NO_ACTIVE_ORIGIN", other.active().observation()); assertNull(other.active().executionId()); assertTrue(other.recentHistory().isEmpty());
+    }
+
+    @Test void requestOperationsDiscardAttemptSnapshotWhenOriginChangesDuringRead() {
+        var e = seedModern(UUID.randomUUID().toString());
+        var observing = mock(DynamoDbClient.class); var calls = new java.util.concurrent.atomic.AtomicInteger();
+        doAnswer(invocation -> {
+            if (calls.incrementAndGet() == 2) db.updateItem(r -> r.tableName(ORIGIN).key(DeliveryCompletion.metaKey(e.requestKey()))
+                    .updateExpression("SET delivery_id=:next").expressionAttributeValues(Map.of(":next", s(UUID.randomUUID().toString()))));
+            return db.getItem((java.util.function.Consumer<software.amazon.awssdk.services.dynamodb.model.GetItemRequest.Builder>) invocation.getArgument(0));
+        }).when(observing).getItem(any(java.util.function.Consumer.class));
+        doAnswer(invocation -> db.query((java.util.function.Consumer<software.amazon.awssdk.services.dynamodb.model.QueryRequest.Builder>) invocation.getArgument(0)))
+                .when(observing).query(any(java.util.function.Consumer.class));
+        var view = new DeliveryOperations(jdbc, observing, Clock.systemUTC()).request(42, e.requestKey());
+        assertEquals("CHANGED_DURING_READ", view.active().observation()); assertNull(view.active().executionId()); assertTrue(view.active().attempts().isEmpty());
+    }
+
+    @Test void failedStorageLookupNeverBecomesAnEmptySuccessfulObservation() {
+        var e = seedModern(UUID.randomUUID().toString()); store.save(e);
+        var unavailable = mock(DynamoDbClient.class);
+        doThrow(new IllegalStateException("DynamoDB unavailable")).when(unavailable).getItem(any(java.util.function.Consumer.class));
+        assertThrows(IllegalStateException.class, () -> new DeliveryOperations(jdbc, unavailable, Clock.systemUTC()).request(42, e.requestKey()));
+        var failedSql = new JdbcTemplate(pool) {
+            @Override public <T> List<T> query(String query, org.springframework.jdbc.core.RowMapper<T> mapper, Object... args) {
+                throw new org.springframework.dao.DataAccessResourceFailureException("SQL unavailable");
+            }
+        };
+        var untouched = mock(DynamoDbClient.class);
+        assertThrows(org.springframework.dao.DataAccessResourceFailureException.class, () -> new DeliveryOperations(failedSql, untouched, Clock.systemUTC()).request(42, e.requestKey()));
+        verifyNoInteractions(untouched);
+    }
+
     @Test void modernCleanupRequiresSqlThenDeletesOriginAndStepWithoutPermanentMarker() {
         var e = seedModern(UUID.randomUUID().toString());
         worker(repository).tick(); assertTrue(origin(e).containsKey("payload"));
