@@ -23,7 +23,12 @@ from evidence import java_id
 
 ROOT = Path(__file__).resolve().parents[2]
 HTTP = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-TABLE = 'delivery_state'
+TABLE = 'STEP'
+ORIGIN = 'ORIGIN'
+
+def table_for_key(pk, sk):
+    return ORIGIN if pk.startswith('DELIVERY#') and sk == 'META' else TABLE
+
 
 
 def request(url):
@@ -70,7 +75,7 @@ class Run:
         self.created_topics = []
 
     def initialize(self):
-        self.db.describe_table(TableName=TABLE)  # existing local infrastructure only
+        for table in (ORIGIN, TABLE): self.db.describe_table(TableName=table)  # existing local infrastructure only
         # Reserve distinct ephemeral ports during allocation; child bind failures abort the run.
         sockets = []
         try:
@@ -149,7 +154,7 @@ class Run:
                  'deliveryType': 'SMS', 'payload': payload or {}, 'occurredAt': now,
                  'correlationId': delivery, 'causationId': java_id(f'event:{delivery}:DELIVERY_REQUESTED:v1'),
                  'fallbackAllowed': fallback}
-        self.db.put_item(TableName=TABLE, Item={'pk': {'S': 'DELIVERY#' + delivery}, 'sk': {'S': 'META'},
+        self.db.put_item(TableName=ORIGIN, Item={'pk': {'S': 'DELIVERY#' + delivery}, 'sk': {'S': 'META'},
             'delivery_id': {'S': delivery}, 'tenant_id': {'N': '999'}, 'delivery_type': {'S': 'SMS'}, 'payload': {'S': json.dumps(event['payload'])},
             'occurred_at': {'S': now}, 'fallback_allowed': {'BOOL': fallback}}, ConditionExpression='attribute_not_exists(pk)')
         self.publish(event)
@@ -167,7 +172,7 @@ class Run:
         return java_id(f'attempt:{delivery}:{provider}:{route}:1')
 
     def read(self, pk, sk):
-        return self.db.get_item(TableName=TABLE, Key={'pk': {'S': pk}, 'sk': {'S': sk}}, ConsistentRead=True).get('Item', {})
+        return self.db.get_item(TableName=table_for_key(pk, sk), Key={'pk': {'S': pk}, 'sk': {'S': sk}}, ConsistentRead=True).get('Item', {})
 
     def state(self, delivery, route=1):
         self.alive()
@@ -298,7 +303,7 @@ class Run:
                     provider = 'mock-provider' if route == 1 else 'tcp-provider'
                     keys.append(('RECEIPT#' + java_id(f'receipt:{provider}:{receipt}'), 'META'))
             for pk, sk in keys:
-                try: self.db.delete_item(TableName=TABLE, Key={'pk': {'S': pk}, 'sk': {'S': sk}})
+                try: self.db.delete_item(TableName=table_for_key(pk, sk), Key={'pk': {'S': pk}, 'sk': {'S': sk}})
                 except Exception as failure: errors.append(type(failure).__name__)
         for operation, values in ((self.admin.delete_topics, self.created_topics),
                                   (self.admin.delete_consumer_groups, [self.group, self.receipt_group])):

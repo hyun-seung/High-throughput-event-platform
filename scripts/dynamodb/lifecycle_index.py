@@ -7,7 +7,7 @@ from urllib.parse import urlparse
 import boto3
 
 INDEX = 'lifecycle_due_v1'
-TABLE = 'delivery_state'
+TABLES = ('ORIGIN', 'STEP')
 
 
 def bucket(delivery):
@@ -31,63 +31,64 @@ def main():
         parser.error('Local DynamoDB only')
     db = boto3.client('dynamodb', endpoint_url=args.endpoint, region_name='ap-northeast-2',
                        aws_access_key_id='dummy', aws_secret_access_key='dummy')
-    indexes = db.describe_table(TableName=TABLE)['Table'].get('GlobalSecondaryIndexes', [])
-    exists = any(i['IndexName'] == INDEX for i in indexes)
-    print(json.dumps({'indexExists': exists, 'apply': args.apply, 'backfillIds': args.delivery_id}))
-    if not args.apply: return
-    if not exists:
-        db.update_table(TableName=TABLE, AttributeDefinitions=[
-            {'AttributeName': 'lifecycle_bucket', 'AttributeType': 'S'}, {'AttributeName': 'lifecycle_due', 'AttributeType': 'N'}],
-            GlobalSecondaryIndexUpdates=[{'Create': {'IndexName': INDEX, 'KeySchema': [
-                {'AttributeName': 'lifecycle_bucket', 'KeyType': 'HASH'}, {'AttributeName': 'lifecycle_due', 'KeyType': 'RANGE'}],
-                'Projection': {'ProjectionType': 'KEYS_ONLY'}}}])
-    until = time.monotonic() + 60
-    while time.monotonic() < until:
-        indexes = db.describe_table(TableName=TABLE)['Table'].get('GlobalSecondaryIndexes', [])
-        if any(i['IndexName'] == INDEX and i['IndexStatus'] == 'ACTIVE' for i in indexes): break
-        time.sleep(.5)
-    else: raise RuntimeError('Index not ACTIVE; retain existing state and retry later')
-    import uuid
-    for delivery in args.delivery_id:
-        if str(uuid.UUID(delivery)) != delivery: raise ValueError('Expected canonical UUID')
-        items, cursor = [], {}
-        while True:
-            page = db.query(TableName=TABLE, KeyConditionExpression='pk = :pk',
-                ExpressionAttributeValues={':pk': {'S': 'DELIVERY#' + delivery}}, ConsistentRead=True,
-                **({'ExclusiveStartKey': cursor} if cursor else {}))
-            items += page['Items']; cursor = page.get('LastEvaluatedKey')
-            if not cursor: break
-        has_attempt = any(i['sk']['S'].startswith('ATTEMPT#') for i in items)
-        for item in items:
-            if 'lifecycle_bucket' in item or 'completion_event_id' in item: continue
-            if item.get('lifecycle_closed', {}).get('BOOL') and item.get('publish_state', {}).get('S') != 'PENDING': continue
-            sk = item['sk']['S']; condition = 'attribute_exists(pk) AND attribute_not_exists(lifecycle_bucket)'
-            names, values = {}, {':bucket': {'S': bucket(delivery)}}
-            if sk == 'META' and not has_attempt: due = 0
-            elif sk.startswith('ATTEMPT#') and item.get('publish_state', {}).get('S') == 'PENDING':
-                due = 0
-                condition += ' AND publish_state = :pending AND result_event = :event AND #version = :version'
-                names = {'#version': 'version'}
-                values.update({':pending': {'S': 'PENDING'}, ':event': item['result_event'], ':version': item['version']})
-            elif sk.startswith('ATTEMPT#'):
-                state = item['status']['S']
-                if state not in ('DELIVERED', 'DECISION_PENDING', 'RETRY_SCHEDULED', 'PROCESSING', 'ACCEPTED', 'REVIEW_REQUIRED'):
-                    raise ValueError('Unrecognized Attempt state; manual review required')
-                due = 0 if state in ('DELIVERED', 'DECISION_PENDING') else int(item.get('next_attempt_at', item.get('deadline_at', item.get('primary_deadline')))['N'])
-                condition += ' AND #version = :version AND #state = :state AND attribute_not_exists(lifecycle_closed)'
-                names = {'#version': 'version', '#state': 'status'}
-                values.update({':version': item['version'], ':state': item['status']})
-            elif sk == 'FINAL' and item.get('publish_state', {}).get('S') == 'PENDING':
-                due = 0
-                condition += ' AND publish_state = :pending AND result_event = :event'
-                values.update({':pending': {'S': 'PENDING'}, ':event': item['result_event']})
-            else: continue
-            values[':due'] = {'N': str(due)}
-            db.update_item(TableName=TABLE, Key={k: item[k] for k in ('pk', 'sk')},
-                UpdateExpression='SET lifecycle_bucket = :bucket, lifecycle_due = :due',
-                ConditionExpression=condition, ExpressionAttributeValues=values,
-                **({'ExpressionAttributeNames': names} if names else {}))
-        print('backfilled', delivery)
+    for table in TABLES:
+        indexes = db.describe_table(TableName=table)['Table'].get('GlobalSecondaryIndexes', [])
+        exists = any(i['IndexName'] == INDEX for i in indexes)
+        print(json.dumps({'table': table, 'indexExists': exists, 'apply': args.apply, 'backfillIds': args.delivery_id}))
+        if not args.apply: continue
+        if not exists:
+            db.update_table(TableName=table, AttributeDefinitions=[
+                {'AttributeName': 'lifecycle_bucket', 'AttributeType': 'S'}, {'AttributeName': 'lifecycle_due', 'AttributeType': 'N'}],
+                GlobalSecondaryIndexUpdates=[{'Create': {'IndexName': INDEX, 'KeySchema': [
+                    {'AttributeName': 'lifecycle_bucket', 'KeyType': 'HASH'}, {'AttributeName': 'lifecycle_due', 'KeyType': 'RANGE'}],
+                    'Projection': {'ProjectionType': 'KEYS_ONLY'}}}])
+        until = time.monotonic() + 60
+        while time.monotonic() < until:
+            indexes = db.describe_table(TableName=table)['Table'].get('GlobalSecondaryIndexes', [])
+            if any(i['IndexName'] == INDEX and i['IndexStatus'] == 'ACTIVE' for i in indexes): break
+            time.sleep(.5)
+        else: raise RuntimeError('Index not ACTIVE; retain existing state and retry later')
+        import uuid
+        for delivery in args.delivery_id:
+            if str(uuid.UUID(delivery)) != delivery: raise ValueError('Expected canonical UUID')
+            items, cursor = [], {}
+            while True:
+                page = db.query(TableName=table, KeyConditionExpression='pk = :pk',
+                    ExpressionAttributeValues={':pk': {'S': 'DELIVERY#' + delivery}}, ConsistentRead=True,
+                    **({'ExclusiveStartKey': cursor} if cursor else {}))
+                items += page['Items']; cursor = page.get('LastEvaluatedKey')
+                if not cursor: break
+            has_attempt = any(i['sk']['S'].startswith('ATTEMPT#') for i in items)
+            for item in items:
+                if 'lifecycle_bucket' in item or 'completion_event_id' in item: continue
+                if item.get('lifecycle_closed', {}).get('BOOL') and item.get('publish_state', {}).get('S') != 'PENDING': continue
+                sk = item['sk']['S']; condition = 'attribute_exists(pk) AND attribute_not_exists(lifecycle_bucket)'
+                names, values = {}, {':bucket': {'S': bucket(delivery)}}
+                if sk == 'META' and not has_attempt: due = 0
+                elif sk.startswith('ATTEMPT#') and item.get('publish_state', {}).get('S') == 'PENDING':
+                    due = 0
+                    condition += ' AND publish_state = :pending AND result_event = :event AND #version = :version'
+                    names = {'#version': 'version'}
+                    values.update({':pending': {'S': 'PENDING'}, ':event': item['result_event'], ':version': item['version']})
+                elif sk.startswith('ATTEMPT#'):
+                    state = item['status']['S']
+                    if state not in ('DELIVERED', 'DECISION_PENDING', 'RETRY_SCHEDULED', 'PROCESSING', 'ACCEPTED', 'REVIEW_REQUIRED'):
+                        raise ValueError('Unrecognized Attempt state; manual review required')
+                    due = 0 if state in ('DELIVERED', 'DECISION_PENDING') else int(item.get('next_attempt_at', item.get('deadline_at', item.get('primary_deadline')))['N'])
+                    condition += ' AND #version = :version AND #state = :state AND attribute_not_exists(lifecycle_closed)'
+                    names = {'#version': 'version', '#state': 'status'}
+                    values.update({':version': item['version'], ':state': item['status']})
+                elif sk == 'FINAL' and item.get('publish_state', {}).get('S') == 'PENDING':
+                    due = 0
+                    condition += ' AND publish_state = :pending AND result_event = :event'
+                    values.update({':pending': {'S': 'PENDING'}, ':event': item['result_event']})
+                else: continue
+                values[':due'] = {'N': str(due)}
+                db.update_item(TableName=table, Key={k: item[k] for k in ('pk', 'sk')},
+                    UpdateExpression='SET lifecycle_bucket = :bucket, lifecycle_due = :due',
+                    ConditionExpression=condition, ExpressionAttributeValues=values,
+                    **({'ExpressionAttributeNames': names} if names else {}))
+            print('backfilled', delivery)
 
 
 if __name__ == '__main__': main()

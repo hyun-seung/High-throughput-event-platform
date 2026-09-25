@@ -191,38 +191,27 @@ def read_items(endpoint, deliveries):
     client = boto3.client('dynamodb', endpoint_url=endpoint, region_name='ap-northeast-2',
                          aws_access_key_id='local', aws_secret_access_key='local',
                          config=Config(connect_timeout=3, read_timeout=5, retries={'max_attempts': 2}))
-    keys = [{'pk': {'S': 'DELIVERY#' + delivery}, 'sk': {'S': sk}}
-            for delivery in deliveries for sk in ('META', 'ATTEMPT#' + attempt_id(delivery))]
     items = {}
-    try:
+
+    def fetch(table, keys):
         for index in range(0, len(keys), 100):
-            pending = {'delivery_state': {'Keys': keys[index:index+100], 'ConsistentRead': True,
-                       'ProjectionExpression': 'pk,sk,#s,occurred_at,updated_at,attempt_id,delivery_id',
-                       'ExpressionAttributeNames': {'#s': 'status'}}}
+            pending = {table: {'Keys': keys[index:index+100], 'ConsistentRead': True,
+                              'ProjectionExpression': 'pk,sk,#s,occurred_at,updated_at,attempt_id,delivery_id',
+                              'ExpressionAttributeNames': {'#s': 'status'}}}
             for retry in range(6):
                 result = client.batch_get_item(RequestItems=pending)
-                for item in result['Responses'].get('delivery_state', []):
+                for item in result['Responses'].get(table, []):
                     items[(item['pk']['S'], item['sk']['S'])] = item
                 pending = result.get('UnprocessedKeys', {})
                 if not pending: break
                 time.sleep(min(2, 0.1 * 2 ** retry))
             else: raise RuntimeError('Unprocessed DB keys remain; reconciliation incomplete')
-        # v2 ORIGIN maps the stable request key to its current execution partition.
-        execution_keys = [{'pk': {'S': 'DELIVERY#' + item['delivery_id']['S']},
-                           'sk': {'S': 'ATTEMPT#' + attempt_id(item['delivery_id']['S'])}}
-                          for (pk, sk), item in list(items.items())
-                          if sk == 'META' and item.get('delivery_id', {}).get('S')
-                          and pk != 'DELIVERY#' + item['delivery_id']['S']]
-        for index in range(0, len(execution_keys), 100):
-            pending = {'delivery_state': {'Keys': execution_keys[index:index+100], 'ConsistentRead': True}}
-            for retry in range(6):
-                result = client.batch_get_item(RequestItems=pending)
-                for item in result['Responses'].get('delivery_state', []):
-                    items[(item['pk']['S'], item['sk']['S'])] = item
-                pending = result.get('UnprocessedKeys', {})
-                if not pending: break
-                time.sleep(min(2, 0.1 * 2 ** retry))
-            else: raise RuntimeError('Unprocessed execution keys remain')
+    try:
+        fetch('ORIGIN', [{'pk': {'S': 'DELIVERY#' + delivery}, 'sk': {'S': 'META'}} for delivery in deliveries])
+        executions = {items.get(('DELIVERY#' + delivery, 'META'), {}).get('delivery_id', {}).get('S', delivery)
+                      for delivery in deliveries}
+        fetch('STEP', [{'pk': {'S': 'DELIVERY#' + execution}, 'sk': {'S': 'ATTEMPT#' + attempt_id(execution)}}
+                       for execution in sorted(executions)])
     finally:
         client.close()
     return items

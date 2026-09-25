@@ -13,7 +13,7 @@ from urllib.error import HTTPError
 
 from confluent_kafka import Consumer, TopicPartition
 from confluent_kafka.admin import ConfigResource, ResourceType, NewTopic
-from receipt_flow import Run, ROOT, TABLE, request, wait_until, stop
+from receipt_flow import Run, ROOT, TABLE, ORIGIN, request, wait_until, stop
 
 
 class LifecycleRun(Run):
@@ -28,17 +28,18 @@ class LifecycleRun(Run):
     def extra_options(self, name):
         if name != 'dispatch': return []
         return ['--dispatch.lifecycle.enabled=true', '--dispatch.lifecycle.poll-ms=100',
-                '--dispatch.lifecycle.concurrency=2', '--dispatch.lifecycle.partitions=1',
+                '--dispatch.lifecycle.concurrency=2', '--dispatch.lifecycle.recovery-poll-ms=1000', '--dispatch.lifecycle.partitions=1',
                 '--dispatch.primary-ttl=2s', '--dispatch.secondary.ttl=3s',
                 '--dispatch.lifecycle.topic=' + self.finalized]
 
     def initialize(self):
         # Refuse to reconcile pre-existing indexed work in shared local infrastructure.
-        for shard in range(16):
-            page = self.db.query(TableName=TABLE, IndexName='lifecycle_due_v1',
-                KeyConditionExpression='lifecycle_bucket = :bucket',
-                ExpressionAttributeValues={':bucket': {'S': 'lifecycle-v1-' + str(shard)}}, Limit=1)
-            if page['Items']: raise RuntimeError('Lifecycle index is not empty; use isolated infrastructure')
+        for table in (ORIGIN, TABLE):
+            for shard in range(16):
+                page = self.db.query(TableName=table, IndexName='lifecycle_due_v1',
+                    KeyConditionExpression='lifecycle_bucket = :bucket',
+                    ExpressionAttributeValues={':bucket': {'S': 'lifecycle-v1-' + str(shard)}}, Limit=1)
+                if page['Items']: raise RuntimeError('Lifecycle index is not empty; use isolated infrastructure')
         self.admin.create_topics([NewTopic(self.finalized, num_partitions=1, replication_factor=1,
             config={'min.insync.replicas': '1', 'retention.ms': '3600000'})])[self.finalized].result(15)
         self.created_topics.append(self.finalized)

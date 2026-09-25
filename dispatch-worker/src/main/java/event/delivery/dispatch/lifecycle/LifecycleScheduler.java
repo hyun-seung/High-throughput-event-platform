@@ -57,9 +57,9 @@ public class LifecycleScheduler {
         if (lastSweep != null && clock.instant().isBefore(lastSweep.plusMillis(recoveryIntervalMs))) return;
         lastSweep = clock.instant();
         int start = nextShard;
-        nextShard = (nextShard + 1) % LifecycleIndex.SHARDS;
-        for (int offset = 0; offset < LifecycleIndex.SHARDS; offset++) {
-            int shard = (start + offset) % LifecycleIndex.SHARDS;
+        nextShard = (nextShard + 1) % LifecycleRepository.RECOVERY_SHARDS;
+        for (int offset = 0; offset < LifecycleRepository.RECOVERY_SHARDS; offset++) {
+            int shard = (start + offset) % LifecycleRepository.RECOVERY_SHARDS;
             try {
                 var page = repository.due(shard, clock.instant(), pageSize, cursors.getOrDefault(shard, Map.of()));
                 boolean scheduledAll = true;
