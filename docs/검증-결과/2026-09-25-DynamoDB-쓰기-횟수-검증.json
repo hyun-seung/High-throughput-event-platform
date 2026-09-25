@@ -1,0 +1,77 @@
+{
+  "recordedAt": "2026-09-25T03:03:41.938048+00:00",
+  "baseCommit": "3b7f21769ea5089851f06692fea856c0006f9586",
+  "command": "DYNAMODB_TEST_ENDPOINT=http://localhost:18000 JAVA_HOME=<JDK21> ./mvnw -q -pl dispatch-worker -am -Dtest=DynamoDbWriteBudgetTest -Dsurefire.failIfNoSpecifiedTests=false test",
+  "exitCode": 0,
+  "tests": 4,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "environment": {
+    "java": "21.0.7",
+    "dynamoDbLocalPort": 18000
+  },
+  "scope": "Actual DynamoDB Local, serialized repository/lifecycle/compaction calls; ingress single conditional Put fixture. SQL/Kafka/provider transport and scheduler GSI polling excluded. Setup and teardown excluded. Not AWS billing.",
+  "scenarios": [
+    {
+      "scenario": "eight_no_response",
+      "updateItems": 23,
+      "successfulConditionChecks": 2,
+      "deleteItems": 3,
+      "failedWriteCalls": 6,
+      "successfulReadCalls": 27,
+      "successfulWriteCalls": 23,
+      "putItems": 3,
+      "itemMutations": 29
+    },
+    {
+      "scenario": "normal_primary",
+      "updateItems": 7,
+      "successfulConditionChecks": 1,
+      "deleteItems": 3,
+      "failedWriteCalls": 0,
+      "successfulReadCalls": 11,
+      "successfulWriteCalls": 8,
+      "putItems": 4,
+      "itemMutations": 14
+    },
+    {
+      "scenario": "eight_receipts",
+      "updateItems": 31,
+      "successfulConditionChecks": 2,
+      "deleteItems": 11,
+      "failedWriteCalls": 6,
+      "successfulReadCalls": 43,
+      "successfulWriteCalls": 31,
+      "putItems": 11,
+      "itemMutations": 53
+    },
+    {
+      "scenario": "eight_receipts_review_expiry",
+      "updateItems": 33,
+      "successfulConditionChecks": 2,
+      "deleteItems": 11,
+      "failedWriteCalls": 6,
+      "successfulReadCalls": 45,
+      "successfulWriteCalls": 33,
+      "putItems": 11,
+      "itemMutations": 55
+    }
+  ],
+  "rawLog": {
+    "localPath": "/tmp/dynamodb-write-budget.log",
+    "sha256": "ff17ea49c7d49cc17a5656658105efee7d83e8017d994b7e5a13ff5241f03b07"
+  },
+  "sourceSha256": {
+    "dispatch-worker/src/test/java/event/delivery/dispatch/lifecycle/DynamoDbWriteBudgetTest.java": "1981d439de8434ed68559d08749113d07390e1a2280f2c867f3f2276cdeb722c",
+    "delivery-ingress-worker/src/main/java/event/delivery/ingress/repository/DeliveryRepository.java": "99ab875e7a09a168779983adb32e4e68c0161cdffb873d23a0d16485015046ea",
+    "dispatch-worker/src/main/java/event/delivery/dispatch/repository/DispatchAttemptRepository.java": "f8ad08647f07dee2c2bb8ded2b3fa23c8d62d96ac7614a73aad4b2fed7084383",
+    "dispatch-worker/src/main/java/event/delivery/dispatch/receipt/ReceiptResultRepository.java": "644ce108a7e727ff1f9f9a3c2e45f1948d7a0644898de83d9facebd77ac85443",
+    "dispatch-worker/src/main/java/event/delivery/dispatch/lifecycle/LifecycleRepository.java": "82c6882a2e993a0e23f39e464ba0405b6eec509338e04109b8ce8312dc47b603",
+    "dispatch-worker/src/main/java/event/delivery/dispatch/lifecycle/LifecycleService.java": "dd4a10948c435ec505ad6a14c38bc0bb44e27d2ef3105f09a9005beb5addf8e8",
+    "dispatch-worker/src/main/java/event/delivery/dispatch/lifecycle/LifecycleScheduler.java": "b35702dc995ae39e95043b570f5f273256808bca019e65447ea694fd69c6cbf2",
+    "dispatch-worker/src/main/java/event/delivery/dispatch/service/DispatchRetryPolicy.java": "6366220f7ec08fc943aaa3052f3f28de351d402e200b16486cce31429b843f7d",
+    "event-common/src/main/java/event/common/lifecycle/DeliveryCompactor.java": "f0bc788ee84c5fed1367684fa0390389931f3b548270ed573d0ca7c3e9ef3142",
+    "event-common/src/main/java/event/common/lifecycle/LifecycleIndex.java": "76e982597c24331d4f458ff9a040d584d85370d65372ef14de9946dab4813569"
+  }
+}
