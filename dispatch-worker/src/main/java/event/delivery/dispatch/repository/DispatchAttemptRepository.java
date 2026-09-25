@@ -147,7 +147,7 @@ public class DispatchAttemptRepository implements DispatchAttemptStore {
             dynamoDbClient.transactWriteItems(TransactWriteItemsRequest.builder().transactItems(
                     TransactWriteItem.builder().conditionCheck(ConditionCheck.builder().tableName(ORIGIN)
                             .key(DeliveryCompletion.metaKey(event.requestKey()))
-                            .conditionExpression("attribute_exists(pk) AND delivery_id = :execution AND attribute_not_exists(completion_event_id)")
+                            .conditionExpression("attribute_exists(pk) AND delivery_id = :execution AND attribute_not_exists(completion_event_id) AND attribute_not_exists(dlt_recovery_hold)")
                             .expressionAttributeValues(Map.of(":execution", text(event.deliveryId()))).build()).build(),
                     TransactWriteItem.builder().update(Update.builder().tableName(STEP).key(request.key())
                             .conditionExpression(request.conditionExpression()).updateExpression(request.updateExpression())
@@ -400,6 +400,7 @@ public class DispatchAttemptRepository implements DispatchAttemptStore {
     private boolean completionRecorded(DeliveryEvent event) {
         var origin = dynamoDbClient.getItem(r -> r.tableName(ORIGIN).key(DeliveryCompletion.metaKey(event.requestKey()))
                 .consistentRead(true)).item();
+        if (origin.containsKey(DeliveryCompletion.RECOVERY_HOLD)) throw new IllegalStateException("Origin restoration pending");
         return origin.isEmpty() || !event.deliveryId().equals(origin.get(DELIVERY_ID).s()) || origin.containsKey(DeliveryCompletion.FENCE);
     }
 

@@ -58,7 +58,7 @@ public final class DltRecoveryCli {
                 var config = Map.<String, Object>of("bootstrap.servers", bootstrap, "acks", "all", "enable.idempotence", true,
                         "max.block.ms", 5000, "request.timeout.ms", 5000, "delivery.timeout.ms", 10000);
                 try (var producer = new KafkaProducer<>(config, new StringSerializer(), new ByteArraySerializer())) {
-                    var result = store.apply(cluster, DeliveryTopics.DISPATCH_REQUESTED, plan, args[5], args[6], () -> planner.plan(record), command -> {
+                    var result = store.apply(cluster, DeliveryTopics.DISPATCH_REQUESTED, plan, args[5], args[6], () -> planner.prepare(record), command -> {
                         var ack = producer.send(new ProducerRecord<>(DeliveryTopics.DISPATCH_REQUESTED, command.deliveryId(),
                                 mapper.writeValueAsBytes(command))).get(12, TimeUnit.SECONDS);
                         return new DltRecoveryStore.Ack(ack.topic(), ack.partition(), ack.offset());

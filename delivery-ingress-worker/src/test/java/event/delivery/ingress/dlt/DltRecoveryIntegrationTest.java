@@ -62,7 +62,7 @@ class DltRecoveryIntegrationTest {
             statement.execute("CREATE SCHEMA " + schema);
             statement.execute("SET search_path TO " + schema);
             for (String migration : List.of("V1__delivery_history_and_notification_outbox.sql", "V2__customer_notification_batches.sql",
-                    "V3__delivery_cleanup_reservations.sql", "V4__dlt_recovery_handoff.sql")) {
+                    "V3__delivery_cleanup_reservations.sql", "V4__dlt_recovery_handoff.sql", "V5__dlt_history_coverage.sql")) {
                 try (var resource = DltRecoveryIntegrationTest.class.getResourceAsStream("/db/migration/" + migration)) {
                     assertNotNull(resource); statement.execute(new String(resource.readAllBytes(), StandardCharsets.UTF_8));
                 }
@@ -82,6 +82,9 @@ class DltRecoveryIntegrationTest {
     }
 
     @BeforeEach void setup() throws Exception {
+        try (var connection = connect(); var statement = connection.createStatement()) {
+            statement.execute("UPDATE " + schema + ".dlt_history_coverage SET origin_restore_enabled=false");
+        }
         store = new DltRecoveryStore(DltRecoveryIntegrationTest::connect, schema);
         admitted = DeliveryEvent.requested(UUID.randomUUID().toString(), 999L, "SMS", Map.of("text", "private-payload"), NOW, false).forAdmission();
         execution = new DeliveryRepository(db, MAPPER).saveOrLoad(admitted).event();
@@ -133,6 +136,113 @@ class DltRecoveryIntegrationTest {
             insert.setObject(3, UUID.randomUUID()); insert.setString(4, MAPPER.writeValueAsString(Map.of("requestKey", admitted.requestKey())));
             insert.executeUpdate();
         }
+    }
+
+    void enableRestore(Instant since) throws Exception {
+        try (var connection = connect(); var statement = connection.prepareStatement("UPDATE " + schema
+                + ".dlt_history_coverage SET complete_since=?,origin_restore_enabled=true")) {
+            statement.setTimestamp(1, Timestamp.from(since)); statement.executeUpdate();
+        }
+    }
+    void removeOrigin() {
+        db.deleteItem(r -> r.tableName("ORIGIN").key(DeliveryCompletion.metaKey(admitted.requestKey())));
+    }
+    Map<String, AttributeValue> origin() {
+        return db.getItem(r -> r.tableName("ORIGIN").key(DeliveryCompletion.metaKey(admitted.requestKey())).consistentRead(true)).item();
+    }
+
+    @Test void coverageIsRequiredAndNeverBackdatesItselfForOldRequests() throws Exception {
+        removeOrigin();
+        assertEquals(NO_ORIGIN_UNCONFIRMED, planner(NOW).plan(record).preview().decision());
+        enableRestore(NOW.plusSeconds(1));
+        assertEquals(NO_ORIGIN_UNCONFIRMED, planner(NOW).plan(record).preview().decision());
+        enableRestore(NOW);
+        assertEquals(RESTORE_ORIGIN, planner(NOW).plan(record).preview().decision());
+        assertTrue(origin().isEmpty()); // planning remains read-only
+    }
+
+    @Test void initialFailureRestoresOnceAndRetainsOccurrenceThroughKafka() throws Exception {
+        removeOrigin(); enableRestore(NOW.minusSeconds(1));
+        var planner = planner(NOW); var plan = planner.plan(record);
+        assertEquals(RESTORE_ORIGIN, plan.preview().decision());
+        assertNotEquals(execution.deliveryId(), plan.command().deliveryId());
+        var result = store.apply(topic, topic, plan, "tester", "restore initial failure", () -> planner.prepare(record), this::publish);
+        assertEquals("ACKNOWLEDGED", result.status());
+        assertEquals(plan.command().deliveryId(), origin().get("delivery_id").s());
+        assertFalse(origin().containsKey(DeliveryCompletion.RECOVERY_HOLD));
+        assertTrue(origin().containsKey("lifecycle_bucket"));
+        assertEquals(plan.command(), MAPPER.readValue(DltInspector.fetchExact(bootstrap, topic, 0, 0).value(), DeliveryEvent.class));
+        assertEquals(NOW, plan.command().occurredAt());
+        assertEquals("ALREADY_ACKNOWLEDGED", store.apply(topic, topic, planner.plan(record), "tester", "retry", () -> planner.prepare(record), this::publish).status());
+        assertEquals(1, records());
+    }
+
+    @Test void expiredInitialFailureKeepsOriginalDeadlineAndFallbackFlag() throws Exception {
+        removeOrigin(); enableRestore(NOW.minusSeconds(1));
+        var planner = planner(NOW.plus(Duration.ofHours(8)));
+        var plan = planner.plan(record);
+        var prepared = planner.prepare(record);
+        assertEquals(EXPIRE_EXISTING, prepared.preview().decision());
+        assertEquals(plan.command(), prepared.command());
+        assertEquals(NOW, prepared.command().occurredAt());
+        assertFalse(prepared.command().fallbackAllowed());
+    }
+
+    @Test void sqlFailureAfterReservationLeavesBlockedOriginAndSameGenerationResumes() throws Exception {
+        removeOrigin(); enableRestore(NOW.minusSeconds(1));
+        var reads = new AtomicInteger();
+        var failing = new DltRecoveryPlanner(db, (tenant, key, id) -> {
+            if (reads.incrementAndGet() == 2) throw new IllegalStateException("SQL temporarily unavailable");
+            return store.read(tenant, key, id);
+        }, Duration.ofHours(3), "source", Clock.fixed(NOW, ZoneOffset.UTC));
+        var plan = planner(NOW).plan(record);
+        var result = store.apply(topic, topic, plan, "tester", "restore", () -> failing.prepare(record), this::publish);
+        assertEquals("UNCONFIRMED", result.status()); assertEquals(0, records());
+        assertEquals(plan.command().deliveryId(), origin().get(DeliveryCompletion.RECOVERY_HOLD).s());
+        assertFalse(origin().containsKey("lifecycle_bucket"));
+        assertThrows(IllegalStateException.class, () -> new DeliveryRepository(db, MAPPER).saveOrLoad(admitted));
+        var restarted = planner(NOW.plusSeconds(1));
+        assertEquals(plan.command(), restarted.plan(record).command());
+        assertEquals("ACKNOWLEDGED", store.apply(topic, topic, restarted.plan(record), "tester", "resume",
+                () -> restarted.prepare(record), this::publish).status());
+        assertEquals(1, records());
+    }
+
+    @Test void historyCommittedBetweenInitialReadAndReservationPreventsActivation() throws Exception {
+        removeOrigin(); enableRestore(NOW.minusSeconds(1));
+        var plan = planner(NOW).plan(record); var reads = new AtomicInteger();
+        var racing = new DltRecoveryPlanner(db, (tenant, key, id) -> {
+            if (reads.incrementAndGet() == 2) {
+                assertTrue(origin().containsKey(DeliveryCompletion.RECOVERY_HOLD));
+                try { history(); } catch (Exception failure) { throw new RuntimeException(failure); }
+            }
+            return store.read(tenant, key, id);
+        }, Duration.ofHours(3), "source", Clock.fixed(NOW, ZoneOffset.UTC));
+        var result = store.apply(topic, topic, plan, "tester", "restore", () -> racing.prepare(record), this::publish);
+        assertEquals("HELD_STATE_CHANGED", result.status());
+        assertTrue(origin().isEmpty()); assertEquals(0, records());
+    }
+
+    @Test void normalAdmissionWinningReservationIsNeverOverwrittenOrDeleted() throws Exception {
+        removeOrigin(); enableRestore(NOW.minusSeconds(1));
+        var plan = planner(NOW).plan(record);
+        var normal = new DeliveryRepository(db, MAPPER).saveOrLoad(admitted).event();
+        var planner = planner(NOW);
+        var result = store.apply(topic, topic, plan, "tester", "restore", () -> planner.prepare(record), this::publish);
+        assertEquals("HELD_STATE_CHANGED", result.status()); assertEquals(0, records());
+        assertEquals(normal.deliveryId(), origin().get("delivery_id").s());
+    }
+
+    @Test void disabledCoverageCannotActivateAnInterruptedRestoration() throws Exception {
+        removeOrigin(); enableRestore(NOW.minusSeconds(1));
+        var plan = planner(NOW).plan(record);
+        new DeliveryRepository(db, MAPPER).reserveRecovery(admitted.execution(plan.command().deliveryId()), plan.command().deliveryId());
+        try (var connection = connect(); var statement = connection.createStatement()) {
+            statement.execute("UPDATE " + schema + ".dlt_history_coverage SET origin_restore_enabled=false");
+        }
+        assertEquals(RECOVERY_HELD, planner(NOW).prepare(record).preview().decision());
+        assertTrue(origin().containsKey(DeliveryCompletion.RECOVERY_HOLD));
+        assertEquals(0, records());
     }
 
     @Test void keepsExecutionAndDeadlineIncludingExpiredRequests() {

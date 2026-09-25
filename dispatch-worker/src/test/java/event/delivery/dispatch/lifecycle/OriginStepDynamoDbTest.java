@@ -21,6 +21,22 @@ import static org.junit.jupiter.api.Assertions.*;
 class OriginStepDynamoDbTest extends DynamoDbWriteBudgetTest {
     final Queue<RetryCommand> retries = new ArrayDeque<>();
 
+    @Test void provisionalOriginBlocksBothDispatchAndLifecycleUntilReleased() {
+        ingress(false);
+        var key = DeliveryCompletion.metaKey(event.requestKey());
+        db.updateItem(r -> r.tableName(ORIGIN).key(key).updateExpression("SET dlt_recovery_hold=:id")
+                .expressionAttributeValues(Map.of(":id", AttributeValue.fromS(event.deliveryId()))));
+        var calls = new java.util.concurrent.atomic.AtomicInteger();
+        assertThrows(IllegalStateException.class, () -> recoveryDispatch(calls).dispatch(event));
+        assertThrows(IllegalStateException.class, () -> service.reconcile(event.requestKey()));
+        assertEquals(0, calls.get());
+        assertTrue(lifecycle.read(event.deliveryId(), "ATTEMPT#" + id(1)).isEmpty());
+        db.updateItem(r -> r.tableName(ORIGIN).key(key).updateExpression("REMOVE dlt_recovery_hold"));
+        recoveryDispatch(calls).dispatch(event);
+        recoveryDispatch(calls).dispatch(event);
+        assertEquals(1, calls.get());
+    }
+
     @Test void repeatedRecoveryCommandsInvokePrimaryOnlyOnce() {
         ingress(false);
         var calls = new java.util.concurrent.atomic.AtomicInteger();
