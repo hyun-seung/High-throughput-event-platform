@@ -214,23 +214,30 @@ class FinalizedPostgresTest {
     void applicationStartsMigratesConsumesAndExposesPrometheus() throws Exception {
         // Exercise application-owned migration from an absent schema, not only a pre-migrated database.
         jdbc.execute("DROP SCHEMA " + schema + " CASCADE");
-        try (var kafka = new KafkaFixture(); var context = SpringApplication.run(DeliveryResultApplication.class,
+        try (var receiver = new NotificationTestServer(); var kafka = new KafkaFixture(); var context = SpringApplication.run(DeliveryResultApplication.class,
                 "--server.port=0", "--management.server.port=0", "--spring.datasource.url=" + url,
                 "--spring.datasource.username=" + user, "--spring.datasource.password=" + password,
                 "--spring.datasource.hikari.schema=" + schema, "--spring.flyway.default-schema=" + schema,
                 "--spring.flyway.schemas=" + schema, "--result.topic=" + kafka.topic,
                 "--result.concurrency=1", "--spring.kafka.bootstrap-servers=" + kafka.bootstrap,
-                "--spring.kafka.consumer.group-id=" + kafka.group)) {
+                "--spring.kafka.consumer.group-id=" + kafka.group,
+                "--notification.enabled=true", "--notification.poll-ms=10",
+                "--notification.customers.42.url=" + receiver.url(),
+                "--notification.customers.42.token=" + NotificationTestServer.TOKEN)) {
             kafka.send(FinalizedCodecTest.event("DELIVERED", 2));
             kafka.awaitOffset(1);
             assertEquals(1, count("delivery_history"));
             assertEquals(1, count("customer_notification_outbox"));
+            await(() -> jdbc.queryForObject("SELECT count(*) FROM customer_notification_outbox WHERE status = 'DELIVERED'", Integer.class) == 1);
+            assertEquals(1, receiver.requests.size());
             int port = context.getEnvironment().getRequiredProperty("local.management.port", Integer.class);
             try (var http = HttpClient.newHttpClient()) {
                 var response = http.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/actuator/prometheus")).GET().build(), HttpResponse.BodyHandlers.ofString());
                 assertEquals(200, response.statusCode());
                 assertTrue(response.body().contains("delivery_result_records_total"));
                 assertTrue(response.body().contains("outcome=\"stored\""));
+                assertTrue(response.body().contains("delivery_notification_events_total"));
+                assertTrue(response.body().contains("outcome=\"delivered\""));
             }
         }
     }
