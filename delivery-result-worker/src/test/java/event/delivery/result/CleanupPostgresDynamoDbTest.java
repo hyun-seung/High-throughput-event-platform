@@ -31,6 +31,7 @@ class CleanupPostgresDynamoDbTest {
     final String schema = "cleanup_test_" + UUID.randomUUID().toString().replace("-", "");
     final SimpleMeterRegistry meters = new SimpleMeterRegistry();
     final List<DeliveryFinalized> results = new ArrayList<>();
+    final List<CleanupWorker> workers = new ArrayList<>();
     HikariDataSource pool;
     JdbcTemplate jdbc;
     DynamoDbClient db;
@@ -54,6 +55,7 @@ class CleanupPostgresDynamoDbTest {
         repository = new CleanupRepository(jdbc, new DataSourceTransactionManager(pool));
     }
     @AfterEach void cleanup() {
+        workers.forEach(CleanupWorker::close);
         if (db != null) {
             for (var e : results) for (String sk : List.of("META", "FINAL", "ATTEMPT#" + e.attemptId()))
                 db.deleteItem(r -> r.tableName(tableForKey(key(e, sk))).key(key(e, sk)));
@@ -82,7 +84,10 @@ class CleanupPostgresDynamoDbTest {
     Map<String, AttributeValue> meta(DeliveryFinalized e) { return db.getItem(r -> r.tableName(tableForKey(key(e, "META"))).key(key(e, "META")).consistentRead(true)).item(); }
     static Map<String, AttributeValue> key(DeliveryFinalized e, String sk) { return Map.of("pk", s("DELIVERY#" + e.deliveryId()), "sk", s(sk)); }
     static AttributeValue s(String value) { return AttributeValue.fromS(value); }
-    CleanupWorker worker(CleanupRepository repository) { return new CleanupWorker(repository, new DeliveryCompactor(db), meters); }
+    CleanupWorker worker(CleanupRepository repository) {
+        var worker = new CleanupWorker(repository, new DeliveryCompactor(db), meters);
+        workers.add(worker); return worker;
+    }
 
     DeliveryFinalized seedModern(String requestKey) {
         var old = seed();
@@ -195,6 +200,58 @@ class CleanupPostgresDynamoDbTest {
         assertEquals("DONE", jdbc.queryForObject("SELECT status FROM delivery_cleanup_outbox", String.class));
         repository.retry(claims.getFirst());
         assertEquals("DONE", jdbc.queryForObject("SELECT status FROM delivery_cleanup_outbox", String.class));
+    }
+
+    @Test void staleOwnerCannotCompleteOrPostponeNewOwnersClaim() {
+        var e = seedModern(UUID.randomUUID().toString()); store.save(e);
+        var stale = repository.claim().orElseThrow();
+        jdbc.update("UPDATE delivery_cleanup_outbox SET lease_until = clock_timestamp() - interval '1 second'");
+        var current = repository.claim().orElseThrow();
+        assertNotEquals(stale.token(), current.token());
+        assertFalse(repository.done(stale));
+        repository.retry(stale);
+        assertEquals(current.token(), jdbc.queryForObject("SELECT lease_token FROM delivery_cleanup_outbox", UUID.class));
+        assertEquals("PENDING", jdbc.queryForObject("SELECT status FROM delivery_cleanup_outbox", String.class));
+        assertTrue(origin(e).containsKey("payload"));
+        assertTrue(new DeliveryCompactor(db).compact(current.result()));
+        assertTrue(repository.done(current));
+        assertFalse(repository.done(stale));
+    }
+
+    @Test void concurrentWorkersClaimDistinctResultsAndDeleteOnlyAfterSqlCommit() throws Exception {
+        var saved = new ArrayList<DeliveryFinalized>();
+        for (int i = 0; i < 12; i++) { var e = seedModern(UUID.randomUUID().toString()); store.save(e); saved.add(e); }
+        var unsaved = seedModern(UUID.randomUUID().toString());
+        var calls = new ConcurrentHashMap<String, java.util.concurrent.atomic.AtomicInteger>();
+        var firstClaims = new CountDownLatch(4);
+        var release = new CountDownLatch(1);
+        var compactor = spy(new DeliveryCompactor(db));
+        doAnswer(invocation -> {
+            DeliveryFinalized e = invocation.getArgument(0);
+            calls.computeIfAbsent(e.eventId(), key -> new java.util.concurrent.atomic.AtomicInteger()).incrementAndGet();
+            firstClaims.countDown();
+            assertTrue(release.await(10, TimeUnit.SECONDS));
+            return invocation.callRealMethod();
+        }).when(compactor).compact(any());
+        try (var one = new CleanupWorker(repository, compactor, meters, 2, 20);
+             var two = new CleanupWorker(new CleanupRepository(jdbc, new DataSourceTransactionManager(pool)), compactor, meters, 2, 20);
+             var executor = Executors.newFixedThreadPool(2)) {
+            var a = executor.submit(one::tick); var b = executor.submit(two::tick);
+            try {
+                assertTrue(firstClaims.await(10, TimeUnit.SECONDS));
+                assertEquals(4, calls.size());
+                assertEquals(4, jdbc.queryForObject("SELECT count(*) FROM delivery_cleanup_outbox WHERE lease_token IS NOT NULL", Integer.class));
+            } finally { release.countDown(); }
+            a.get(20, TimeUnit.SECONDS); b.get(20, TimeUnit.SECONDS);
+        }
+        assertEquals(12, calls.size()); assertTrue(calls.values().stream().allMatch(c -> c.get() == 1));
+        assertEquals(12, jdbc.queryForObject("SELECT count(*) FROM delivery_cleanup_outbox WHERE status = 'DONE'", Integer.class));
+        for (var e : saved) {
+            assertTrue(origin(e).isEmpty());
+            assertTrue(db.query(r -> r.tableName(STEP).keyConditionExpression("pk = :pk")
+                    .expressionAttributeValues(Map.of(":pk", s("DELIVERY#" + e.deliveryId())))).items().isEmpty());
+        }
+        assertTrue(origin(unsaved).containsKey("payload"));
     }
 
     @Test void actualApplicationRunsCleanupOnDedicatedScheduler() throws Exception {
