@@ -112,6 +112,9 @@ public class DeliveryRepository {
         if (!sameRequest) {
             throw new IdempotencyConflictException(event.deliveryId());
         }
+        if (existing.containsKey(DeliveryCompletion.RECOVERY_HOLD)) {
+            throw new IllegalStateException("Origin restoration pending");
+        }
 
         // A client retry has a new API timestamp. Always forward the first persisted ingress time.
         Instant originalOccurredAt = Instant.parse(value(existing, OCCURRED_AT));
@@ -119,6 +122,35 @@ public class DeliveryRepository {
                 existing.containsKey("schema_version") ? Integer.parseInt(existing.get("schema_version").n()) : 1, value(existing, EVENT_ID), event.eventType(), value(existing, DELIVERY_ID),
                 event.tenantId(), event.deliveryType(), event.payload(), originalOccurredAt,
                 event.requestKey(), event.causationId(), event.fallbackAllowed(), event.requestKey()), existing.containsKey(DeliveryCompletion.FENCE));
+    }
+
+    /** Operations path only. No lifecycle index until SQL history is checked after this reservation. */
+    public void reserveRecovery(DeliveryEvent execution, String recoveryId) {
+        var item = toItem(execution);
+        item.remove(LifecycleIndex.BUCKET); item.remove(LifecycleIndex.DUE);
+        item.put(DeliveryCompletion.RECOVERY_HOLD, AttributeValue.fromS(recoveryId));
+        item.put(DeliveryCompletion.RECOVERY_ID, AttributeValue.fromS(recoveryId));
+        dynamoDbClient.putItem(r -> r.tableName(ORIGIN).item(item).conditionExpression("attribute_not_exists(pk)"));
+    }
+
+    /** Release only this provisional generation; normal claims still check execution ID atomically. */
+    public void activateRecovery(DeliveryEvent execution, String recoveryId) {
+        dynamoDbClient.updateItem(r -> r.tableName(ORIGIN).key(key(execution.requestKey()))
+                .conditionExpression("delivery_id=:execution AND dlt_recovery_hold=:recovery AND attribute_not_exists(completion_event_id)")
+                .updateExpression("SET lifecycle_bucket=:bucket, lifecycle_due=:due REMOVE dlt_recovery_hold")
+                .expressionAttributeValues(Map.of(":execution", AttributeValue.fromS(execution.deliveryId()),
+                        ":recovery", AttributeValue.fromS(recoveryId), ":bucket", AttributeValue.fromS(LifecycleIndex.bucket(execution.deliveryId())),
+                        ":due", AttributeValue.fromN("0"))));
+    }
+
+    /** A completed historical execution won the race. Never delete an activated or foreign generation. */
+    public void discardRecovery(DeliveryEvent execution, String recoveryId) {
+        try {
+            dynamoDbClient.deleteItem(r -> r.tableName(ORIGIN).key(key(execution.requestKey()))
+                    .conditionExpression("delivery_id=:execution AND dlt_recovery_hold=:recovery")
+                    .expressionAttributeValues(Map.of(":execution", AttributeValue.fromS(execution.deliveryId()),
+                            ":recovery", AttributeValue.fromS(recoveryId))));
+        } catch (ConditionalCheckFailedException changed) { /* Ownership lost: preserve the current origin. */ }
     }
 
     private Map<String, AttributeValue> toItem(DeliveryEvent event) {

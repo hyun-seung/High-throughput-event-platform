@@ -1,6 +1,6 @@
 # DLT 원장 대조와 기존 실행 복구
 
-2026-09-25. [읽기 전용 분류](49-DLT-조회와-재처리-대상-분류.md)에 이어, **ORIGIN에 남아 있는 실행을 대조하고 기존 실행 ID로 재처리하는 Java CLI**를 추가했다. SQL에 인계 요청·시도·Kafka ack를 남긴다. ORIGIN이 없는 요청의 신규 복원과 자동 DLT 소비는 이번 범위에 포함하지 않는다.
+2026-09-26. [읽기 전용 분류](49-DLT-조회와-재처리-대상-분류.md)에 이어, **기존 실행 재개와 최초 ORIGIN 저장 전 실패의 수동 복구를 수행하는 Java CLI**를 구현했다. SQL에 인계 요청·시도·Kafka ack를 남긴다. 초기 원본 복구는 이력 보존 범위를 명시적으로 활성화한 경우에만 허용한다. 자동 DLT 소비는 아직 없다.
 
 ## 1. 처리 흐름과 재접수를 하지 않는 이유
 
@@ -41,7 +41,9 @@ DLT 원문을 접수 토픽에 그대로 넣으면, SQL 이력 저장과 ORIGIN 
 |---|---|
 | RESUME_EXISTING | 유효한 v2 원문, ORIGIN 내용·원래 시각 일치, 해당 실행 SQL 이력 없음, STEP 없음. 기존 실행으로 인계 가능 |
 | EXPIRE_EXISTING | 위 조건을 만족하지만 1차 기한 경과. 원래 시각을 그대로 넘겨 발송 worker가 만료·대체 판단 |
-| NO_ORIGIN_UNCONFIRMED | ORIGIN도 이력도 없음. 미발송 증거가 아니므로 새 ORIGIN을 만들지 않고 보류 |
+| RESTORE_ORIGIN | ORIGIN·요청 이력이 없고 활성화된 이력 보존 범위 안의 요청. 발송 보류 상태로 조건부 복원 후 SQL 재대조 |
+| NO_ORIGIN_UNCONFIRMED | ORIGIN·이력 없음만으로는 미발송 증거가 아님. 복구 비활성화 또는 보존 범위 밖이면 보류 |
+| RECOVERY_HELD | 다른 복구가 예약했거나, 예약 후 이력 보존 조건이 충족되지 않음. 발송 보류 |
 | HISTORY_FOUND | 현재 실행의 SQL 이력이 있거나, ORIGIN 없이 해당 요청의 과거 이력이 있음. 보류 |
 | ORIGIN_MISMATCH | tenant·본문·실행 eventId·원래 시각 등이 다름. 이후 API 재시도의 다른 occurredAt도 보류 |
 | COMPLETION_RECORDED | ORIGIN에 완료 표시가 있음. 보류 |
@@ -51,6 +53,21 @@ DLT 원문을 접수 토픽에 그대로 넣으면, SQL 이력 저장과 ORIGIN 
 SQL 또는 DynamoDB 조회가 실패하면 상태를 모르는 채 진행하지 않는다. `plan`은 판독 시점의 결과이며 승인 토큰이 아니다. `apply`는 현재 상태를 다시 판독하고, SQL 시도 기록을 남긴 뒤에도 한 번 더 대조한다.
 
 1차 만료는 **원래 인입 시각 + 3시간**이다. 만료된 1차 HTTP를 호출하지 않는다. 대체 허용 요청의 2차 처리는 기존 규칙을 따른다. 만료로 1차 결과가 정해지는 경우 1차 deadline을 기준으로 2차 4시간을 계산하므로 오래 격리됐다고 기한을 다시 늘리지 않는다. CLI의 `DLT_PRIMARY_TTL`은 실행 중인 dispatch 설정과 같아야 한다. 실제 발송 여부의 마지막 판단은 worker의 기한 검사가 담당한다.
+
+### 최초 ORIGIN 저장 전 실패를 복원하는 조건
+
+`V5__dlt_history_coverage.sql`은 `dlt_history_coverage` 한 행에 이력 보존 시작 시각(`complete_since`)과 복구 허용 여부를 둔다. 기본값은 **비활성화**다. 이것은 DB가 과거 이력의 완전성을 자동 증명한 값이 아니라, 운영자가 그 시각 이후 요청의 이력이 누락·삭제되지 않았음을 확인하고 유지해야 하는 계약이다. 해당 요청 키의 과거 이력이 하나라도 있으면 신규 복원을 보류한다.
+
+복구 순서는 다음과 같다.
+
+1. SQL에 복구 작업·STARTED를 commit한다. 원본 좌표·요청 키·본문 해시로 재시도해도 같은 복구 실행 ID를 계산한다. 요청 키·원래 인입 시각·대체 허용 설정은 유지한다.
+2. ORIGIN이 없다는 조건으로 `dlt_recovery_hold`가 있는 원본을 저장한다. 이때 Lifecycle GSI 속성을 넣지 않는다. ingress는 인계를 보류하고 dispatch는 기존 STEP 선점 트랜잭션의 조건으로 발송을 차단한다.
+3. **예약 이후 SQL 주 DB의 새 조회로** 이력을 재확인한다. 정상 정리는 이력 commit 후 ORIGIN을 지우므로, 예약 직전 완료·정리된 실행의 이력도 확인할 수 있다. 완료 이력이 발견되면 자신이 예약한 보류 원본만 조건부 삭제하고 발송하지 않는다.
+4. 이력 없음·보존 범위·예약 소유자가 유효하면 보류를 제거하고 Lifecycle GSI를 설정한다. 이후 기존 dispatch 명령을 발행하고 SQL에 Kafka ack를 남긴다.
+
+예약 직후 SQL 장애·프로세스 종료가 나면 보류가 남아 같은 작업으로 다시 대조한다. 활성화 후 Kafka 인계 전에 종료되면 ORIGIN의 Lifecycle 조회가 복구할 수 있다. 그 사이 STEP이 생성되면 CLI는 기존 worker의 처리에 맡긴다. 보류 원본은 자동 만료 대상이 아니므로 **활성화 전 중단된 조치는 현재 운영자가 재개해야 한다**.
+
+**공식 근거와 설계 판단:** PostgreSQL Read Committed의 각 SELECT는 조회 시작 전 commit된 데이터를 읽는다. 따라서 예약 이후 주 DB의 새 스냅샷으로 확인해야 하며, 지연 복제본이나 오래된 트랜잭션 스냅샷을 사용하면 이 근거가 성립하지 않는다. DynamoDB 조건부 예약·발송 선점과 기존 SQL commit→ORIGIN 삭제 순서를 조합한 설계이며, 저장소 간 원자적 트랜잭션을 주장하지 않는다. [PostgreSQL 격리 수준](https://www.postgresql.org/docs/17/transaction-iso.html), [DynamoDB 트랜잭션](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/transaction-apis.html).
 
 ## 3. 왜 PostgreSQL에 조치 기록을 남기는가
 
@@ -70,11 +87,21 @@ Kafka ack를 받고 SQL 기록까지 성공해야 ACKNOWLEDGED다. 이미 ACKNOW
 
 Kafka producer idempotence만으로 재실행된 CLI 사이의 중복까지 막을 수 없으므로, 동일 command의 물리적 중복을 허용하고 기존 STEP 선점으로 외부 발송을 보호한다. [KafkaProducer 공식 문서](https://kafka.apache.org/42/javadoc/org/apache/kafka/clients/producer/KafkaProducer.html)의 send 결과와 idempotence 범위를 근거로 한 설계다. **ACKNOWLEDGED는 고객 최종 결과 완료가 아닌 Kafka 인계 완료**다.
 
-대상 1건의 `plan`은 ORIGIN GetItem 1회, 조건을 만족하면 STEP Query 1회, SQL 이력 조회 1회다. `apply`는 최초 판독과 발행 전 재대조를 하므로 보통 DynamoDB 읽기 4회다. DLT CLI 자체의 DynamoDB 쓰기는 0회이며, worker가 재개한 이후에는 기존 업무 쓰기만 수행한다. 기존 정상 1차 성공 경로의 **5회 호출·7항목 변경**은 그대로다. SQL 운영 기록 비용과 새 이력 인덱스 유지 비용은 추가된다.
+대상 1건의 `plan`은 ORIGIN GetItem 1회, 조건을 만족하면 STEP Query 1회, SQL 이력 조회 1회다. 기존 실행의 `apply`는 최초 판독과 발행 전 재대조로 보통 DynamoDB 읽기 4회, CLI 쓰기 0회다. **초기 원본 복원 경로에만 조건부 Put 1회와 활성화 Update 1회**가 추가되고, 재대조 실패 시 자신의 보류 원본 Delete가 발생할 수 있다. 이후 worker는 기존 업무 쓰기를 수행한다. 정상 1차 성공 경로의 **5회 호출·7항목 변경**은 그대로다. SQL 운영 기록·이력 인덱스·복구 시 대조 조회 비용은 별도다.
 
 ## 4. 로컬 PoC 실행
 
-JDK 21로 빌드한 JAR와 V4까지 반영된 result worker SQL schema가 필요하다. 외부 실행 도구는 **Bash**이고 조회·판단·JDBC·Kafka 전송은 모두 Java다. 로컬 Kafka/DynamoDB/PostgreSQL 주소만 허용한다.
+JDK 21로 빌드한 JAR와 **V5까지 반영된** result worker SQL schema가 필요하다. 외부 실행 도구는 **Bash**이고 조회·판단·JDBC·Kafka 전송은 모두 Java다. 로컬 Kafka/DynamoDB/PostgreSQL 주소만 허용한다.
+
+초기 복구를 켜려면 모든 ingress·dispatch 인스턴스에 보류 조건을 이해하는 버전을 적용하고, SQL 주 DB 연결 및 이력 보존을 확인한 뒤 다음을 실행한다. 기존 실행의 재개에는 활성화가 필요 없다.
+
+```sql
+SELECT * FROM delivery_results.dlt_history_coverage;
+UPDATE delivery_results.dlt_history_coverage
+SET origin_restore_enabled = true WHERE singleton;
+```
+
+`complete_since`는 마이그레이션 시각으로 시작한다. 오래된 DLT를 처리하려고 임의로 과거로 돌리지 않는다. 이력 삭제·PITR·DB 교체 등으로 보존 조건이 깨질 때는 복구 CLI 실행을 중단하고 비활성화한 뒤, 이력이 연속 보존되는 범위를 다시 정해야 한다. 플래그 변경은 진행 중인 활성화를 원자적으로 취소하는 기능이 아니므로 실행 중인 CLI도 함께 중단해야 한다.
 
 ```sh
 export JAVA_HOME=/path/to/jdk21
@@ -102,7 +129,7 @@ bash scripts/recover-dlt.sh apply delivery.requested.dlt.v1 0 42 \
 
 Java/JUnit으로 실제 PostgreSQL·DynamoDB Local·Kafka를 연결해 다음을 검증한다. 환경 실행·종료는 Bash + Docker Compose가 맡는다.
 
-실행 결과: **전체 324개 통과, 실패·오류·미실행 0개**. 신규 DLT 저장소 통합 10개와 dispatch 경계 4개를 포함한다. [검증 결과 JSON](검증-결과/2026-09-25-DLT-기존-실행-복구와-324개-통합-검증.json)에 도구·실행 폴더·소스 지문·정리 결과를 남겼다.
+최신 실행 결과: **전체 332개 통과, 실패·오류·미실행 0개**. 기존 324개에 초기 복구 통합 7개와 발송 보류 경계 1개를 추가했다. [검증 결과 JSON](검증-결과/2026-09-26-DLT-초기-원본-복구와-332개-통합-검증.json)에 도구·실행 폴더·소스 지문·정리 결과를 남겼다.
 
 - 원래 시각·실행 ID 보존, 만료 분류, 원장 없음·이력 있음·원장 불일치·완료 표시·기존 STEP 보류, SQL 조회 실패 시 중단.
 - 실제 Kafka 인계와 SQL ack/조치 기록, 동일 작업 재실행 시 추가 발행 없음.
@@ -110,7 +137,10 @@ Java/JUnit으로 실제 PostgreSQL·DynamoDB Local·Kafka를 연결해 다음을
 - 운영자 동시 실행 BUSY, 계획 후 원장 삭제 시 발행 차단, 같은 원본 좌표의 command 변조 차단.
 - dispatch 경계에서 중복 command의 업체 호출 1회, 만료 command의 업체 호출 0회·원래 기한 결과, ORIGIN 삭제/교체 후 STEP 생성 차단.
 - 정확한 Kafka offset 읽기, 삭제된 offset 거절, 기존 읽기 전용 조회의 그룹 offset 유지.
+- 복구 기본 비활성화·보존 시작 경계, 초기 원본 복원과 실제 Kafka/SQL 인계, 동일 작업 중복 억제, 만료된 원래 시각·설정 유지.
+- 예약 후 SQL 오류 주입 시 보류 원본 유지와 동일 실행 재개, 예약 후 완료 이력 발견 시 자신의 보류 원본만 삭제, 정상 접수 선점 시 원본 보존.
+- 보류 중 ingress·dispatch·Lifecycle의 외부 발송 차단, 보류 해제 후 중복 명령의 업체 호출 1회, 복구 비활성화 후 예약 상태 유지.
 
 실제 SIGKILL·SQL commit 응답 유실을 포함한 모든 종료 지점을 이 시험이 검증한 것은 아니다. 성능/TPS 시험도 아니며, 성능 부하는 개발 완료 후 **k6**로 진행한다.
 
-다음 DLT 범위는 **ORIGIN 저장 전 실패한 요청의 내구성 있는 복원·만료 인계**다. ORIGIN/이력 없음만으로 신규 발송하지 않으면서 초기 실패와 완료 후 정리를 구분할 근거가 필요하다. 또한 SQL PENDING/STARTED의 자동 재개 worker, 실제 운영 인증·권한·감사, 보존 기간 감시가 남아 있다. 현재 수동 CLI와 기존 Lifecycle만으로 모든 DLT의 고객 결과 기한 보장이 완료됐다고 보지 않는다.
+다음 DLT 범위는 **SQL PENDING/STARTED와 보류 원본의 자동 재개 및 미처리 DLT 인계**다. 이력 보존 범위 밖의 요청은 여전히 보류하며, 실제 운영 인증·권한·감사와 보존 기간 감시도 남아 있다. 현재 수동 CLI와 기존 Lifecycle만으로 모든 DLT의 고객 결과 기한 보장이 완료됐다고 보지 않는다.

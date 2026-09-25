@@ -1,0 +1,67 @@
+{
+  "date": "2026-09-26",
+  "status": "PASS",
+  "baseCommit": "eefb137b001b64ccae448084f61b8c1e567861d7",
+  "runDirectory": ".poc-results/java-test-20260925150919-21891",
+  "javaIntegration": {
+    "suites": 38,
+    "executed": 332,
+    "skipped": 0,
+    "failures": 0,
+    "errors": 0
+  },
+  "newTests": {
+    "initialOriginRecoveryIntegration": 7,
+    "dispatchAndLifecycleHold": 1
+  },
+  "tools": {
+    "applicationTests": "Java 21/JUnit, Maven Wrapper clean verify -Pintegration-tests",
+    "environment": "Bash + Docker Compose, fresh isolated project",
+    "performance": "Not run; k6 reserved for subsequent performance phase"
+  },
+  "infrastructure": {
+    "kafka": "apache/kafka:4.0.2",
+    "postgresql": "postgres:17-alpine",
+    "dynamodb": "amazon/dynamodb-local:2.6.1",
+    "redis": "redis:7.4-alpine"
+  },
+  "cleanup": {
+    "containersStopped": true,
+    "volumesRetained": true
+  },
+  "verified": [
+    "Default-disabled and complete_since boundary gate for absent ORIGIN restoration",
+    "Provisional ORIGIN conditional reservation, post-reservation SQL history recheck, activation, actual Kafka ack and SQL audit",
+    "Repeated acknowledged recovery produces no additional Kafka record",
+    "Expired initial recovery preserves original occurrence and fallback setting",
+    "Injected SQL error after reservation retains hold; same deterministic execution resumes",
+    "History committed during reservation causes own held origin deletion and zero Kafka publication",
+    "Concurrent normal admission remains intact and changed command is held",
+    "Disabling coverage keeps interrupted restoration held",
+    "Held origin blocks normal ingress, dispatch and lifecycle; activation allows one provider invocation for repeated command",
+    "Existing normal v2 DynamoDB budget remains five successful write calls and seven item mutations"
+  ],
+  "operationalPrerequisites": [
+    "V5 migration and hold-aware ingress/dispatch on all instances before explicitly enabling restoration",
+    "Retained complete SQL history on primary since complete_since; coverage metadata is an operator-maintained contract",
+    "Stop in-flight recovery CLI and disable restoration before pruning/PITR/history maintenance"
+  ],
+  "notVerifiedOrImplemented": [
+    "Automatic DLT consumption or SQL pending/held recovery worker",
+    "Full CLI process SIGKILL and all SQL commit response-loss boundaries",
+    "Production operator authentication and history retention enforcement",
+    "AWS multi-AZ durability and performance capacity"
+  ],
+  "sourceSha256": {
+    "delivery-ingress-worker/src/main/java/event/delivery/ingress/dlt/DltRecoveryCli.java": "eaa047670fecfec73a8f4446ffbe502d37d2b395b72cdc1e7da53485c819960c",
+    "delivery-ingress-worker/src/main/java/event/delivery/ingress/dlt/DltRecoveryPlanner.java": "d7f26f85a0f6f1cf2587c77ed6986013c36f5509cceacac7fb1b0a60ae5eb278",
+    "delivery-ingress-worker/src/main/java/event/delivery/ingress/dlt/DltRecoveryStore.java": "7447c3389a10ebed1f345d162c5d45f8f91fd8c28c318841e7263bb0a62397ed",
+    "delivery-ingress-worker/src/main/java/event/delivery/ingress/repository/DeliveryRepository.java": "166cfb718290395d81e6092caa1b0931d62688189293f4d5ed03f6a3d90fe569",
+    "delivery-ingress-worker/src/test/java/event/delivery/ingress/dlt/DltRecoveryIntegrationTest.java": "4276050988513a5b3eaf37c520c331c992710cb00ff6de6af73a267c17488fcb",
+    "dispatch-worker/src/main/java/event/delivery/dispatch/repository/DispatchAttemptRepository.java": "a0ecd8a51cb290de1fefa82ed023e15fc220c28c78bcad6ab4d0eca5587d104d",
+    "dispatch-worker/src/test/java/event/delivery/dispatch/lifecycle/OriginStepDynamoDbTest.java": "7d2151cd99d22b44f9e2876f07b188bb19983e5efec92130edbb44f90d776d6a",
+    "event-common/src/main/java/event/common/lifecycle/DeliveryCompletion.java": "c3a10163eb39d94745ce20272c68367de83256fda7350075c3f5ca2f81648b84",
+    "delivery-result-worker/src/main/resources/db/migration/V5__dlt_history_coverage.sql": "c286de6b4fe0402277f4a12c0768729833bc3b929732c947b23808f2eafc2f26"
+  },
+  "postRunChanges": "Documentation and evidence only; no behavior changes"
+}

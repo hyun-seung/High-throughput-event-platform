@@ -23,13 +23,17 @@ public final class DltRecoveryStore implements DltRecoveryPlanner.HistoryReader 
     }
 
     @Override public DltRecoveryPlanner.History read(long tenant, String key, String execution) {
-        String sql = "SELECT count(*) > 0, coalesce(bool_or(delivery_id = ?::uuid), false) FROM " + schema
+        String sql = "SELECT count(*) > 0, coalesce(bool_or(delivery_id = ?::uuid), false), "
+                + "(SELECT complete_since FROM " + schema + ".dlt_history_coverage WHERE singleton AND origin_restore_enabled) FROM " + schema
                 + ".delivery_history WHERE tenant_id = ? AND COALESCE(result_json->>'requestKey', delivery_id::text) = ?";
         try (var connection = connections.open(); var statement = connection.prepareStatement(sql)) {
             statement.setQueryTimeout(5);
             statement.setString(1, execution); statement.setLong(2, tenant); statement.setString(3, key);
             try (var result = statement.executeQuery()) {
-                result.next(); return new DltRecoveryPlanner.History(result.getBoolean(1), result.getBoolean(2));
+                result.next();
+                var coverage = result.getTimestamp(3);
+                return new DltRecoveryPlanner.History(result.getBoolean(1), result.getBoolean(2),
+                        coverage == null ? null : coverage.toInstant());
             }
         } catch (SQLException unavailable) { throw new IllegalStateException("SQL history unavailable", unavailable); }
     }
