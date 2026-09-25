@@ -3,6 +3,7 @@ package event.delivery.dispatch.lifecycle;
 import event.common.delivery.*;
 import event.common.lifecycle.*;
 import event.common.receipt.*;
+import event.common.redis.DeliveryCache;
 import event.delivery.dispatch.external.client.ProviderFailureException;
 import event.delivery.dispatch.model.*;
 import event.delivery.dispatch.retry.RetryCommand;
@@ -16,8 +17,74 @@ import static event.common.dynamodb.DynamoDbTableNames.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 /** Same real-DB budget harness, now exercising the v2 ORIGIN/STEP contract. */
+@org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable(named = "DYNAMODB_TEST_ENDPOINT", matches = ".+")
 class OriginStepDynamoDbTest extends DynamoDbWriteBudgetTest {
     final Queue<RetryCommand> retries = new ArrayDeque<>();
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(ints = {1, 2})
+    void immediatePublicationReplayUsesCommittedResultWithoutAnotherWrite(int route) {
+        ingress(route == 2);
+        invoke(1, 1, true, route == 2 ? "FALLBACK" : null);
+        if (route == 2) invoke(2, 1, true, null);
+        var receipt = ReceiptEvent.received(UUID.randomUUID().toString(), event.deliveryId(), id(route),
+                route == 1 ? PRIMARY : SECONDARY, route, ReceiptOutcome.DELIVERED, "DELIVERED", START, START, 1);
+        var cache = org.mockito.Mockito.mock(event.common.redis.DeliveryCache.class);
+        var observed = new ArrayList<DeliveryFinalized>();
+        var first = receiptService();
+        first.finalization(result -> {
+            // Even an uncertain broker ack must leave a durable, immutable recovery result.
+            observed.add(result);
+            assertEquals(result, lifecycle.result(lifecycle.read(event.deliveryId(), "ATTEMPT#" + id(route))));
+            throw new IllegalStateException("Broker acknowledgement lost");
+        }, cache, meters);
+        assertThrows(IllegalStateException.class, () -> first.process(receipt));
+        org.mockito.Mockito.verifyNoInteractions(cache);
+        int writes = budget.writeCalls;
+        int reads = budget.readCalls;
+        clock.now = START.plusSeconds(1);
+        // A new handler models consumer restart, with no in-memory handoff from the first instance.
+        var restarted = receiptService();
+        restarted.finalization(observed::add, cache, meters);
+        restarted.process(receipt);
+        assertEquals(List.of(observed.getFirst(), observed.getFirst()), observed);
+        assertEquals(START, observed.getLast().finalizedAt());
+        assertEquals(writes, budget.writeCalls);
+        assertEquals(reads + 1, budget.readCalls); // Only the receipt's existing strong STEP read.
+        org.mockito.Mockito.verify(cache).removeSchedule(event.deliveryId());
+        assertEquals(1, meters.get("delivery.receipt.finalization").tag("outcome", "publish_failed").counter().count());
+        assertEquals(1, meters.get("delivery.receipt.finalization").tag("outcome", "published").counter().count());
+        assertTrue(new DeliveryCompactor(db).compact(observed.getFirst()));
+        restarted.process(receipt); // Cleanup fences replays: no re-creation or publication.
+        assertEquals(2, observed.size());
+        if (route == 1) assertEquals(5, budget.writeCalls);
+    }
+
+    @Test void failedImmediatePublicationStillRecoversFromStepAfterDeadlineWithoutReceiptReplay() {
+        ingress(false); invoke(1, 1, true, null);
+        var receipt = ReceiptEvent.received(UUID.randomUUID().toString(), event.deliveryId(), id(1), PRIMARY,
+                1, ReceiptOutcome.DELIVERED, "DELIVERED", START, START, 1);
+        var handler = receiptService();
+        handler.finalization(result -> { throw new IllegalStateException("Kafka unavailable"); },
+                DeliveryCache.UNAVAILABLE, meters);
+        assertThrows(IllegalStateException.class, () -> handler.process(receipt));
+        int writes = budget.writeCalls;
+        var expected = lifecycle.result(lifecycle.read(event.deliveryId(), "ATTEMPT#" + id(1)));
+        clock.now = START.plus(config.primaryTtl()).plusSeconds(1);
+        assertNull(receipts.apply(receipt, clock.now).finalized()); // Late webhooks stay discarded.
+        service.reconcile(event.deliveryId()); // Independent durable recovery of the earlier committed result.
+        assertEquals(List.of(expected), results);
+        assertEquals(writes, budget.writeCalls);
+        assertTrue(new DeliveryCompactor(db).compact(expected));
+        assertEquals(5, budget.writeCalls);
+    }
+
+    private event.delivery.dispatch.receipt.ReceiptResultService receiptService() {
+        return new event.delivery.dispatch.receipt.ReceiptResultService(receipts,
+                org.mockito.Mockito.mock(event.delivery.dispatch.service.DispatchService.class),
+                org.mockito.Mockito.mock(event.delivery.dispatch.service.SecondaryDispatchService.class),
+                config, clock, new event.common.metrics.DeliveryMetrics(meters));
+    }
     @Override void ingress(boolean fallback) {
         event = DeliveryEvent.requested(UUID.randomUUID().toString(), 999L, "SMS", Map.of("message", "budget-test"), START, fallback)
                 .forAdmission().execution(UUID.randomUUID().toString()).toDispatchRequested();

@@ -2,11 +2,15 @@ package event.delivery.dispatch.receipt;
 
 import event.common.receipt.ReceiptEvent;
 import event.common.metrics.DeliveryMetrics;
+import event.common.redis.DeliveryCache;
 import event.delivery.dispatch.config.DispatchProperties;
+import event.delivery.dispatch.lifecycle.FinalizedPublisher;
 import event.delivery.dispatch.service.DispatchService;
 import event.delivery.dispatch.service.SecondaryDispatchService;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
+import io.micrometer.core.instrument.MeterRegistry;
 
 import java.time.Clock;
 
@@ -18,6 +22,15 @@ public class ReceiptResultService {
     private final DispatchProperties properties;
     private final Clock clock;
     private final DeliveryMetrics metrics;
+    private FinalizedPublisher finalizedPublisher;
+    private DeliveryCache cache = DeliveryCache.UNAVAILABLE;
+    private MeterRegistry registry;
+
+    // The publisher exists only when lifecycle processing is enabled. Otherwise retain the saved schedule.
+    @Autowired(required = false)
+    public void finalization(FinalizedPublisher publisher, DeliveryCache cache, MeterRegistry registry) {
+        this.finalizedPublisher = publisher; this.cache = cache; this.registry = registry;
+    }
 
     public ReceiptResultService(ReceiptResultRepository repository, DispatchService primary, SecondaryDispatchService secondary,
                                 DispatchProperties properties, Clock clock, DeliveryMetrics metrics) {
@@ -46,6 +59,18 @@ public class ReceiptResultService {
                         .addKeyValue("provider", receipt.provider()).addKeyValue("code", receipt.code());
             }
             audit.log("Provider receipt decision observed");
+            if (result.finalized() != null && finalizedPublisher != null) {
+                try {
+                    // Synchronous broker ack precedes the receipt consumer's RECORD offset commit.
+                    finalizedPublisher.publish(result.finalized());
+                } catch (RuntimeException failure) {
+                    registry.counter("delivery.receipt.finalization", "outcome", "publish_failed").increment();
+                    throw failure;
+                }
+                // STEP's durable recovery index remains until SQL-backed cleanup; no Kafka-ack DB write.
+                cache.removeSchedule(result.finalized().deliveryId());
+                registry.counter("delivery.receipt.finalization", "outcome", "published").increment();
+            }
             if (!result.resumeDispatch()) return;
             var active = repository.loadDelivery(receipt.deliveryId());
             if (active.isEmpty()) return;
