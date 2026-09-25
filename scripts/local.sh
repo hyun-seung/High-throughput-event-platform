@@ -34,8 +34,8 @@ case "${1:-help}" in
   run)
     module="${2:-}"
     case "$module" in
-      event-api|delivery-ingress-worker|dispatch-worker|external-api-simulator|receipt-api) ;;
-      *) echo 'Usage: bash scripts/local.sh run <event-api|delivery-ingress-worker|dispatch-worker|external-api-simulator|receipt-api>' >&2; exit 2 ;;
+      event-api|delivery-ingress-worker|dispatch-worker|external-api-simulator|receipt-api|delivery-result-worker) ;;
+      *) echo 'Usage: bash scripts/local.sh run <event-api|delivery-ingress-worker|dispatch-worker|external-api-simulator|receipt-api|delivery-result-worker>' >&2; exit 2 ;;
     esac
     export SPRING_PROFILES_ACTIVE=dev
     export KAFKA_BOOTSTRAP_SERVERS="localhost:${KAFKA_HOST_PORT:-9092}"
@@ -51,6 +51,7 @@ case "${1:-help}" in
       delivery-ingress-worker) export SERVER_PORT="${INGRESS_HTTP_PORT:-8091}" ;;
       dispatch-worker) export SERVER_PORT="${DISPATCH_HTTP_PORT:-8092}" ;;
       receipt-api) export SERVER_PORT="${RECEIPT_API_PORT:-8094}" ;;
+      delivery-result-worker) export SERVER_PORT="${RESULT_HTTP_PORT:-8095}" ;;
     esac
     if [[ "$module" == event-api ]]; then
       : "${JWT_SECRET:?Copy .env.example to .env and set JWT_SECRET}"
