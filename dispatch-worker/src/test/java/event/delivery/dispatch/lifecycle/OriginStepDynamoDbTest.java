@@ -21,6 +21,55 @@ import static org.junit.jupiter.api.Assertions.*;
 class OriginStepDynamoDbTest extends DynamoDbWriteBudgetTest {
     final Queue<RetryCommand> retries = new ArrayDeque<>();
 
+    @Test void repeatedRecoveryCommandsInvokePrimaryOnlyOnce() {
+        ingress(false);
+        var calls = new java.util.concurrent.atomic.AtomicInteger();
+        var primary = recoveryDispatch(calls);
+        primary.dispatch(event);
+        primary.dispatch(event);
+        assertEquals(1, calls.get());
+    }
+
+    @Test void expiredRecoveryCommandFinalizesAtOriginalDeadlineWithoutCallingProvider() {
+        ingress(false);
+        var calls = new java.util.concurrent.atomic.AtomicInteger();
+        clock.now = START.plus(config.primaryTtl());
+        var primary = recoveryDispatch(calls);
+        primary.dispatch(event);
+        primary.dispatch(event);
+        service.reconcile(event.deliveryId());
+        assertEquals(0, calls.get());
+        assertEquals(1, results.size());
+        assertEquals("EXPIRED", results.getFirst().outcome());
+        assertEquals(START.plus(config.primaryTtl()), results.getFirst().deadline());
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+    void originCleanupOrReplacementAfterRecoveryPlanningCannotCreateStep(boolean replaced) {
+        ingress(false);
+        var key = DeliveryCompletion.metaKey(event.requestKey());
+        if (replaced) {
+            db.updateItem(r -> r.tableName(ORIGIN).key(key).updateExpression("SET delivery_id=:id")
+                    .expressionAttributeValues(Map.of(":id", AttributeValue.fromS(UUID.randomUUID().toString()))));
+        } else db.deleteItem(r -> r.tableName(ORIGIN).key(key));
+        var calls = new java.util.concurrent.atomic.AtomicInteger();
+        recoveryDispatch(calls).dispatch(event);
+        assertEquals(0, calls.get());
+        assertTrue(db.query(r -> r.tableName(STEP).consistentRead(true).keyConditionExpression("pk=:pk")
+                .expressionAttributeValues(Map.of(":pk", AttributeValue.fromS("DELIVERY#" + event.deliveryId())))).items().isEmpty());
+    }
+
+    private event.delivery.dispatch.service.DispatchService recoveryDispatch(java.util.concurrent.atomic.AtomicInteger calls) {
+        var secondary = new event.delivery.dispatch.service.SecondaryDispatchService(attempts,
+                (e, id) -> { calls.incrementAndGet(); return new event.delivery.dispatch.external.dto.ProviderDispatchResponse(e.deliveryId(), true, clock.instant()); },
+                new event.delivery.dispatch.config.SecondaryDispatchProperties(SECONDARY, Duration.ofHours(4)),
+                config, clock, new event.common.metrics.DeliveryMetrics(meters));
+        return new event.delivery.dispatch.service.DispatchService(attempts,
+                (e, id) -> { calls.incrementAndGet(); return new event.delivery.dispatch.external.dto.ProviderDispatchResponse(e.deliveryId(), true, clock.instant()); },
+                config, clock, new event.common.metrics.DeliveryMetrics(meters), secondary);
+    }
+
     @org.junit.jupiter.params.ParameterizedTest
     @org.junit.jupiter.params.provider.ValueSource(ints = {1, 2})
     void immediatePublicationReplayUsesCommittedResultWithoutAnotherWrite(int route) {

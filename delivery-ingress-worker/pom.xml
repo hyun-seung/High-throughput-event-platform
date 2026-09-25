@@ -13,6 +13,8 @@
     <artifactId>delivery-ingress-worker</artifactId>
 
     <dependencies>
+        <!-- Operations CLI only: no JDBC Spring auto-configuration on the ingress hot path. -->
+        <dependency><groupId>org.postgresql</groupId><artifactId>postgresql</artifactId><scope>runtime</scope></dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
@@ -61,6 +63,13 @@
     </dependencies>
 
     <build>
+        <testResources>
+            <testResource><directory>src/test/resources</directory></testResource>
+            <testResource>
+                <directory>../delivery-result-worker/src/main/resources</directory>
+                <includes><include>db/migration/*.sql</include></includes>
+            </testResource>
+        </testResources>
         <plugins>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
