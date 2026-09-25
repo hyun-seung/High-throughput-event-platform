@@ -4,11 +4,18 @@ import execution from 'k6/execution';
 
 const rate = Number(__ENV.POC_RATE);
 const seconds = Number(__ENV.POC_SECONDS);
+// Load generation is k6; external Python runners only arrange services and reconcile results.
+const preAllocatedVUs = Number(__ENV.POC_PREALLOCATED_VUS || Math.min(1000, Math.max(20, rate)));
+const maxVUs = Number(__ENV.POC_MAX_VUS || Math.max(preAllocatedVUs, Math.min(1000, Math.max(100, rate * 5))));
+if (![rate, seconds, preAllocatedVUs, maxVUs].every(n => Number.isSafeInteger(n) && n > 0)
+    || maxVUs < preAllocatedVUs) {
+  throw new Error('Positive integer rate/duration/VUs and maxVUs >= preAllocatedVUs are required');
+}
 const body = JSON.stringify({ deliveryType: 'EMAIL', payload: { message: 'x'.repeat(960) } });
 export const options = {
   scenarios: { traffic: {
     executor: 'constant-arrival-rate', rate, timeUnit: '1s', duration: `${seconds}s`,
-    preAllocatedVUs: Math.max(20, rate), maxVUs: Math.min(1000, Math.max(100, rate * 5)),
+    preAllocatedVUs, maxVUs,
     gracefulStop: '25s',
   } },
   systemTags: ['status', 'method', 'name', 'scenario', 'expected_response'],
