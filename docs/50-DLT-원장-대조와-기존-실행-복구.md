@@ -1,6 +1,6 @@
 # DLT 원장 대조와 기존 실행 복구
 
-2026-09-26. [읽기 전용 분류](49-DLT-조회와-재처리-대상-분류.md)에 이어, **수동 복구·미완료 조치 자동 재개·미등록 DLT의 원문 보존과 인계**를 구현했다. SQL에 원문·조회 위치·보류 사유·조치·Kafka ack를 남긴다. 초기 원본 복구는 이력 보존 범위를 명시적으로 활성화한 경우에만 허용한다.
+2026-09-26. [읽기 전용 분류](49-DLT-조회와-재처리-대상-분류.md)에 이어, **원문 보존·인계·복구 재개와 보류 조회·감사 재검토**를 구현했다. SQL에 원문·조회 위치·보류 사유·조치·Kafka ack를 남긴다. 초기 원본 복구는 이력 보존 범위를 명시적으로 활성화한 경우에만 허용한다.
 
 ## 1. 처리 흐름과 재접수를 하지 않는 이유
 
@@ -91,7 +91,7 @@ Kafka producer idempotence만으로 재실행된 CLI 사이의 중복까지 막�
 
 ## 4. 로컬 PoC 실행
 
-JDK 21로 빌드한 JAR와 **V7까지 반영된** result worker SQL schema가 필요하다. 외부 실행 도구는 **Bash**이고 조회·판단·JDBC·Kafka 전송은 모두 Java다. 로컬 Kafka/DynamoDB/PostgreSQL 주소만 허용한다.
+JDK 21로 빌드한 JAR와 **V8까지 반영된** result worker SQL schema가 필요하다. 외부 실행 도구는 **Bash**이고 조회·판단·JDBC·Kafka 전송은 모두 Java다. 로컬 Kafka/DynamoDB/PostgreSQL 주소만 허용한다.
 
 초기 복구를 켜려면 모든 ingress·dispatch 인스턴스에 보류 조건을 이해하는 버전을 적용하고, SQL 주 DB 연결 및 이력 보존을 확인한 뒤 다음을 실행한다. 기존 실행의 재개에는 활성화가 필요 없다.
 
@@ -129,7 +129,7 @@ bash scripts/recover-dlt.sh apply delivery.requested.dlt.v1 0 42 \
 
 Java/JUnit으로 실제 PostgreSQL·DynamoDB Local·Kafka를 연결해 다음을 검증한다. 환경 실행·종료는 Bash + Docker Compose가 맡는다.
 
-최신 실행 결과: **전체 348개 통과, 실패·오류·미실행 0개**. 기존 340개에 미등록 DLT 인계 통합 8개를 추가했다. [검증 결과 JSON](검증-결과/2026-09-26-미등록-DLT-보존과-인계-348개-통합-검증.json)에 도구·실행 폴더·소스 지문·정리 결과를 남겼다.
+최신 실행 결과: **전체 356개 통과, 실패·오류·미실행 0개**. 기존 348개에 운영 조회·감사 재검토 통합 8개를 추가했다. [검증 결과 JSON](검증-결과/2026-09-26-DLT-운영-조회와-감사-재검토-356개-통합-검증.json)에 도구·실행 폴더·소스 지문·정리 결과를 남겼다.
 
 - 원래 시각·실행 ID 보존, 만료 분류, 원장 없음·이력 있음·원장 불일치·완료 표시·기존 STEP 보류, SQL 조회 실패 시 중단.
 - 실제 Kafka 인계와 SQL ack/조치 기록, 동일 작업 재실행 시 추가 발행 없음.
@@ -144,10 +144,12 @@ Java/JUnit으로 실제 PostgreSQL·DynamoDB Local·Kafka를 연결해 다음을
 - 완료 이력·실행 변경 시 HELD와 발송 없음, 최소 경과 시간·조회 범위·상한·구형 작업 제외, 수동 잠금 경합·오래된 선택 결과 차단, 원문 변조 거부. 실제 SIGKILL 시험과 구분한다.
 - 미등록 정상·중복·malformed DLT의 보존·분류와 기존 Kafka group offset 유지, 원문/커서 트랜잭션 rollback과 오래된 조회 결과의 중복 보존 방지.
 - Kafka 원문 삭제 후 SQL NEW 복구·원래 만료 시각 유지, 보존 전 retention 공백 중단, SQL 이력 조회 오류 후 재개, 완료 이력 보류, 커서 라우팅 변경 거부와 동시 분류 잠금.
+- 보류 목록 페이지·메타데이터만 조회, 연결된 복구 이력 조회, 원문 만료 후 감사 재검토, 동일 조치 중복 차단, 오래되거나 정밀도가 다른 버전 거부, 동시 조치 1건만 접수, 클러스터 범위 제한.
+- 실제 SQL trigger로 감사 INSERT 실패를 주입해 HELD→NEW 변경과 감사가 함께 rollback되는지 확인. 재검토도 이력 보존 조건과 원래 기한을 우회하지 않음.
 
 실제 SIGKILL·SQL commit 응답 유실을 포함한 모든 종료 지점을 이 시험이 검증한 것은 아니다. 성능/TPS 시험도 아니며, 성능 부하는 개발 완료 후 **k6**로 진행한다.
 
-다음 운영 범위는 **SQL에 보존된 보류 원문·사유 조회와 감사 가능한 조치, 경보 연결**이다. 이력 보존 범위 밖의 요청은 여전히 보류하며, 실제 운영 인증·권한도 남아 있다. 현재 복구 도구와 Lifecycle만으로 모든 DLT의 고객 결과 기한 보장이 완료됐다고 보지 않는다.
+보류 메타데이터·사유 조회와 감사 재검토는 로컬 CLI로 구현했다. 다음 운영 범위는 **결과 불명·고객 통지 소진·정리 보류의 조회·조치와 경보 연결**이다. 이력 보존 범위 밖의 요청은 여전히 보류하며, 실제 운영 인증·권한도 남아 있다. 현재 복구 도구와 Lifecycle만으로 모든 DLT의 고객 결과 기한 보장이 완료됐다고 보지 않는다.
 
 ## 6. 중단된 조치의 자동 재개
 
@@ -200,4 +202,31 @@ bash scripts/recover-dlt.sh intake delivery.requested.dlt.v1 0 0 10 30
 
 `intake-once`의 0은 이번 조회·SQL 인계가 완료되고 미분류·보류가 없다는 뜻이다. REGISTERED에는 Kafka 응답 미확인으로 PENDING인 복구도 포함되므로 고객 최종 완료나 Kafka 전체 ack의 의미가 아니다. 미분류·보류·보관 공백·복구 미확인은 3, 예외는 1이다. 지속 실행은 보관 공백에서 종료하고, 일시 조회 오류는 다음 주기까지 대기한다.
 
-보류 원문은 SQL에서 삭제하지 않는다. 이력 삭제·PITR 때는 `intake`를 포함한 모든 복구 프로세스를 중단한다. 보류 원문 조회·재조치 UI/API, 장기 보관 정책·용량·경보, 권한 검증은 다음 운영 작업에서 연결한다.
+보류 원문은 SQL에서 삭제하지 않는다. 이력 삭제·PITR 때는 `intake`를 포함한 모든 복구 프로세스를 중단한다. 보류 상태 조회와 재검토는 아래 CLI를 사용하며, 원문 열람 UI/API·장기 보관 정책·용량·경보·권한 검증은 다음 운영 작업에서 연결한다.
+
+## 8. 보류 조회와 감사 가능한 재검토
+
+`operate-dlt.sh`는 **PostgreSQL만 연결하는 Java 운영 CLI**다. 위 환경 변수 중 `DLT_DB_URL/USER/PASSWORD/SCHEMA`, `DLT_CLUSTER_ALIAS`만 사용한다. 조회에 Kafka·DynamoDB·업체 연결은 필요 없다. 현재 로컬 DB 접속 권한을 가진 개발·운영자가 사용하는 PoC이며, actor 문자열이 인증된 사용자나 역할 검증을 대신하지 않는다.
+
+```sh
+# 최초 페이지: afterOffset=-1, 최대 100건
+bash scripts/operate-dlt.sh held delivery.requested.dlt.v1 0 -1 20
+# 다음 페이지는 출력된 nextAfterOffset을 사용
+bash scripts/operate-dlt.sh status '<intakeId>'
+# 최신 status의 record.updatedAt과 이번 조치에 고유한 UUID를 사용
+bash scripts/operate-dlt.sh recheck '<intakeId>' '<updatedAt>' '<actionId UUID>' \
+  local-operator '보류 원인 해소 후 재검토'
+```
+
+`held`는 클러스터·토픽·partition으로 범위를 제한하고 offset 순으로 페이지를 읽는다. `hasMore=false`면 해당 조회 시점의 끝이다. 동시 조치로 보류 목록이 바뀔 수 있으므로 전체 목록이 하나의 고정 스냅샷인 것은 아니다. `status`는 한 조회 스냅샷에서 intake 상태·보류 사유·조회 cursor·연결된 복구 상태와 최근 복구 시도/운영 조치를 각각 최대 20개 반환한다. 원문 key/value/header나 command/checkpoint JSON은 출력하지 않는다. 클러스터가 다르거나 없는 ID의 status는 null이며 종료 코드 3이다.
+
+재검토는 다음 조건을 지킨다.
+
+1. 현재 상태가 HELD이고 `updatedAt`이 운영자가 읽은 값과 일치해야 한다. 다른 조치가 먼저 처리했거나 오래된 화면이면 `STALE_OR_NOT_HELD`로 거절한다.
+2. HELD→NEW 변경과 `dlt_intake_action`의 actionId·조치자·사유·이전 버전 저장을 한 SQL 트랜잭션으로 commit한다. 감사 저장에 실패하면 상태 변경도 rollback한다.
+3. 같은 actionId·입력을 반복하면 `ALREADY_QUEUED`다. 이미 처리돼 다시 HELD가 된 경우에도 동일 조치로 또 NEW로 만들지 않는다. 같은 ID에 다른 입력은 `ACTION_CONFLICT`, 동시 동일 조치 잠금 경합은 `BUSY`다.
+4. `intake` worker가 NEW 원문을 다시 대조한다. 원문·실행·기한·이력 보존 조건을 수정하거나 우회하지 않는다. 보류 원인이 그대로면 다시 HELD, 완료 이력이 있으면 외부 발송 없이 보류한다. Kafka 원문이 만료돼도 SQL 원문을 사용한다.
+
+`QUEUED`와 `ALREADY_QUEUED`는 재검토 요청의 저장 결과이며 업체 발송·Kafka 인계·고객 결과 완료가 아니다. intake 프로세스가 실행돼 있어야 이후 처리가 진행된다. 응답 유실 시 새 actionId를 만들지 말고 **같은 ID와 원래 인수**로 재시도한다. 새 조치를 의도할 때는 현재 상태를 다시 조회하고 새 ID를 사용한다.
+
+조회/접수 성공은 종료 코드 0, 대상 없음·상태/버전/조치 충돌은 3, 예외는 1, 사용법 오류는 2다. 재검토 중 SQL 응답 미확인도 성공으로 단정하지 않는다. 이 기능은 DLT 보류에만 적용하며 결과 불명 강제 확정이나 고객 통지 재전송 예산 초기화 기능을 제공하지 않는다. 정상 경로의 SQL/DynamoDB 쓰기는 변하지 않는다.
