@@ -77,6 +77,12 @@ class FullFlow:
     def write(self, name, value):
         (self.directory / name).write_text(json.dumps(value, ensure_ascii=False, indent=2) + '\n')
 
+    def application_overrides(self):
+        return {}
+
+    def fail_first_notification(self):
+        return True
+
     def docker(self, *args, input=None):
         return subprocess.check_output(self.compose + list(args), cwd=ROOT, env=self.compose_env,
                                        text=True, input=input, timeout=240)
@@ -173,8 +179,9 @@ class FullFlow:
                             and self.headers.get('Idempotency-Key') == body['batchId']):
                         raise AssertionError('Invalid customer batch')
                     with owner.lock:
-                        status = 503 if not owner.callback_records else 204
-                        owner.callback_records.append({'body': body, 'status': status})
+                        status = 503 if owner.fail_first_notification() and not owner.callback_records else 204
+                        owner.callback_records.append({'body': body, 'status': status,
+                                                       'receivedAt': datetime.now(timezone.utc).isoformat()})
                     self.send_response(status); self.send_header('Content-Length', '0'); self.end_headers()
                 except Exception as failure:
                     with owner.lock: owner.callback_errors.append(str(failure))
@@ -200,6 +207,7 @@ class FullFlow:
             'DISPATCH_PRIMARY_TTL': '8s', 'SECONDARY_TTL': '12s',
             'CUSTOMER_NOTIFICATIONS_ENABLED': 'true', 'DELIVERY_CLEANUP_ENABLED': 'true',
             'JWT_SECRET': 'bG9jYWwtZGV2ZWxvcG1lbnQtb25seS1zZWNyZXQtYXQtbGVhc3QtMzItYnl0ZXMtbG9uZw=='})
+        env.update(self.application_overrides())
         for name in MODULES:
             opts = [f'--server.port={self.ports[name]}', '--server.address=127.0.0.1',
                     f'--management.server.port={self.ports[name + "_metrics"]}']
@@ -240,7 +248,7 @@ class FullFlow:
         return body['data']['deliveryId']
 
     def history(self):
-        return json.loads(self.sql("SELECT coalesce(json_agg(t),'[]') FROM (SELECT h.result_json, "
+        return json.loads(self.sql("SELECT coalesce(json_agg(t),'[]') FROM (SELECT h.result_json, h.stored_at, c.completed_at AS cleanup_completed_at, "
             "n.status AS notification_status, n.attempt_count, c.status AS cleanup_status "
             "FROM delivery_results.delivery_history h JOIN delivery_results.customer_notification_outbox n "
             "USING(result_event_id) JOIN delivery_results.delivery_cleanup_outbox c USING(result_event_id)) t;"))
