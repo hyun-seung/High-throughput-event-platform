@@ -42,6 +42,7 @@
 - [DynamoDB 사용 횟수와 최소화 검토](docs/33-DynamoDB-사용-횟수와-최소화-검토.md)
 - [Redis TTL의 보장과 DynamoDB 최소화 계획](docs/34-Redis-TTL의-보장과-DynamoDB-최소화-계획.md)
 - [원본과 단계 최소 저장 및 Redis 완료 중복 차단](docs/35-원본과-단계-최소-저장-및-Redis-완료-중복-차단.md)
+- [ORIGIN·STEP 테이블과 경로별 쓰기 내역](docs/36-원본과-단계-테이블-분리와-경로별-쓰기-내역.md)
 - [설계 결정과 근거 목록](docs/adr/설계-결정과-근거-목록.md)
 
 ## Grafana 대시보드

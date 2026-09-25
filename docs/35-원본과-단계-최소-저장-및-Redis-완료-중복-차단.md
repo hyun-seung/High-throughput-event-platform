@@ -16,7 +16,7 @@ API → Kafka 접수 확인 → ORIGIN 조건부 Put
     → Redis TTL 동안 동일 고객+ClientMsgId 새 처리 차단
 ```
 
-ORIGIN은 기존 물리 키 이름 `META`를 사용한다. 원문을 별도 항목으로 한 번 더 복사하지 않는다. STEP도 기존 `ATTEMPT#...` 키를 사용한다. v2는 별도 `RECEIPT#...` 및 `FINAL` 항목을 만들지 않는다.
+물리 테이블은 `ORIGIN`, `STEP`으로 분리했다. [테이블 배치·쓰기 합산·이관 절차](36-원본과-단계-테이블-분리와-경로별-쓰기-내역.md)를 참고한다. ORIGIN 테이블 안에서는 기존 정렬 키 값 `META`를 사용한다. 원문을 별도 항목으로 한 번 더 복사하지 않는다. STEP도 기존 `ATTEMPT#...` 키를 사용한다. v2는 별도 `RECEIPT#...` 및 `FINAL` 항목을 만들지 않는다.
 
 ## 2. 같은 ClientMsgId의 재발송을 구분하는 방법
 
@@ -81,7 +81,7 @@ v2는 Kafka ack를 별도 DDB Update로 저장하지 않는다. SQL 저장을 �
 
 ## 7. 적용 순서와 검증 한계
 
-1. 기존 GSI와 SQL migration은 유지한다. worker와 event-common의 v1/v2 계약 지원 버전을 먼저 배포하고 API를 마지막에 교체한다. 진행 중 앱을 섞어 임의 교체하는 것은 이 문서의 검증 범위 밖이다.
+1. SQL migration은 유지한다. 물리 테이블 분리 버전은 36번 문서의 전체 writer 중지·데이터 복사·대조 후 배포 절차를 따른다. 양 테이블에 GSI가 필요하며 구형 delivery_state 사용 앱과 혼용하지 않는다.
 2. 각 worker에 동일한 REDIS_HOST/PORT/DATABASE를 지정한다. 운영용 Kafka retry topic은 replicas와 min.insync.replicas를 장애 목표에 맞춰 설정한다. 기본 1/1은 로컬 PoC 값이다.
 3. `DISPATCH_LIFECYCLE_ENABLED=true`, `DELIVERY_CLEANUP_ENABLED=true` 및 결과 worker/고객 통지 설정을 적용해야 만료·정리까지 동작한다. 완료 TTL은 `DELIVERY_COMPLETED_RETENTION`, GSI 복구 주기는 `dispatch.lifecycle.recovery-poll-ms`로 조정한다.
 4. 기존 v1 완료 META를 일괄 삭제하지 않는다. 기존 요청은 v1 호환 경로와 완료 표식 정책을 유지한다. 기존 완료 요청까지 새로운 보관 정책으로 전환하는 일괄 이관은 별도 작업이다.
