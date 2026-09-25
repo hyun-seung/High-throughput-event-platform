@@ -9,6 +9,8 @@ import java.util.Map;
 
 public final class DeliveryCompletion {
     public static final String FENCE = "completion_event_id";
+    public static final String RECOVERY_HOLD = "dlt_recovery_hold";
+    public static final String RECOVERY_ID = "dlt_recovery_id";
     public static final String FINGERPRINT = "request_fingerprint";
     public static final String TRACKING_VERSION = "receipt_tracking_version";
     public static final String RECEIPT_IDS = "receipt_marker_ids";
