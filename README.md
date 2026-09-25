@@ -55,6 +55,7 @@
 - [Netty TCP와 HTTP 연결 풀 적용](docs/46-Netty-TCP와-HTTP-연결-풀-적용.md)
 - [Kafka 장애 시 접수 보류와 결과 복구 검증](docs/47-Kafka-장애-시-접수-보류와-결과-복구-검증.md)
 - [Java 중심 테스트와 외부 도구 사용 기준](docs/48-Java-중심-테스트와-외부-도구-사용-기준.md)
+- [DLT 조회와 재처리 대상 분류](docs/49-DLT-조회와-재처리-대상-분류.md)
 - [설계 결정과 근거 목록](docs/adr/설계-결정과-근거-목록.md)
 
 ## Grafana 대시보드
