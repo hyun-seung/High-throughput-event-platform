@@ -16,28 +16,10 @@ public final class DltInspector {
 
     public static Page read(String bootstrap, String topic, int partition, long offset, int limit,
                             DltInspection inspection) {
-        if (bootstrap == null || !bootstrap.matches("(localhost|127\\.0\\.0\\.1):[0-9]+")
-                || topic == null || !topic.matches("[A-Za-z0-9._-]{1,249}") || topic.equals(".") || topic.equals("..")
-                || partition < 0 || offset < 0 || limit < 1 || limit > 100) {
-            throw new IllegalArgumentException("Local broker, topic, partition>=0, offset>=0 and limit 1..100 required");
-        }
-        var config = new HashMap<String, Object>();
-        config.put("bootstrap.servers", bootstrap);
-        config.put("enable.auto.commit", false);
-        config.put("allow.auto.create.topics", false);
-        config.put("auto.offset.reset", "none");
-        config.put("default.api.timeout.ms", 5000);
-        config.put("request.timeout.ms", 5000);
-        config.put("max.poll.records", limit);
-        config.put("max.partition.fetch.bytes", 1024 * 1024);
-        config.put("fetch.max.bytes", 2 * 1024 * 1024);
-        config.put("client.id", "delivery-dlt-inspector");
-        try (var consumer = new KafkaConsumer<>(config, new ByteArrayDeserializer(), new ByteArrayDeserializer())) {
+        validate(bootstrap, topic, partition, offset, limit);
+        try (var consumer = open(bootstrap, limit)) {
             var tp = new TopicPartition(topic, partition);
-            // Metadata lookup does not create missing topics and avoids silently seeking another partition.
-            if (consumer.partitionsFor(topic).stream().noneMatch(p -> p.partition() == partition)) {
-                throw new IllegalArgumentException("DLT partition does not exist");
-            }
+            verifyPartition(consumer, tp);
             consumer.assign(List.of(tp));
             long beginning = consumer.beginningOffsets(List.of(tp)).get(tp);
             long end = consumer.endOffsets(List.of(tp)).get(tp);
@@ -58,6 +40,58 @@ public final class DltInspector {
                 if (rows.size() < limit) next = Math.min(end, consumer.position(tp));
             }
             return new Page(beginning, end, next, next == end, List.copyOf(rows));
+        }
+    }
+
+    private static void validate(String bootstrap, String topic, int partition, long offset, int limit) {
+        if (bootstrap == null || !bootstrap.matches("(localhost|127\\.0\\.0\\.1):[0-9]+")
+                || topic == null || !topic.matches("[A-Za-z0-9._-]{1,249}") || topic.equals(".") || topic.equals("..")
+                || partition < 0 || offset < 0 || limit < 1 || limit > 100) {
+            throw new IllegalArgumentException("Local broker, topic, partition>=0, offset>=0 and limit 1..100 required");
+        }
+    }
+
+    private static void verifyPartition(KafkaConsumer<byte[], byte[]> consumer, TopicPartition tp) {
+        if (consumer.partitionsFor(tp.topic()).stream().noneMatch(p -> p.partition() == tp.partition())) {
+            throw new IllegalArgumentException("DLT partition does not exist");
+        }
+    }
+
+    private static KafkaConsumer<byte[], byte[]> open(String bootstrap, int limit) {
+        var config = new HashMap<String, Object>();
+        config.put("bootstrap.servers", bootstrap);
+        config.put("enable.auto.commit", false);
+        config.put("allow.auto.create.topics", false);
+        config.put("auto.offset.reset", "none");
+        config.put("default.api.timeout.ms", 5000);
+        config.put("request.timeout.ms", 5000);
+        config.put("max.poll.records", limit);
+        config.put("max.partition.fetch.bytes", 1024 * 1024);
+        config.put("fetch.max.bytes", 2 * 1024 * 1024);
+        config.put("client.id", "delivery-dlt-inspector");
+        return new KafkaConsumer<>(config, new ByteArrayDeserializer(), new ByteArrayDeserializer());
+    }
+
+
+    public static org.apache.kafka.clients.consumer.ConsumerRecord<byte[], byte[]> fetchExact(
+            String bootstrap, String topic, int partition, long offset) {
+        validate(bootstrap, topic, partition, offset, 1);
+        try (var consumer = open(bootstrap, 1)) {
+            var tp = new TopicPartition(topic, partition);
+            verifyPartition(consumer, tp);
+            consumer.assign(List.of(tp));
+            long beginning = consumer.beginningOffsets(List.of(tp)).get(tp);
+            long end = consumer.endOffsets(List.of(tp)).get(tp);
+            if (offset < beginning || offset >= end) throw new IllegalArgumentException("Exact DLT offset outside retained range");
+            consumer.seek(tp, offset);
+            long deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos();
+            while (System.nanoTime() < deadline) {
+                for (var record : consumer.poll(Duration.ofMillis(250))) {
+                    if (record.offset() != offset) throw new IllegalArgumentException("Exact DLT offset is no longer retained");
+                    return record;
+                }
+            }
+            throw new IllegalStateException("Exact DLT record unavailable");
         }
     }
 
