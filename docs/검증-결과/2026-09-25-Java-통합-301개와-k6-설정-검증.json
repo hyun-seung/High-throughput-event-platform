@@ -1,0 +1,53 @@
+{
+  "date": "2026-09-25",
+  "baseCommit": "5cd0a553d5e43128d579e091993afc188a659b51",
+  "status": "PASS",
+  "runDirectory": ".poc-results/java-test-20260925140528-16402",
+  "javaIntegration": {
+    "suites": 35,
+    "executed": 301,
+    "skipped": 0,
+    "failures": 0,
+    "errors": 0
+  },
+  "cleanup": {
+    "containersStopped": true,
+    "volumesRetained": true
+  },
+  "tools": "assertions=Java/JUnit\nrunner=Maven Wrapper\norchestration=Bash+Docker Compose\nmode=integration\n",
+  "javaVersion": "openjdk version \"21.0.7\" 2025-04-15 LTS\nOpenJDK Runtime Environment Temurin-21.0.7+6 (build 21.0.7+6-LTS)\nOpenJDK 64-Bit Server VM Temurin-21.0.7+6 (build 21.0.7+6-LTS, mixed mode, sharing)\n",
+  "infrastructure": "/java-test-20260925140528-16402-kafka-1 apache/kafka:4.0.2 healthy\n/java-test-20260925140528-16402-redis-1 redis:7.4-alpine healthy\n/java-test-20260925140528-16402-postgres-1 postgres:17-alpine healthy\n/java-test-20260925140528-16402-dynamodb-local-1 amazon/dynamodb-local:2.6.1 healthy\n",
+  "k6": {
+    "version": "1.8.1",
+    "mode": "inspect only, no traffic",
+    "valid10000TpsOptions": {
+      "traffic": {
+        "executor": "constant-arrival-rate",
+        "startTime": null,
+        "gracefulStop": "25s",
+        "env": null,
+        "exec": null,
+        "tags": null,
+        "rate": 10000,
+        "timeUnit": "1s",
+        "duration": "10s",
+        "preAllocatedVUs": 1000,
+        "maxVUs": 1000
+      }
+    },
+    "invalidVuLimitRejected": true
+  },
+  "grafana": {
+    "url": "http://localhost:13000/d/delivery-overview",
+    "healthDatabase": "ok",
+    "dashboardApiStatus": 200,
+    "existingContainerRestarted": true,
+    "monitoringKafkaStopped": true
+  },
+  "sourceSha256": {
+    "pom.xml": "830a17393d15cde937af3771d92ec7dff8fc0dc4ce19897c998fa84bdc2315bb",
+    "scripts/test-java.sh": "8a83a7ce2e2b97c48a1ce76be3ca50f08c7f14ea7570cda00bfd5d04faea7c7a",
+    "scripts/testing/JavaTestReport.java": "ef48d1e57e2092b12bf7c055497bf5acdf92d7cb5f37edd3b3cb1224ca863a72",
+    "scripts/poc/load.js": "6261a5caf8a25e9ec7d63138e360baac6eea65f3abb6556582ccdbabbb227acb"
+  }
+}
