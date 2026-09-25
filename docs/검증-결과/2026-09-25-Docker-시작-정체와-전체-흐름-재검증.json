@@ -1,0 +1,512 @@
+{
+  "date": "2026-09-25",
+  "status": "PASS_WITH_DOCKER_START_WORKAROUND",
+  "docker": {
+    "desktop": "4.89.0",
+    "engine": "29.7.2",
+    "compose": "5.5.0",
+    "context": "desktop-linux",
+    "daemonConnectivity": "version/info/ps succeeded within 1 second",
+    "observedFailure": "New container first start remained Created, Running=false, Pid=0 until timeout. Reproduced with Compose and direct CLI, including Redis without ports/volumes.",
+    "isolatedReproducer": {
+      "firstStart": "10s timeout",
+      "secondStartSeconds": 0.15,
+      "temporaryContainerRemoved": true
+    },
+    "internalRootCause": "Not established; not claimed to be a confirmed known version bug.",
+    "workaround": "Compose create; direct start; after timeout inspect state and retry only Created once; never restart running containers; verify init exit 0 and all service healthchecks.",
+    "globalRestartPerformed": false
+  },
+  "runDirectory": ".poc-results/full-flow-779f51a8ecbc",
+  "summary": {
+    "passed": 6,
+    "historyRows": 6,
+    "completedDuplicateBlocked": true,
+    "customerRetrySameBatch": true,
+    "redisScheduleLossRecovered": true,
+    "resultCounts": {
+      "DELIVERED": 4,
+      "EXPIRED": 2
+    },
+    "completedAt": "2026-09-25T08:26:39.730972+00:00",
+    "scope": "functional small-count, not TPS benchmark"
+  },
+  "environment": {
+    "runId": "full-flow-779f51a8ecbc",
+    "ports": {
+      "kafka": 50859,
+      "redis": 50860,
+      "postgres": 50861,
+      "dynamo": 50862,
+      "tcp": 50863,
+      "provider": 50864,
+      "receipt": 50865,
+      "ingress": 50866,
+      "api": 50867,
+      "dispatch": 50868,
+      "result": 50869,
+      "provider_metrics": 50870,
+      "receipt_metrics": 50871,
+      "ingress_metrics": 50872,
+      "api_metrics": 50873,
+      "dispatch_metrics": 50874,
+      "result_metrics": 50875
+    },
+    "gitCommit": "3dbcea0c87315485d9af1daf95ac0e6c03c2dcd9",
+    "workingTreeDirty": true,
+    "jarSha256": {
+      "provider": "2c32cccc284b31a8c83dd1b27594146540c66de7e4cf159510cfd947900b4ae9",
+      "receipt": "2c9f0a48a73a5847690ca54754322d78dba1069be35abf385fe6043940bca812",
+      "ingress": "908c043760e8cc44a44fed241d6981df552f63a258682632bb46cee03de3fd48",
+      "api": "41335a64611edfd7bfcd6958c4c8e323e4cd77bcdf66580d9268fbf6277fab58",
+      "dispatch": "c22b0c5f355360e10fb95973392d5ff683f74c98f716b52d5115733f9716ced9",
+      "result": "fcb2c26974d0c1f0cebbb95647dd8e78fb11a008a0adb674d7099657c307540a"
+    },
+    "harnessSha256": "e1b109f417d83ade2152435fbb498a12368dd8518f7999272b327de77fc862e8",
+    "primaryTtlSeconds": 8,
+    "secondaryTtlSeconds": 12,
+    "recoveryPollMillis": 3000,
+    "infraStartup": "compose create -> docker start init -> wait init exit 0 -> start services -> healthcheck",
+    "productionRecoveryPollMillis": 600000,
+    "providerDeduplicate": false,
+    "scope": "small-count functional proof, not load/HA/production timing proof"
+  },
+  "infraHealth": {
+    "full-flow-779f51a8ecbc-redis-1": "healthy",
+    "full-flow-779f51a8ecbc-postgres-1": "healthy",
+    "full-flow-779f51a8ecbc-kafka-1": "healthy",
+    "full-flow-779f51a8ecbc-dynamodb-local-1": "healthy"
+  },
+  "containerStartAttempts": {
+    "full-flow-779f51a8ecbc-dynamodb-data-init-1-start.json": [
+      {
+        "attempt": 1,
+        "outcome": "timeout",
+        "state": {
+          "Status": "created",
+          "Running": false,
+          "Paused": false,
+          "Restarting": false,
+          "OOMKilled": false,
+          "Dead": false,
+          "Pid": 0,
+          "ExitCode": 0,
+          "Error": "",
+          "StartedAt": "0001-01-01T00:00:00Z",
+          "FinishedAt": "0001-01-01T00:00:00Z"
+        },
+        "seconds": 10.062397624948062
+      },
+      {
+        "attempt": 2,
+        "outcome": "started",
+        "seconds": 0.8974466669606045
+      }
+    ],
+    "full-flow-779f51a8ecbc-dynamodb-local-1-start.json": [
+      {
+        "attempt": 1,
+        "outcome": "timeout",
+        "state": {
+          "Status": "created",
+          "Running": false,
+          "Paused": false,
+          "Restarting": false,
+          "OOMKilled": false,
+          "Dead": false,
+          "Pid": 0,
+          "ExitCode": 0,
+          "Error": "",
+          "StartedAt": "0001-01-01T00:00:00Z",
+          "FinishedAt": "0001-01-01T00:00:00Z"
+        },
+        "seconds": 10.044616082916036
+      },
+      {
+        "attempt": 2,
+        "outcome": "started",
+        "seconds": 0.4917747079161927
+      }
+    ],
+    "full-flow-779f51a8ecbc-kafka-1-start.json": [
+      {
+        "attempt": 1,
+        "outcome": "timeout",
+        "state": {
+          "Status": "created",
+          "Running": false,
+          "Paused": false,
+          "Restarting": false,
+          "OOMKilled": false,
+          "Dead": false,
+          "Pid": 0,
+          "ExitCode": 0,
+          "Error": "",
+          "StartedAt": "0001-01-01T00:00:00Z",
+          "FinishedAt": "0001-01-01T00:00:00Z"
+        },
+        "seconds": 10.035789541900158
+      },
+      {
+        "attempt": 2,
+        "outcome": "started",
+        "seconds": 0.7770813329843804
+      }
+    ],
+    "full-flow-779f51a8ecbc-postgres-1-start.json": [
+      {
+        "attempt": 1,
+        "outcome": "timeout",
+        "state": {
+          "Status": "created",
+          "Running": false,
+          "Paused": false,
+          "Restarting": false,
+          "OOMKilled": false,
+          "Dead": false,
+          "Pid": 0,
+          "ExitCode": 0,
+          "Error": "",
+          "StartedAt": "0001-01-01T00:00:00Z",
+          "FinishedAt": "0001-01-01T00:00:00Z"
+        },
+        "seconds": 10.051052125054412
+      },
+      {
+        "attempt": 2,
+        "outcome": "started",
+        "seconds": 0.4579458750085905
+      }
+    ],
+    "full-flow-779f51a8ecbc-redis-1-start.json": [
+      {
+        "attempt": 1,
+        "outcome": "timeout",
+        "state": {
+          "Status": "created",
+          "Running": false,
+          "Paused": false,
+          "Restarting": false,
+          "OOMKilled": false,
+          "Dead": false,
+          "Pid": 0,
+          "ExitCode": 0,
+          "Error": "",
+          "StartedAt": "0001-01-01T00:00:00Z",
+          "FinishedAt": "0001-01-01T00:00:00Z"
+        },
+        "seconds": 10.050255459034815
+      },
+      {
+        "attempt": 2,
+        "outcome": "started",
+        "seconds": 0.45414137502666563
+      }
+    ]
+  },
+  "cases": [
+    {
+      "name": "1차 성공·고객 503 후 재전송·정리",
+      "clientMsgId": "full-flow-779f51a8ecbc-0",
+      "requestKey": "1b79ddaf-220e-3d56-961a-cf5a6937bf03",
+      "history": {
+        "result_json": {
+          "reason": "DELIVERED",
+          "eventId": "910bc3ff-99df-39ef-b046-e74200449c79",
+          "outcome": "DELIVERED",
+          "deadline": "2026-09-25T08:25:52.874Z",
+          "provider": "mock-provider",
+          "resultAt": "2026-09-25T08:25:47.393206Z",
+          "tenantId": 1,
+          "attemptId": "a37831de-b9f9-38f4-8f64-34efa17dff82",
+          "eventType": "DeliveryFinalized",
+          "deliveryId": "e5e71469-4401-48d6-95ce-137f4b5321a6",
+          "occurredAt": "2026-09-25T08:25:44.874438Z",
+          "requestKey": "1b79ddaf-220e-3d56-961a-cf5a6937bf03",
+          "routeOrder": 1,
+          "finalizedAt": "2026-09-25T08:25:47.724846Z",
+          "deliveryType": "SMS",
+          "schemaVersion": 2
+        },
+        "notification_status": "DELIVERED",
+        "attempt_count": 2,
+        "cleanup_status": "DONE"
+      },
+      "provider": [
+        {
+          "effects": 1,
+          "calls": 1
+        },
+        {
+          "calls": 0,
+          "effects": 0
+        }
+      ],
+      "redisScheduleRemoved": false,
+      "originAbsent": true,
+      "stepsAbsent": true,
+      "completedRedisPresent": true,
+      "completedDuplicateBlocked": true
+    },
+    {
+      "name": "실패 웹훅 뒤 TCP 2차 성공",
+      "clientMsgId": "full-flow-779f51a8ecbc-1",
+      "requestKey": "cdbd0b6e-5919-3adb-bd91-d5708c911e63",
+      "history": {
+        "result_json": {
+          "reason": "DELIVERED",
+          "eventId": "3d9dd0d1-c5e7-3dc6-aa8a-86cc54dd6c66",
+          "outcome": "DELIVERED",
+          "deadline": "2026-09-25T08:26:03.497Z",
+          "provider": "tcp-provider",
+          "resultAt": "2026-09-25T08:25:51.745497Z",
+          "tenantId": 1,
+          "attemptId": "c486de5a-7fed-376c-9ec0-33ac0f6c7e52",
+          "eventType": "DeliveryFinalized",
+          "deliveryId": "e7cb9740-f142-4c14-aa5c-87bfa18dc0c2",
+          "occurredAt": "2026-09-25T08:25:51.251682Z",
+          "requestKey": "cdbd0b6e-5919-3adb-bd91-d5708c911e63",
+          "routeOrder": 2,
+          "finalizedAt": "2026-09-25T08:25:51.756064Z",
+          "deliveryType": "SMS",
+          "schemaVersion": 2
+        },
+        "notification_status": "DELIVERED",
+        "attempt_count": 1,
+        "cleanup_status": "DONE"
+      },
+      "provider": [
+        {
+          "effects": 1,
+          "calls": 1
+        },
+        {
+          "effects": 1,
+          "calls": 1
+        }
+      ],
+      "redisScheduleRemoved": false,
+      "originAbsent": true,
+      "stepsAbsent": true,
+      "completedRedisPresent": true
+    },
+    {
+      "name": "재시도 웹훅 뒤 1차 성공",
+      "clientMsgId": "full-flow-779f51a8ecbc-2",
+      "requestKey": "9e8b3345-7691-398a-b218-ca6cb75d1a18",
+      "history": {
+        "result_json": {
+          "reason": "DELIVERED",
+          "eventId": "d3987a6a-eaa7-3be1-94f4-3043036c45fe",
+          "outcome": "DELIVERED",
+          "deadline": "2026-09-25T08:26:01.781Z",
+          "provider": "mock-provider",
+          "resultAt": "2026-09-25T08:25:55.172115Z",
+          "tenantId": 1,
+          "attemptId": "678dbf2c-1101-3a71-82d5-dd2621f65a0e",
+          "eventType": "DeliveryFinalized",
+          "deliveryId": "52f9b3e0-e5fe-4507-aa10-c95d4ca9a91e",
+          "occurredAt": "2026-09-25T08:25:53.781229Z",
+          "requestKey": "9e8b3345-7691-398a-b218-ca6cb75d1a18",
+          "routeOrder": 1,
+          "finalizedAt": "2026-09-25T08:25:55.183653Z",
+          "deliveryType": "SMS",
+          "schemaVersion": 2
+        },
+        "notification_status": "DELIVERED",
+        "attempt_count": 1,
+        "cleanup_status": "DONE"
+      },
+      "provider": [
+        {
+          "effects": 2,
+          "calls": 2
+        },
+        {
+          "calls": 0,
+          "effects": 0
+        }
+      ],
+      "redisScheduleRemoved": false,
+      "originAbsent": true,
+      "stepsAbsent": true,
+      "completedRedisPresent": true
+    },
+    {
+      "name": "Redis 일정 유실 뒤 DDB 복구·1차 만료",
+      "clientMsgId": "full-flow-779f51a8ecbc-3",
+      "requestKey": "4a938f23-3d5f-3fc1-9ad9-a2e52a55946a",
+      "history": {
+        "result_json": {
+          "reason": "PRIMARY_EXPIRED",
+          "eventId": "e60b6d23-161d-3e60-b5a1-8ad1b3a00fa6",
+          "outcome": "EXPIRED",
+          "deadline": "2026-09-25T08:26:04.800Z",
+          "provider": "mock-provider",
+          "resultAt": "2026-09-25T08:26:04.800Z",
+          "tenantId": 1,
+          "attemptId": "26758f54-73b2-3050-a0ec-2f0b85f68d3d",
+          "eventType": "DeliveryFinalized",
+          "deliveryId": "cb4db139-55b0-4a91-8c93-42670f4ceace",
+          "occurredAt": "2026-09-25T08:25:56.800105Z",
+          "requestKey": "4a938f23-3d5f-3fc1-9ad9-a2e52a55946a",
+          "routeOrder": 1,
+          "finalizedAt": "2026-09-25T08:26:06.061662Z",
+          "deliveryType": "SMS",
+          "schemaVersion": 2
+        },
+        "notification_status": "DELIVERED",
+        "attempt_count": 1,
+        "cleanup_status": "DONE"
+      },
+      "provider": [
+        {
+          "effects": 1,
+          "calls": 1
+        },
+        {
+          "calls": 0,
+          "effects": 0
+        }
+      ],
+      "redisScheduleRemoved": true,
+      "originAbsent": true,
+      "stepsAbsent": true,
+      "completedRedisPresent": true
+    },
+    {
+      "name": "1차 만료 뒤 TCP 2차 성공",
+      "clientMsgId": "full-flow-779f51a8ecbc-4",
+      "requestKey": "5306ec8a-7959-3701-b7fc-be122da5f1c4",
+      "history": {
+        "result_json": {
+          "reason": "DELIVERED",
+          "eventId": "06843862-88d9-3bf5-a38f-efc5b77cdb29",
+          "outcome": "DELIVERED",
+          "deadline": "2026-09-25T08:26:27.581Z",
+          "provider": "tcp-provider",
+          "resultAt": "2026-09-25T08:26:15.963455Z",
+          "tenantId": 1,
+          "attemptId": "14b9752d-9fec-3d1e-a9fd-a6f56c34059f",
+          "eventType": "DeliveryFinalized",
+          "deliveryId": "60182c92-0ec5-4714-a88c-a72d8e65bd65",
+          "occurredAt": "2026-09-25T08:26:07.581117Z",
+          "requestKey": "5306ec8a-7959-3701-b7fc-be122da5f1c4",
+          "routeOrder": 2,
+          "finalizedAt": "2026-09-25T08:26:16.000795Z",
+          "deliveryType": "SMS",
+          "schemaVersion": 2
+        },
+        "notification_status": "DELIVERED",
+        "attempt_count": 1,
+        "cleanup_status": "DONE"
+      },
+      "provider": [
+        {
+          "effects": 1,
+          "calls": 1
+        },
+        {
+          "effects": 1,
+          "calls": 1
+        }
+      ],
+      "redisScheduleRemoved": false,
+      "originAbsent": true,
+      "stepsAbsent": true,
+      "completedRedisPresent": true
+    },
+    {
+      "name": "1차·2차 미수신 만료",
+      "clientMsgId": "full-flow-779f51a8ecbc-5",
+      "requestKey": "f4fb9e21-adda-34d8-96a2-0e682e86232b",
+      "history": {
+        "result_json": {
+          "reason": "SECONDARY_EXPIRED",
+          "eventId": "1a084390-5bb0-338e-ae75-f6d994d4e8a0",
+          "outcome": "EXPIRED",
+          "deadline": "2026-09-25T08:26:37.853Z",
+          "provider": "tcp-provider",
+          "resultAt": "2026-09-25T08:26:37.853Z",
+          "tenantId": 1,
+          "attemptId": "759728c3-27b2-32ec-98d6-3d0782daab98",
+          "eventType": "DeliveryFinalized",
+          "deliveryId": "1fbea315-cb51-4111-bd31-2187aa12746c",
+          "occurredAt": "2026-09-25T08:26:17.853331Z",
+          "requestKey": "f4fb9e21-adda-34d8-96a2-0e682e86232b",
+          "routeOrder": 2,
+          "finalizedAt": "2026-09-25T08:26:37.904322Z",
+          "deliveryType": "SMS",
+          "schemaVersion": 2
+        },
+        "notification_status": "DELIVERED",
+        "attempt_count": 1,
+        "cleanup_status": "DONE"
+      },
+      "provider": [
+        {
+          "effects": 1,
+          "calls": 1
+        },
+        {
+          "effects": 1,
+          "calls": 1
+        }
+      ],
+      "redisScheduleRemoved": false,
+      "originAbsent": true,
+      "stepsAbsent": true,
+      "completedRedisPresent": true
+    }
+  ],
+  "customerHttp": {
+    "requests": 7,
+    "responseStatuses": [
+      503,
+      204,
+      204,
+      204,
+      204,
+      204,
+      204
+    ],
+    "firstRetryBodyIdentical": true,
+    "acknowledgedResultCount": 6
+  },
+  "cleanup": {
+    "ownedProcessesStopped": true,
+    "composeProject": "full-flow-779f51a8ecbc",
+    "containersStopped": true,
+    "volumesRetained": true
+  },
+  "pythonTests": {
+    "passed": 22,
+    "existingEvidence": 10,
+    "fullFlowEvidence": 6,
+    "infrastructureStartup": 6,
+    "command": ".poc-tools/venv/bin/python -m unittest discover -s scripts/poc -p 'test_*.py'"
+  },
+  "sourceSha256": {
+    "scripts/poc/full_flow.py": "e1b109f417d83ade2152435fbb498a12368dd8518f7999272b327de77fc862e8",
+    "scripts/poc/test_full_flow.py": "099c3e149d9acb9f31d7a437a3845746ab32734d817f7293489a88abece1e864"
+  },
+  "priorRuns": [
+    {
+      "id": "full-flow-79bd19f72117",
+      "result": "Compose up 240s timeout"
+    },
+    {
+      "id": "full-flow-fe5e20d5b963",
+      "result": "Compose start stall reproduced; direct starts succeeded; owned stalled Compose process terminated and containers stopped"
+    },
+    {
+      "id": "full-flow-4dee73232004",
+      "result": "Direct first init start 30s timeout; containers stopped"
+    }
+  ],
+  "limits": [
+    "Small-count functional proof, not TPS benchmark",
+    "Local single-node services, no AWS HA/RCU proof",
+    "Test-only deadlines 8s/12s and recovery interval 3s; application default recovery remains 10min"
+  ]
+}
