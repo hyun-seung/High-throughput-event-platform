@@ -1,0 +1,63 @@
+{
+  "date": "2026-09-26",
+  "status": "PASS",
+  "baseCommit": "de4f346967793179ab121ee09772562b59bf1879",
+  "runDirectory": ".poc-results/java-test-20260925161603-28264",
+  "javaIntegration": {
+    "suites": 38,
+    "executed": 364,
+    "skipped": 0,
+    "failures": 0,
+    "errors": 0
+  },
+  "newTests": {
+    "deliveryOperationsIntegration": 8,
+    "totalCleanupAndOperationsIntegration": 19
+  },
+  "tools": {
+    "applicationTests": "Java 21/JUnit, Maven Wrapper clean verify -Pintegration-tests",
+    "environment": "Bash + Docker Compose, fresh isolated project",
+    "performance": "Not run; k6 reserved for performance phase"
+  },
+  "infrastructure": {
+    "kafka": "apache/kafka:4.0.2",
+    "postgresql": "postgres:17-alpine",
+    "dynamodb": "amazon/dynamodb-local:2.6.1",
+    "redis": "redis:7.4-alpine"
+  },
+  "cleanup": {
+    "containersStopped": true,
+    "containersRemoved": true,
+    "networkRemoved": true,
+    "volumesRetained": true
+  },
+  "packagedCli": {
+    "usageExitCode": 2,
+    "scope": "Packaged operations CLI usage and Bash syntax; data behavior exercised by Java integration rather than a separate CLI process"
+  },
+  "verified": [
+    "Customer-scoped exhausted notification keyset pages omit destination/body and preserve attempt budgets",
+    "Cleanup observations distinguish due, backoff, active lease, expired lease and missing notification without claiming",
+    "Expired PROCESSING lease is observed as unconfirmed while raw DynamoDB state is unchanged",
+    "REVIEW_REQUIRED and expiry due remain observations, not provider outcomes or retry authorizations",
+    "SQL history and notification/cleanup state remain visible after actual normal DynamoDB cleanup",
+    "Request history preserves separate executions; current attempts belong only to current authorized tenant execution",
+    "An actual ORIGIN mutation injected before second read causes attempt snapshot to be discarded",
+    "SQL/DynamoDB lookup exceptions propagate rather than becoming successful empty observations",
+    "Existing normal successful DynamoDB write budget remains five calls and seven item mutations"
+  ],
+  "notVerifiedOrImplemented": [
+    "Atomic cross-store SQL/DynamoDB snapshot or global discovery of unknown-result attempts",
+    "Operator finalization, additional notification retry authorization or manual cleanup action",
+    "Production authentication/roles, remote endpoints and Grafana/alert integration",
+    "Pod performance, k6 traffic, multi-AZ failure or capacity proof"
+  ],
+  "sourceSha256": {
+    "delivery-result-worker/src/main/java/event/delivery/result/operations/DeliveryOperations.java": "3a424034968e7d7336f94362677615255f337a1917716dda0a2da4479c26f666",
+    "delivery-result-worker/src/main/java/event/delivery/result/operations/DeliveryOperationsCli.java": "22b0fac6b05eebc6fd03a289161a1625171536eda9a6681c5eb574c7f2b042bf",
+    "delivery-result-worker/src/test/java/event/delivery/result/CleanupPostgresDynamoDbTest.java": "d0b9da0b21b3c3603c29105e1c7bf49941963a69a7e84a412e7822c80c9236ad",
+    "delivery-result-worker/src/main/resources/db/migration/V9__notification_operations_lookup.sql": "7dcf9718e480944043cd17e17c50efb03e258d1fc06c467011b422343ebfc632",
+    "scripts/inspect-delivery.sh": "f74875def60047cf9c906b7cde8ad75f488ed2a429f9391b8eb529928155abf5"
+  },
+  "postRunChanges": "Documentation and evidence only; no behavior changes after integration"
+}
