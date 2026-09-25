@@ -111,7 +111,7 @@ class DeliveryIngressDynamoDbTest {
         assertThrows(IllegalStateException.class, () -> consumer.consume(collision));
 
         verifyNoInteractions(producer);
-        assertEquals(first, repository.saveOrLoad(first));
+        assertEquals(first, repository.saveOrLoad(first).event());
         assertTrue(stored().get(PAYLOAD).s().contains("hello"));
     }
 
@@ -124,7 +124,7 @@ class DeliveryIngressDynamoDbTest {
                 var event = retryAt(first.occurredAt().plusSeconds(i));
                 results.add(executor.submit(() -> {
                     start.await();
-                    return repository.saveOrLoad(event);
+                    return repository.saveOrLoad(event).event();
                 }));
             }
             start.countDown();
@@ -147,7 +147,7 @@ class DeliveryIngressDynamoDbTest {
                 first.payload(), first.occurredAt(), true);
         assertThrows(IdempotencyConflictException.class, () -> repository.saveOrLoad(changed));
         client.updateItem(request -> request.tableName(DELIVERY_STATE).key(key()).updateExpression("REMOVE fallback_allowed"));
-        assertFalse(repository.saveOrLoad(first).fallbackAllowed());
+        assertFalse(repository.saveOrLoad(first).event().fallbackAllowed());
         assertThrows(IdempotencyConflictException.class, () -> repository.saveOrLoad(changed));
     }
 
@@ -156,9 +156,37 @@ class DeliveryIngressDynamoDbTest {
         var allowed = DeliveryEvent.requested(first.deliveryId(), first.tenantId(), first.deliveryType(), first.payload(), first.occurredAt(), true);
         repository.saveOrLoad(allowed);
         var duplicate = DeliveryEvent.requested(first.deliveryId(), first.tenantId(), first.deliveryType(), first.payload(), first.occurredAt().plusSeconds(20), true);
-        var actual = repository.saveOrLoad(duplicate).toDispatchRequested();
+        var actual = repository.saveOrLoad(duplicate).event().toDispatchRequested();
         assertTrue(actual.fallbackAllowed());
         assertEquals(first.occurredAt(), actual.occurredAt());
+    }
+
+    @Test void compactedSameRequestSkipsPublicationButChangedPayloadOrFallbackIsConflict() {
+        var completion = new java.util.HashMap<>(key());
+        completion.put(STATUS, AttributeValue.fromS("COMPLETED"));
+        completion.put(EVENT_ID, AttributeValue.fromS(first.eventId()));
+        completion.put("fingerprint_version", AttributeValue.fromN("1"));
+        completion.put(event.common.lifecycle.DeliveryCompletion.FINGERPRINT, AttributeValue.fromS(
+                event.common.lifecycle.DeliveryCompletion.fingerprint(first.deliveryId(), first.tenantId(), first.deliveryType(), false,
+                        JsonMapper.builder().build().writeValueAsString(event.common.delivery.DeliveryPayloads.canonicalize(first.payload())))));
+        client.putItem(r -> r.tableName(DELIVERY_STATE).item(completion));
+        consumer.consume(retryAt(first.occurredAt().plusSeconds(86400)));
+        assertTrue(repository.saveOrLoad(first).completed());
+        var changed = DeliveryEvent.requested(first.deliveryId(), first.tenantId(), first.deliveryType(), Map.of("body", "changed"), first.occurredAt());
+        assertThrows(IdempotencyConflictException.class, () -> consumer.consume(changed));
+        var fallback = DeliveryEvent.requested(first.deliveryId(), first.tenantId(), first.deliveryType(), first.payload(), first.occurredAt(), true);
+        assertThrows(IdempotencyConflictException.class, () -> consumer.consume(fallback));
+        verifyNoInteractions(producer);
+        assertEquals(completion, stored());
+    }
+
+    @Test void finalizedButNotCompactedRequestAlsoSkipsNewDispatch() {
+        repository.saveOrLoad(first);
+        client.updateItem(r -> r.tableName(DELIVERY_STATE).key(key()).updateExpression("SET completion_event_id = :id")
+                .expressionAttributeValues(Map.of(":id", AttributeValue.fromS(event.common.lifecycle.DeliveryFinalized.eventId(first.deliveryId())))));
+        consumer.consume(retryAt(first.occurredAt().plusSeconds(30)));
+        verifyNoInteractions(producer);
+        assertTrue(stored().containsKey(PAYLOAD));
     }
 
     private Map<String, AttributeValue> key() {

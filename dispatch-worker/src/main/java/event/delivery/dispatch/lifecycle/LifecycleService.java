@@ -34,7 +34,9 @@ public class LifecycleService {
     public void reconcile(String delivery) {
         var completed = repository.read(delivery, "FINAL");
         if (!completed.isEmpty()) { publish(delivery, completed); return; }
-        var event = sources.loadDelivery(delivery);
+        var active = sources.loadDelivery(delivery);
+        if (active.isEmpty()) return;
+        var event = active.get();
         String parentId = DeliveryIds.attemptId(delivery, config.provider(), 1, 1);
         var parent = repository.read(delivery, "ATTEMPT#" + parentId);
         if (parent.isEmpty()) {

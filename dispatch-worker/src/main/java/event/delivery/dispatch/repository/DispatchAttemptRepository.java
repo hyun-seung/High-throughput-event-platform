@@ -2,6 +2,12 @@ package event.delivery.dispatch.repository;
 
 import event.common.delivery.DeliveryEvent;
 import event.common.lifecycle.LifecycleIndex;
+import event.common.lifecycle.DeliveryCompletion;
+import software.amazon.awssdk.services.dynamodb.model.TransactWriteItemsRequest;
+import software.amazon.awssdk.services.dynamodb.model.TransactWriteItem;
+import software.amazon.awssdk.services.dynamodb.model.TransactionCanceledException;
+import software.amazon.awssdk.services.dynamodb.model.ConditionCheck;
+import software.amazon.awssdk.services.dynamodb.model.Update;
 import event.common.delivery.DeliveryIds;
 import event.delivery.dispatch.model.DispatchAttempt;
 import event.delivery.dispatch.model.DispatchClaim;
@@ -126,16 +132,23 @@ public class DispatchAttemptRepository implements DispatchAttemptStore {
                         + "#leaseUntil = :leaseUntil, #createdAt = if_not_exists(#createdAt, :now), "
                         + "#updatedAt = :now, #version = if_not_exists(#version, :zero) + :one, "
                         + "#retryCount = :zero, #deadline = :deadline, #route = :route, "
-                        + "lifecycle_bucket = :bucket, lifecycle_due = :deadline")
+                        + "lifecycle_bucket = :bucket, lifecycle_due = :deadline, receipt_tracking_version = :one")
                 .expressionAttributeNames(names)
                 .expressionAttributeValues(values)
                 .returnValues(ReturnValue.ALL_NEW)
                 .build();
 
         try {
-            UpdateItemResponse response = dynamoDbClient.updateItem(request);
-            return DispatchClaim.claimed(attempt(response.attributes()));
-        } catch (ConditionalCheckFailedException e) {
+            dynamoDbClient.transactWriteItems(TransactWriteItemsRequest.builder().transactItems(
+                    TransactWriteItem.builder().conditionCheck(ConditionCheck.builder().tableName(DELIVERY_STATE)
+                            .key(DeliveryCompletion.metaKey(event.deliveryId())).conditionExpression("attribute_not_exists(completion_event_id)").build()).build(),
+                    TransactWriteItem.builder().update(Update.builder().tableName(DELIVERY_STATE).key(request.key())
+                            .conditionExpression(request.conditionExpression()).updateExpression(request.updateExpression())
+                            .expressionAttributeNames(request.expressionAttributeNames()).expressionAttributeValues(request.expressionAttributeValues()).build()).build()).build());
+            return DispatchClaim.claimed(new DispatchAttempt(event.deliveryId(), attemptId, provider, 1, 0, deadline, routeOrder));
+        } catch (TransactionCanceledException e) {
+            if (e.cancellationReasons().stream().noneMatch(r -> "ConditionalCheckFailed".equals(r.code()))) throw e;
+            if (completionRecorded(event.deliveryId())) return DispatchClaim.alreadyAccepted();
             return existingClaim(key, now, leaseUntil);
         }
     }
@@ -148,8 +161,10 @@ public class DispatchAttemptRepository implements DispatchAttemptStore {
             var item = dynamoDbClient.getItem(GetItemRequest.builder().tableName(DELIVERY_STATE).key(key)
                     .consistentRead(true).build()).item();
             if (item.isEmpty() || !DECISION_PENDING.equals(item.get(STATUS).s())) {
+                if (completionRecorded(event.deliveryId())) return Optional.empty();
                 throw new IllegalStateException("Primary decision must be durable before secondary dispatch");
             }
+            if (item.containsKey("lifecycle_closed")) return Optional.empty();
             if (!FALLBACK_REASONS.contains(item.get(FAILURE_REASON).s())) return Optional.empty();
             if (item.containsKey(SECONDARY_ATTEMPT)) {
                 return Optional.of(new SecondaryRoute(item.get(SECONDARY_ATTEMPT).s(), item.get(SECONDARY_PROVIDER).s(),
@@ -160,7 +175,7 @@ public class DispatchAttemptRepository implements DispatchAttemptStore {
                     Instant.parse(item.get(FAILURE_OBSERVED_AT).s()).plus(ttl));
             try {
                 dynamoDbClient.updateItem(UpdateItemRequest.builder().tableName(DELIVERY_STATE).key(key)
-                        .conditionExpression("#status = :pending AND #version = :version AND attribute_not_exists(#secondary)")
+                        .conditionExpression("#status = :pending AND #version = :version AND attribute_not_exists(#secondary) AND attribute_not_exists(lifecycle_closed)")
                         .updateExpression("SET #secondary = :secondary, #provider = :provider, #deadline = :deadline")
                         .expressionAttributeNames(Map.of("#status", STATUS, "#version", VERSION, "#secondary", SECONDARY_ATTEMPT,
                                 "#provider", SECONDARY_PROVIDER, "#deadline", SECONDARY_DEADLINE))
@@ -345,6 +360,11 @@ public class DispatchAttemptRepository implements DispatchAttemptStore {
                 PK, text(DELIVERY_PREFIX + deliveryId),
                 SK, text(ATTEMPT_PREFIX + attemptId)
         );
+    }
+
+    private boolean completionRecorded(String deliveryId) {
+        return dynamoDbClient.getItem(r -> r.tableName(DELIVERY_STATE).key(DeliveryCompletion.metaKey(deliveryId))
+                .consistentRead(true)).item().containsKey(DeliveryCompletion.FENCE);
     }
 
     private AttributeValue text(String value) {

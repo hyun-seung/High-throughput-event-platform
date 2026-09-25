@@ -273,6 +273,137 @@ class LifecycleDynamoDbTest {
         assertEquals("EXPIRED", published.getFirst().outcome());
     }
 
+    @Test void compactedPrimaryBlocksOldDispatchChangedProviderLateReceiptAndLateResultWrite() {
+        var event = event(false); var originalAttempt = claim(event);
+        attempts.markAccepted(originalAttempt, NOW, NOW); success(event, 1); service.reconcile(event.deliveryId());
+        var result = published.getFirst();
+        var compactor = new DeliveryCompactor(db);
+        assertTrue(compactor.compact(result)); assertFalse(compactor.compact(result));
+        var meta = lifecycle.read(event.deliveryId(), "META");
+        assertEquals("COMPLETED", LifecycleRepository.text(meta, "status"));
+        assertFalse(meta.containsKey("payload")); assertFalse(meta.containsKey("ttl"));
+        assertFalse(meta.containsKey(LifecycleIndex.BUCKET));
+        assertTrue(lifecycle.read(event.deliveryId(), "FINAL").isEmpty()); assertTrue(item(event, 1).isEmpty());
+        dispatch.dispatch(event); service.reconcile(event.deliveryId());
+        assertEquals(0, primaryCalls.get());
+        var changed = attempts.claim(event, DeliveryIds.attemptId(event.deliveryId(), "changed", 1, 1), "changed", NOW, NOW.plusSeconds(1), NOW.plusSeconds(3));
+        assertEquals(DispatchClaimStatus.ALREADY_ACCEPTED, changed.status());
+        assertThrows(ConditionalCheckFailedException.class, () -> attempts.markAccepted(originalAttempt, NOW, NOW));
+        var late = ReceiptEvent.received(UUID.randomUUID().toString(), event.deliveryId(), id(event, 1), PRIMARY, 1, ReceiptOutcome.DELIVERED, "DELIVERED", NOW, NOW, 1);
+        assertEquals("late_discarded", sources.apply(late, NOW).outcome());
+        assertTrue(db.getItem(r -> r.tableName(DELIVERY_STATE).key(ReceiptResultRepository.receiptKey(late.eventId())).consistentRead(true)).item().isEmpty());
+        for (String receipt : receipts) assertTrue(db.getItem(r -> r.tableName(DELIVERY_STATE).key(ReceiptResultRepository.receiptKey(receipt)).consistentRead(true)).item().isEmpty());
+        assertEquals(1, db.query(r -> r.tableName(DELIVERY_STATE).consistentRead(true).keyConditionExpression("pk = :pk")
+                .expressionAttributeValues(Map.of(":pk", AttributeValue.fromS("DELIVERY#" + event.deliveryId())))).count());
+    }
+
+    @Test void completionFenceStopsNewClaimsEvenBeforeSqlAllowsCompaction() {
+        var event = event(false); accepted(event); success(event, 1); service.reconcile(event.deliveryId());
+        var changed = attempts.claim(event, DeliveryIds.attemptId(event.deliveryId(), "new-provider", 1, 1), "new-provider", NOW, NOW.plusSeconds(1), NOW.plusSeconds(3));
+        assertEquals(DispatchClaimStatus.ALREADY_ACCEPTED, changed.status());
+        assertTrue(lifecycle.read(event.deliveryId(), "META").containsKey("payload"));
+    }
+
+    @Test void retryReceiptManifestDeletesAllMarkersNotOnlyLatestOne() {
+        var event = event(false); accepted(event);
+        var retry = ReceiptEvent.received(UUID.randomUUID().toString(), event.deliveryId(), id(event, 1), PRIMARY, 1, ReceiptOutcome.FAILED, "RETRY_1S", NOW, NOW, 1);
+        receipts.add(retry.eventId()); sources.apply(retry, NOW);
+        clock.now = NOW.plusSeconds(1); dispatch.dispatch(event);
+        var delivered = ReceiptEvent.received(UUID.randomUUID().toString(), event.deliveryId(), id(event, 1), PRIMARY, 1, ReceiptOutcome.DELIVERED, "DELIVERED", clock.now, clock.now, 2);
+        receipts.add(delivered.eventId()); sources.apply(delivered, clock.now); service.reconcile(event.deliveryId());
+        assertEquals(2, item(event, 1).get(DeliveryCompletion.RECEIPT_IDS).ss().size());
+        new DeliveryCompactor(db).compact(published.getFirst());
+        for (String receipt : receipts) assertTrue(db.getItem(r -> r.tableName(DELIVERY_STATE).key(ReceiptResultRepository.receiptKey(receipt)).consistentRead(true)).item().isEmpty());
+    }
+
+    @Test void bothRoutesCompactAndStaleSecondaryPlanCannotRecreateAttempt() {
+        var event = event(true); accepted(event); clock.now = NOW.plusSeconds(3);
+        service.reconcile(event.deliveryId());
+        var route = attempts.prepareSecondary(event, id(event, 1), SECONDARY, Duration.ofSeconds(5)).orElseThrow();
+        success(event, 2); service.reconcile(event.deliveryId());
+        new DeliveryCompactor(db).compact(published.getFirst());
+        secondary.dispatch(event, id(event, 1));
+        assertEquals(DispatchClaimStatus.ALREADY_ACCEPTED, attempts.claimSecondary(event, route, clock.now, clock.now.plusSeconds(1)).status());
+        assertTrue(item(event, 1).isEmpty()); assertTrue(item(event, 2).isEmpty());
+        assertEquals(1, secondaryCalls.get());
+    }
+
+    @Test void unpublishedOrLegacyUntrackedExecutionIsRetained() {
+        var event = event(false); accepted(event); success(event, 1); service.reconcile(event.deliveryId());
+        var result = published.getFirst();
+        db.updateItem(r -> r.tableName(DELIVERY_STATE).key(LifecycleRepository.key(event.deliveryId(), "FINAL"))
+                .updateExpression("SET publish_state = :pending").expressionAttributeValues(Map.of(":pending", AttributeValue.fromS("PENDING"))));
+        assertThrows(IllegalStateException.class, () -> new DeliveryCompactor(db).compact(result));
+        lifecycle.published(event.deliveryId(), LifecycleRepository.text(lifecycle.read(event.deliveryId(), "FINAL"), "result_event"), NOW);
+        db.updateItem(r -> r.tableName(DELIVERY_STATE).key(LifecycleRepository.key(event.deliveryId(), "ATTEMPT#" + id(event, 1)))
+                .updateExpression("REMOVE receipt_tracking_version"));
+        assertThrows(IllegalStateException.class, () -> new DeliveryCompactor(db).compact(result));
+        assertTrue(lifecycle.read(event.deliveryId(), "META").containsKey("payload")); assertFalse(item(event, 1).isEmpty());
+    }
+
+    @Test void failedConditionalDeleteRollsBackEntireCompaction() {
+        var event = event(false); accepted(event); success(event, 1); service.reconcile(event.deliveryId());
+        String receipt = receipts.getFirst();
+        db.updateItem(r -> r.tableName(DELIVERY_STATE).key(ReceiptResultRepository.receiptKey(receipt))
+                .updateExpression("SET delivery_id = :different").expressionAttributeValues(Map.of(":different", AttributeValue.fromS("different-test-delivery"))));
+        assertThrows(TransactionCanceledException.class, () -> new DeliveryCompactor(db).compact(published.getFirst()));
+        assertTrue(lifecycle.read(event.deliveryId(), "META").containsKey("payload"));
+        assertFalse(item(event, 1).isEmpty()); assertFalse(lifecycle.read(event.deliveryId(), "FINAL").isEmpty());
+    }
+
+    @Test void lostCompactionResponseIsResolvedByStableSmallCompletionRecord() {
+        var event = event(false); accepted(event); success(event, 1); service.reconcile(event.deliveryId());
+        var uncertain = mock(DynamoDbClient.class, org.mockito.AdditionalAnswers.delegatesTo(db));
+        doAnswer(call -> {
+            db.transactWriteItems((TransactWriteItemsRequest) call.getArgument(0));
+            throw SdkClientException.create("lost cleanup response after commit");
+        }).when(uncertain).transactWriteItems(any(TransactWriteItemsRequest.class));
+        assertThrows(SdkClientException.class, () -> new DeliveryCompactor(uncertain).compact(published.getFirst()));
+        assertFalse(new DeliveryCompactor(db).compact(published.getFirst()));
+        assertTrue(DeliveryCompletion.compacted(lifecycle.read(event.deliveryId(), "META")));
+        lifecycle.published(event.deliveryId(), mapper.writeValueAsString(published.getFirst()), NOW); // stale publisher acknowledgement
+    }
+
+    @Test void claimPausedBeforeTransactionCannotRecreateDeletedAttempt() throws Exception {
+        var event = event(false); accepted(event); success(event, 1); service.reconcile(event.deliveryId());
+        var reached = new CountDownLatch(1); var resume = new CountDownLatch(1);
+        var paused = mock(DynamoDbClient.class, org.mockito.AdditionalAnswers.delegatesTo(db));
+        doAnswer(call -> {
+            reached.countDown(); assertTrue(resume.await(10, TimeUnit.SECONDS));
+            return db.transactWriteItems((TransactWriteItemsRequest) call.getArgument(0));
+        }).when(paused).transactWriteItems(any(TransactWriteItemsRequest.class));
+        try (var thread = Executors.newSingleThreadExecutor()) {
+            var claim = thread.submit(() -> new DispatchAttemptRepository(paused).claim(event, id(event, 1), PRIMARY, NOW, NOW.plusSeconds(1), NOW.plusSeconds(3)));
+            try { assertTrue(reached.await(10, TimeUnit.SECONDS)); new DeliveryCompactor(db).compact(published.getFirst()); }
+            finally { resume.countDown(); }
+            assertEquals(DispatchClaimStatus.ALREADY_ACCEPTED, claim.get(10, TimeUnit.SECONDS).status());
+            assertTrue(item(event, 1).isEmpty());
+        }
+    }
+
+    @Test void mismatchingSqlResultCannotCompactOrAcknowledgeExistingCompletion() {
+        var event = event(false); accepted(event); success(event, 1); service.reconcile(event.deliveryId());
+        var e = published.getFirst();
+        var changed = new DeliveryFinalized(e.schemaVersion(), e.eventType(), e.eventId(), e.deliveryId(), e.tenantId(), e.deliveryType(), "FAILED", "CHANGED", e.routeOrder(), e.attemptId(), e.provider(), e.occurredAt(), e.resultAt(), e.finalizedAt(), e.deadline());
+        assertThrows(IllegalStateException.class, () -> new DeliveryCompactor(db).compact(changed));
+        assertTrue(lifecycle.read(event.deliveryId(), "META").containsKey("payload"));
+        new DeliveryCompactor(db).compact(e);
+        assertThrows(IllegalStateException.class, () -> new DeliveryCompactor(db).compact(changed));
+    }
+
+    @Test void lostInitialTransactionalClaimDoesNotPermitBlindResend() {
+        var event = event(false);
+        var lost = mock(DynamoDbClient.class, org.mockito.AdditionalAnswers.delegatesTo(db));
+        doAnswer(call -> {
+            db.transactWriteItems((TransactWriteItemsRequest) call.getArgument(0));
+            throw SdkClientException.create("initial claim commit response lost");
+        }).when(lost).transactWriteItems(any(TransactWriteItemsRequest.class));
+        assertThrows(SdkClientException.class, () -> new DispatchAttemptRepository(lost).claim(event, id(event, 1), PRIMARY, NOW, NOW.plusSeconds(1), NOW.plusSeconds(3)));
+        assertEquals(DispatchClaimStatus.IN_PROGRESS, attempts.claim(event, id(event, 1), PRIMARY, NOW, NOW.plusSeconds(1), NOW.plusSeconds(3)).status());
+        assertEquals(DispatchClaimStatus.REVIEW_REQUIRED, attempts.claim(event, id(event, 1), PRIMARY, NOW.plusSeconds(1), NOW.plusSeconds(2), NOW.plusSeconds(3)).status());
+        assertEquals(0, primaryCalls.get());
+    }
+
     LifecycleService service(LifecycleRepository repository, FinalizedPublisher publisher) {
         return new LifecycleService(repository, sources, dispatch, secondary, config, publisher, clock, metrics);
     }
@@ -280,6 +411,9 @@ class LifecycleDynamoDbTest {
         var event = DeliveryEvent.requested(UUID.randomUUID().toString(), 999L, "SMS", Map.of("message", "test"), NOW, fallback).toDispatchRequested();
         events.add(event);
         var item = new HashMap<>(LifecycleRepository.key(event.deliveryId(), "META"));
+        item.put("delivery_id", AttributeValue.fromS(event.deliveryId()));
+        item.put("event_id", AttributeValue.fromS(DeliveryIds.eventId(event.deliveryId(), DeliveryEventType.DELIVERY_REQUESTED)));
+        item.put("status", AttributeValue.fromS("ACCEPTED"));
         item.put("tenant_id", AttributeValue.fromN("999")); item.put("delivery_type", AttributeValue.fromS("SMS"));
         item.put("payload", AttributeValue.fromS(mapper.writeValueAsString(event.payload())));
         item.put("occurred_at", AttributeValue.fromS(NOW.toString())); item.put("fallback_allowed", AttributeValue.fromBool(fallback));

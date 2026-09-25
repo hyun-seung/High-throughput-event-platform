@@ -14,6 +14,10 @@ import org.springframework.transaction.PlatformTransactionManager;
 @EnableConfigurationProperties(NotificationProperties.class)
 @ConditionalOnProperty(name = "notification.enabled", havingValue = "true")
 public class NotificationConfiguration {
+    @Bean org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler notificationTaskScheduler() {
+        var scheduler = new org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler();
+        scheduler.setPoolSize(1); scheduler.setThreadNamePrefix("customer-notification-"); return scheduler;
+    }
     @Bean NotificationRepository notificationRepository(JdbcTemplate jdbc, PlatformTransactionManager manager) {
         return new NotificationRepository(jdbc, manager);
     }

@@ -32,8 +32,13 @@ public class DeliveryRequestConsumer {
     private void process(DeliveryEvent event) {
         requireType(event, DeliveryEventType.DELIVERY_REQUESTED);
 
-        DeliveryEvent stored = metrics.measure(DeliveryMetrics.Stage.INGRESS_STORE,
+        var saved = metrics.measure(DeliveryMetrics.Stage.INGRESS_STORE,
                 () -> deliveryRepository.saveOrLoad(event));
+        if (saved.completed()) {
+            DeliveryAudit.record(event, "ingress", "completed_duplicate", "", "", "preserved");
+            return;
+        }
+        DeliveryEvent stored = saved.event();
         log.debug("Delivery request consumed. deliveryId={}, eventId={}, occurredAt={}",
                 stored.deliveryId(), stored.eventId(), stored.occurredAt());
 

@@ -3,6 +3,7 @@ package event.delivery.dispatch.lifecycle;
 import event.common.delivery.DeliveryEvent;
 import event.common.lifecycle.DeliveryFinalized;
 import event.common.lifecycle.LifecycleIndex;
+import event.common.lifecycle.DeliveryCompletion;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.*;
 import tools.jackson.databind.json.JsonMapper;
@@ -98,6 +99,10 @@ public class LifecycleRepository {
         finalItem.put("publish_state", s("PENDING")); finalItem.put(CREATED_AT, s(now.toString()));
         LifecycleIndex.add(finalItem, event.deliveryId(), 0);
         var writes = new ArrayList<TransactWriteItem>();
+        writes.add(TransactWriteItem.builder().update(Update.builder().tableName(DELIVERY_STATE).key(key(event.deliveryId(), "META"))
+                .conditionExpression("attribute_exists(pk) AND attribute_not_exists(completion_event_id)")
+                .updateExpression("SET completion_event_id = :event REMOVE lifecycle_bucket, lifecycle_due")
+                .expressionAttributeValues(Map.of(":event", s(result.eventId()))).build()).build());
         writes.add(TransactWriteItem.builder().put(Put.builder().tableName(DELIVERY_STATE).item(finalItem)
                 .conditionExpression("attribute_not_exists(pk)").build()).build());
         writes.add(closeAttempt(event.deliveryId(), terminal, null));
@@ -129,6 +134,9 @@ public class LifecycleRepository {
                     .expressionAttributeValues(Map.of(":pending", s("PENDING"), ":done", s("PUBLISHED"), ":event", s(event), ":now", s(now.toString()))));
         } catch (ConditionalCheckFailedException race) {
             var current = read(delivery, "FINAL");
+            var meta = read(delivery, "META");
+            if (DeliveryCompletion.compacted(meta)
+                    && mapper.readValue(event, DeliveryFinalized.class).eventId().equals(text(meta, DeliveryCompletion.FENCE))) return;
             if (!"PUBLISHED".equals(text(current, "publish_state")) || !event.equals(text(current, "result_event"))) throw race;
         }
     }

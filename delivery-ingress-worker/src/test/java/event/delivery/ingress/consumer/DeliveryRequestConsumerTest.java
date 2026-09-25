@@ -26,7 +26,7 @@ class DeliveryRequestConsumerTest {
     void duplicateForwardsPersistedIngressTimeInsteadOfClientRetryTime() {
         var retry = DeliveryEvent.requested(first.deliveryId(), first.tenantId(), first.deliveryType(),
                 first.payload(), first.occurredAt().plusSeconds(3600));
-        when(repository.saveOrLoad(retry)).thenReturn(first);
+        when(repository.saveOrLoad(retry)).thenReturn(new DeliveryRepository.SavedDelivery(first, false));
         when(producer.sendDispatchRequested(any())).thenReturn(CompletableFuture.completedFuture(null));
 
         consumer.consume(retry);
@@ -45,7 +45,7 @@ class DeliveryRequestConsumerTest {
 
     @Test
     void dispatchPublishFailureEscapesListenerSoInputCanBeReplayed() {
-        when(repository.saveOrLoad(first)).thenReturn(first);
+        when(repository.saveOrLoad(first)).thenReturn(new DeliveryRepository.SavedDelivery(first, false));
         when(producer.sendDispatchRequested(any()))
                 .thenReturn(CompletableFuture.failedFuture(new IllegalStateException("ack missing")));
 

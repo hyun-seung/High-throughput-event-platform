@@ -27,7 +27,7 @@ public class NotificationScheduler implements AutoCloseable {
         meters.gauge("delivery.notification.active", active, Set::size);
     }
 
-    @Scheduled(fixedDelayString = "${notification.poll-ms:100}")
+    @Scheduled(fixedDelayString = "${notification.poll-ms:100}", scheduler = "notificationTaskScheduler")
     public synchronized void tick() {
         for (int i = 0; i < customers.size(); i++) {
             if (!slots.tryAcquire()) return;

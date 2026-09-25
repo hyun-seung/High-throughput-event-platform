@@ -2,6 +2,7 @@ package event.delivery.ingress.repository;
 
 import event.common.delivery.DeliveryEvent;
 import event.common.lifecycle.LifecycleIndex;
+import event.common.lifecycle.DeliveryCompletion;
 import event.common.delivery.DeliveryPayloads;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
@@ -43,7 +44,9 @@ public class DeliveryRepository {
     private final DynamoDbClient dynamoDbClient;
     private final JsonMapper jsonMapper;
 
-    public DeliveryEvent saveOrLoad(DeliveryEvent event) {
+    public record SavedDelivery(DeliveryEvent event, boolean completed) {}
+
+    public SavedDelivery saveOrLoad(DeliveryEvent event) {
         Map<String, AttributeValue> item = toItem(event);
         PutItemRequest request = PutItemRequest.builder()
                 .tableName(DELIVERY_STATE)
@@ -54,13 +57,13 @@ public class DeliveryRepository {
 
         try {
             dynamoDbClient.putItem(request);
-            return event;
+            return new SavedDelivery(event, false);
         } catch (ConditionalCheckFailedException e) {
             return loadExistingDelivery(event);
         }
     }
 
-    private DeliveryEvent loadExistingDelivery(DeliveryEvent event) {
+    private SavedDelivery loadExistingDelivery(DeliveryEvent event) {
         Map<String, AttributeValue> existing = dynamoDbClient.getItem(GetItemRequest.builder()
                         .tableName(DELIVERY_STATE)
                         .key(key(event.deliveryId()))
@@ -73,6 +76,14 @@ public class DeliveryRepository {
                     "Existing delivery disappeared during duplicate verification. deliveryId=" + event.deliveryId());
         }
 
+        if (DeliveryCompletion.compacted(existing)) {
+            String fingerprint = DeliveryCompletion.fingerprint(event.deliveryId(), event.tenantId(), event.deliveryType(),
+                    event.fallbackAllowed(), serializePayload(event.payload()));
+            if (!"1".equals(value(existing, "fingerprint_version"))
+                    || !fingerprint.equals(value(existing, DeliveryCompletion.FINGERPRINT))
+                    || !value(existing, EVENT_ID).equals(event.eventId())) throw new IdempotencyConflictException(event.deliveryId());
+            return new SavedDelivery(event, true);
+        }
         boolean sameRequest = value(existing, EVENT_ID).equals(event.eventId())
                 && value(existing, TENANT_ID).equals(String.valueOf(event.tenantId()))
                 && value(existing, DELIVERY_TYPE).equals(event.deliveryType())
@@ -85,10 +96,10 @@ public class DeliveryRepository {
 
         // A client retry has a new API timestamp. Always forward the first persisted ingress time.
         Instant originalOccurredAt = Instant.parse(value(existing, OCCURRED_AT));
-        return new DeliveryEvent(
+        return new SavedDelivery(new DeliveryEvent(
                 event.schemaVersion(), event.eventId(), event.eventType(), event.deliveryId(),
                 event.tenantId(), event.deliveryType(), event.payload(), originalOccurredAt,
-                event.correlationId(), event.causationId(), event.fallbackAllowed());
+                event.correlationId(), event.causationId(), event.fallbackAllowed()), existing.containsKey(DeliveryCompletion.FENCE));
     }
 
     private Map<String, AttributeValue> toItem(DeliveryEvent event) {
