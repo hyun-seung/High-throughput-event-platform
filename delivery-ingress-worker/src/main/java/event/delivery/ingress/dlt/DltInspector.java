@@ -11,6 +11,37 @@ import java.util.*;
 
 /** Explicit partition/offset reads only: no subscription, group ID, commit or producer. */
 public final class DltInspector {
+    public record RawPage(long beginningOffset, long snapshotEndOffset, long nextOffset,
+                          List<org.apache.kafka.clients.consumer.ConsumerRecord<byte[], byte[]>> records) { }
+
+    /** Independent bounded scan. Out-of-range cursors are reported, never silently reset. */
+    public static RawPage readRaw(String bootstrap, String topic, int partition, long offset, int limit) {
+        validate(bootstrap, topic, partition, offset, limit);
+        try (var consumer = open(bootstrap, limit)) {
+            var tp = new TopicPartition(topic, partition);
+            verifyPartition(consumer, tp); consumer.assign(List.of(tp));
+            long beginning = consumer.beginningOffsets(List.of(tp)).get(tp);
+            long end = consumer.endOffsets(List.of(tp)).get(tp);
+            if (offset < beginning || offset > end) return new RawPage(beginning, end, offset, List.of());
+            consumer.seek(tp, offset);
+            long next = offset;
+            long timeout = System.nanoTime() + Duration.ofSeconds(10).toNanos();
+            var rows = new ArrayList<org.apache.kafka.clients.consumer.ConsumerRecord<byte[], byte[]>>();
+            while (rows.size() < limit && next < end) {
+                if (System.nanoTime() >= timeout) throw new IllegalStateException("DLT intake timed out");
+                for (var record : consumer.poll(Duration.ofMillis(250))) {
+                    if (record.offset() >= end) break;
+                    rows.add(record); next = record.offset() + 1;
+                    if (rows.size() == limit) break;
+                }
+                if (rows.size() < limit) next = Math.min(end, consumer.position(tp));
+            }
+            // Retention may have moved while polling. Preserve the old cursor for investigation.
+            beginning = consumer.beginningOffsets(List.of(tp)).get(tp);
+            if (offset < beginning) return new RawPage(beginning, end, offset, List.of());
+            return new RawPage(beginning, end, next, List.copyOf(rows));
+        }
+    }
     public record Page(long beginningOffset, long snapshotEndOffset, long nextOffset,
                        boolean reachedSnapshotEnd, List<DltInspection.Assessment> records) { }
 

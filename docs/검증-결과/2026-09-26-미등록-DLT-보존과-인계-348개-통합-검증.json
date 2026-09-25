@@ -1,0 +1,73 @@
+{
+  "date": "2026-09-26",
+  "status": "PASS",
+  "baseCommit": "fc865078079017b7c862a82cf223f91fc2df2b95",
+  "runDirectory": ".poc-results/java-test-20260925154851-25200",
+  "javaIntegration": {
+    "suites": 38,
+    "executed": 348,
+    "skipped": 0,
+    "failures": 0,
+    "errors": 0
+  },
+  "newTests": {
+    "dltIntakeIntegration": 8,
+    "totalDltRecoveryIntegration": 33
+  },
+  "tools": {
+    "applicationTests": "Java 21/JUnit, Maven Wrapper clean verify -Pintegration-tests",
+    "environment": "Bash + Docker Compose, fresh isolated project",
+    "performance": "Not run; k6 reserved for subsequent performance phase"
+  },
+  "infrastructure": {
+    "kafka": "apache/kafka:4.0.2",
+    "postgresql": "postgres:17-alpine",
+    "dynamodb": "amazon/dynamodb-local:2.6.1",
+    "redis": "redis:7.4-alpine"
+  },
+  "cleanup": {
+    "containersStopped": true,
+    "containersRemoved": true,
+    "networkRemoved": true,
+    "volumesRetained": true
+  },
+  "initialInfrastructureFailure": {
+    "runDirectory": ".poc-results/java-test-20260925154743-25098",
+    "cause": "Docker predefined address pools exhausted by retained test networks; no Java tests started",
+    "remediation": "Removed only stopped containers/network of prior owned java-test-20260925153229-23688; named data volumes preserved. Runner now uses per-project down without --volumes."
+  },
+  "packagedCli": {
+    "usageExitCode": 2,
+    "scope": "Packaged Java usage entry point and Bash syntax checked; intake behavior tested via Java worker with actual stores, not a full continuous CLI process"
+  },
+  "verified": [
+    "Mixed valid, duplicate and malformed records are archived and classified with one Kafka recovery publication",
+    "Independent Kafka consumer group committed offset is unchanged",
+    "Raw record insert and SQL scan cursor roll back together; stale cursor archive is rejected",
+    "Already archived NEW work survives actual Kafka deleteRecords and retains original occurrence/expiry",
+    "Retention gap leaves cursor unchanged with zero publication",
+    "History lookup failure retains NEW and resumes when lookup recovers",
+    "Completed history is held with reason and no origin restoration or publication",
+    "Persisted cursor overrides subsequent bootstrap offset; changed routing rejected; offset after end stops",
+    "Concurrent classification shares SQL lock and durable held outcome is not repeated",
+    "Existing normal successful DynamoDB write budget remains five calls and seven item mutations",
+    "Integration teardown removes only owned containers/network and retains data volumes"
+  ],
+  "notVerifiedOrImplemented": [
+    "Continuous CLI process SIGKILL and all SQL commit response-loss boundaries",
+    "Automatic discovery of all DLT partitions or Kafka topic recreation UUID detection",
+    "Recovery of records deleted before SQL archive",
+    "Authenticated operator APIs, held-source reprocessing UI, Grafana/alert routing for intake backlog",
+    "Production durability, SQL archive retention/capacity or performance load"
+  ],
+  "sourceSha256": {
+    "delivery-ingress-worker/src/main/java/event/delivery/ingress/dlt/DltInspector.java": "668ee12d6d623efc8d910703bfc1e76c0edc37ebfa11b5cc65a28cac00eca3c7",
+    "delivery-ingress-worker/src/main/java/event/delivery/ingress/dlt/DltRecoveryCli.java": "616660c766df4f82fe623ba775637cbe060160c9664960371a0204a0eb19e68b",
+    "delivery-ingress-worker/src/main/java/event/delivery/ingress/dlt/DltIntakeStore.java": "5bd341c4e2d8c0e928e90016c8f81e2a5131efdd7d39824d2d3803a7a09de787",
+    "delivery-ingress-worker/src/main/java/event/delivery/ingress/dlt/DltIntakeWorker.java": "55110031d8bee958820d4366458ca07556c7a45ae63ff4b079fc5b64c7a1fe0d",
+    "delivery-ingress-worker/src/test/java/event/delivery/ingress/dlt/DltRecoveryIntegrationTest.java": "d9d62bb6f9dc76652f98fbb0448a203cf9f78f49cf892103388770d7e7e78a74",
+    "delivery-result-worker/src/main/resources/db/migration/V7__dlt_intake.sql": "6300b2d001285ab6b81681e80c515663a43de9b1110100e4fb157e24b6d2b6dc",
+    "scripts/test-java.sh": "f3bbbe18fc09434b21d64943849e59324db4813bc8c82fa34c14b558d0d5cd4a"
+  },
+  "postRunChanges": "Documentation and evidence only; no behavior changes after successful integration"
+}
