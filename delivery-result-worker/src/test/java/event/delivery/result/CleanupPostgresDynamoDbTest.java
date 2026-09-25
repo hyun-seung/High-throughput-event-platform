@@ -6,6 +6,7 @@ import event.common.lifecycle.*;
 import event.delivery.result.cleanup.*;
 import event.delivery.result.notification.*;
 import event.delivery.result.operations.DeliveryOperations;
+import event.delivery.result.operations.CleanupOperations;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.*;
@@ -28,6 +29,7 @@ import java.util.concurrent.*;
 import static event.common.dynamodb.DynamoDbTableNames.*;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
+import static event.delivery.result.operations.CleanupOperations.Outcome.*;
 
 @EnabledIfEnvironmentVariable(named = "POSTGRES_TEST_URL", matches = ".+")
 @EnabledIfEnvironmentVariable(named = "DYNAMODB_TEST_ENDPOINT", matches = ".+")
@@ -123,6 +125,110 @@ class CleanupPostgresDynamoDbTest {
                 .expressionAttributeValues(Map.of(":state", s(state), ":deadline", AttributeValue.fromN(Long.toString(deadline.toEpochMilli())),
                         ":lease", AttributeValue.fromN(Long.toString(lease.toEpochMilli())), ":reason", s("LEASE_EXPIRED_WITHOUT_RESULT"),
                         ":provider", s("test-provider"), ":route", AttributeValue.fromN("1"))));
+    }
+
+    CleanupOperations cleanupOperations() { return new CleanupOperations(jdbc, new DataSourceTransactionManager(pool)); }
+    CleanupOperations.Request cleanupRequest(DeliveryFinalized e, long version) {
+        return new CleanupOperations.Request(42, UUID.fromString(e.eventId()), version, UUID.randomUUID(), "operator.test", "DynamoDB 연결 복구 확인");
+    }
+    Map<String, Object> cleanupRow() { return jdbc.queryForMap("SELECT * FROM delivery_cleanup_outbox"); }
+
+    @Test void operatorRequeuePreservesResultsAndNotificationBudgetUntilExistingWorkerCleansUp() {
+        var e = seedModern(UUID.randomUUID().toString()); store.save(e);
+        jdbc.update("UPDATE delivery_cleanup_outbox SET next_attempt_at=clock_timestamp()+interval '1 hour'");
+        var history = jdbc.queryForList("SELECT * FROM delivery_history");
+        var notification = jdbc.queryForList("SELECT * FROM customer_notification_outbox"); var original = origin(e);
+        var view = operations(Instant.now()).cleanup(42, null, 1).records().getFirst(); assertEquals(0, view.version());
+        assertEquals(QUEUED, cleanupOperations().retry(cleanupRequest(e, view.version())));
+        assertEquals(1L, cleanupRow().get("version")); assertNull(cleanupRow().get("lease_token"));
+        assertEquals(history, jdbc.queryForList("SELECT * FROM delivery_history"));
+        assertEquals(notification, jdbc.queryForList("SELECT * FROM customer_notification_outbox")); assertEquals(original, origin(e));
+        var audit = jdbc.queryForMap("SELECT * FROM delivery_cleanup_action");
+        assertEquals("operator.test", audit.get("actor")); assertEquals("DynamoDB 연결 복구 확인", audit.get("reason"));
+        worker(repository).tick(); assertEquals("DONE", cleanupRow().get("status")); assertEquals(3L, cleanupRow().get("version"));
+        assertTrue(origin(e).isEmpty()); assertEquals(notification, jdbc.queryForList("SELECT * FROM customer_notification_outbox"));
+    }
+
+    @Test void identicalActionCanBeRecoveredAfterCompletionButChangedIntentIsRejected() {
+        var e = seedModern(UUID.randomUUID().toString()); store.save(e); var request = cleanupRequest(e, 0);
+        cleanupOperations().retry(request); // Model a successful commit whose response the operator did not receive.
+        worker(repository).tick(); var completed = cleanupRow();
+        assertEquals(ALREADY_QUEUED, cleanupOperations().retry(request));
+        assertEquals(ACTION_CONFLICT, cleanupOperations().retry(new CleanupOperations.Request(42, request.resultEventId(), 0,
+                request.actionId(), request.actor(), "다른 사유")));
+        assertEquals(ACTION_CONFLICT, cleanupOperations().retry(new CleanupOperations.Request(43, request.resultEventId(), 0,
+                request.actionId(), request.actor(), request.reason())));
+        assertEquals(ACTION_CONFLICT, cleanupOperations().retry(new CleanupOperations.Request(42, request.resultEventId(), 1,
+                request.actionId(), request.actor(), request.reason())));
+        assertEquals(completed, cleanupRow()); assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM delivery_cleanup_action", Integer.class));
+    }
+
+    @Test void operatorCannotStealLiveLeaseAndExpiredLeaseOwnerCannotChangeRequeuedReservation() {
+        var e = seedModern(UUID.randomUUID().toString()); store.save(e); var old = repository.claim().orElseThrow();
+        assertEquals(STALE_OR_INELIGIBLE, cleanupOperations().retry(cleanupRequest(e, 0)));
+        assertEquals(STALE_OR_INELIGIBLE, cleanupOperations().retry(cleanupRequest(e, 1)));
+        assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM delivery_cleanup_action", Integer.class));
+        jdbc.update("UPDATE delivery_cleanup_outbox SET lease_until=clock_timestamp()-interval '1 second'");
+        assertEquals(QUEUED, cleanupOperations().retry(cleanupRequest(e, 1))); var queued = cleanupRow();
+        assertFalse(repository.done(old)); repository.retry(old); assertEquals(queued, cleanupRow());
+        var next = repository.claim().orElseThrow(); assertNotEquals(old.token(), next.token());
+        assertEquals(3L, cleanupRow().get("version")); repository.retry(next);
+        assertEquals(4L, cleanupRow().get("version"));
+        assertEquals(STALE_OR_INELIGIBLE, cleanupOperations().retry(cleanupRequest(e, 3)));
+    }
+
+    @Test void cleanupActionRequiresMatchingTenantHistoryNotificationAndPendingState() {
+        var e = seedModern(UUID.randomUUID().toString()); store.save(e); var request = cleanupRequest(e, 0);
+        var before = cleanupRow();
+        assertEquals(STALE_OR_INELIGIBLE, cleanupOperations().retry(new CleanupOperations.Request(43, request.resultEventId(), 0,
+                request.actionId(), request.actor(), request.reason())));
+        jdbc.update("DELETE FROM customer_notification_outbox");
+        assertEquals(STALE_OR_INELIGIBLE, cleanupOperations().retry(request));
+        assertEquals(before, cleanupRow()); assertTrue(origin(e).containsKey("payload"));
+        jdbc.update("UPDATE delivery_cleanup_outbox SET status='DONE'");
+        assertEquals(STALE_OR_INELIGIBLE, cleanupOperations().retry(request));
+        assertEquals(STALE_OR_INELIGIBLE, cleanupOperations().retry(new CleanupOperations.Request(42, UUID.randomUUID(), 0,
+                UUID.randomUUID(), request.actor(), request.reason())));
+        assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM delivery_cleanup_action", Integer.class));
+    }
+
+    @Test void auditFailureRollsBackScheduleLeaseAndVersion() {
+        var e = seedModern(UUID.randomUUID().toString()); store.save(e);
+        jdbc.update("UPDATE delivery_cleanup_outbox SET next_attempt_at=clock_timestamp()+interval '1 hour',lease_token=?,lease_until=clock_timestamp()-interval '1 second'", UUID.randomUUID());
+        jdbc.execute("CREATE FUNCTION reject_cleanup_action() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'audit unavailable'; END $$");
+        jdbc.execute("CREATE TRIGGER reject_cleanup_action BEFORE INSERT ON delivery_cleanup_action FOR EACH ROW EXECUTE FUNCTION reject_cleanup_action()");
+        var before = cleanupRow();
+        assertThrows(org.springframework.dao.DataAccessException.class, () -> cleanupOperations().retry(cleanupRequest(e, 0)));
+        assertEquals(before, cleanupRow()); assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM delivery_cleanup_action", Integer.class));
+    }
+
+    @Test void concurrentOperatorsCannotBothRequeueOneObservedVersion() throws Exception {
+        var e = seedModern(UUID.randomUUID().toString()); store.save(e); var gate = new CountDownLatch(1);
+        var requests = List.of(cleanupRequest(e, 0), cleanupRequest(e, 0));
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var first = executor.submit(() -> { gate.await(); return cleanupOperations().retry(requests.getFirst()); });
+            var second = executor.submit(() -> { gate.await(); return cleanupOperations().retry(requests.getLast()); }); gate.countDown();
+            assertEquals(Set.of(QUEUED, STALE_OR_INELIGIBLE), Set.of(first.get(10, TimeUnit.SECONDS), second.get(10, TimeUnit.SECONDS)));
+        }
+        assertEquals(1L, cleanupRow().get("version")); assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM delivery_cleanup_action", Integer.class));
+    }
+
+    @Test void operatorRequeueDoesNotOverrideDynamoCompletionProof() {
+        var e = seedModern(UUID.randomUUID().toString()); store.save(e);
+        db.updateItem(r -> r.tableName(ORIGIN).key(DeliveryCompletion.metaKey(e.requestKey())).updateExpression("REMOVE completion_event_id"));
+        var before = origin(e); assertEquals(QUEUED, cleanupOperations().retry(cleanupRequest(e, 0)));
+        worker(repository).tick(); assertEquals("PENDING", cleanupRow().get("status")); assertNull(cleanupRow().get("lease_token"));
+        assertEquals(before, origin(e)); assertEquals(3L, cleanupRow().get("version"));
+        assertTrue(db.getItem(r -> r.tableName(STEP).key(key(e, "ATTEMPT#" + e.attemptId()))).hasItem());
+    }
+
+    @Test void invalidOperatorIdentityReasonAndVersionAreRejectedBeforeMutation() {
+        var e = seedModern(UUID.randomUUID().toString()); store.save(e); var request = cleanupRequest(e, 0); var before = cleanupRow();
+        for (String reason : List.of("", " ", "line\nbreak", "x".repeat(501)))
+            assertThrows(IllegalArgumentException.class, () -> new CleanupOperations.Request(42, request.resultEventId(), 0, request.actionId(), "operator", reason));
+        assertThrows(IllegalArgumentException.class, () -> new CleanupOperations.Request(42, request.resultEventId(), -1, request.actionId(), "operator", "reason"));
+        assertThrows(IllegalArgumentException.class, () -> new CleanupOperations.Request(42, request.resultEventId(), 0, request.actionId(), " ", "reason"));
+        assertEquals(before, cleanupRow()); assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM delivery_cleanup_action", Integer.class));
     }
 
     @Test void exhaustedOperationsAreTenantScopedPagedAndDoNotResetAttempts() {

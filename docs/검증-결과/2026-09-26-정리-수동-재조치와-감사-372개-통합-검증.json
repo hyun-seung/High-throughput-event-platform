@@ -1,0 +1,67 @@
+{
+  "date": "2026-09-26",
+  "status": "PASS",
+  "baseCommit": "98a506074633a5e278a5a78e48d1d27c23f94c0b",
+  "runDirectory": ".poc-results/java-test-20260925162644-29319",
+  "javaIntegration": {
+    "suites": 38,
+    "executed": 372,
+    "skipped": 0,
+    "failures": 0,
+    "errors": 0
+  },
+  "newTests": {
+    "cleanupOperatorIntegration": 8,
+    "totalCleanupAndOperationsIntegration": 27
+  },
+  "tools": {
+    "applicationTests": "Java 21/JUnit, Maven Wrapper clean verify -Pintegration-tests",
+    "environment": "Bash + Docker Compose, fresh isolated project",
+    "performance": "Not run; k6 reserved for performance phase"
+  },
+  "infrastructure": {
+    "kafka": "apache/kafka:4.0.2",
+    "postgresql": "postgres:17-alpine",
+    "dynamodb": "amazon/dynamodb-local:2.6.1",
+    "redis": "redis:7.4-alpine"
+  },
+  "cleanup": {
+    "containersStopped": true,
+    "containersRemoved": true,
+    "networkRemoved": true,
+    "volumesRetained": true
+  },
+  "packagedCli": {
+    "usageExitCode": 2,
+    "scope": "Packaged retry-cleanup Java CLI usage and Bash syntax; SQL/DynamoDB behavior verified by Java integration tests, not a separate CLI process"
+  },
+  "verified": [
+    "Operator requeue atomically advances SQL cleanup schedule and stores actor/reason/version/action ID; result history and notification budget remain unchanged",
+    "Existing worker completes actual DynamoDB cleanup after requeue",
+    "Identical action replay after completion does not mutate state; changed tenant/version/reason conflicts",
+    "Live lease and stale version reject action; expired owner token cannot complete or postpone requeued SQL reservation",
+    "Tenant mismatch, missing notification, completed or absent reservation reject action",
+    "SQL audit insert failure rolls back schedule, lease and version",
+    "Two concurrent operators observing the same version produce one accepted action and one stale rejection",
+    "Missing DynamoDB completion proof retains original and STEP despite accepted operator requeue",
+    "Invalid actor, reason or version rejects input before mutation",
+    "Existing normal successful DynamoDB write budget remains five calls and seven item mutations; cleanup version increments reuse existing SQL UPDATE calls"
+  ],
+  "notVerifiedOrImplemented": [
+    "Real network disconnect at operator SQL commit (successful-response loss modeled by discarding result and replaying identical action)",
+    "Dedicated advisory-lock BUSY branch or operator CLI timeout fault injection",
+    "Production operator authentication/roles and remote endpoint support",
+    "Manual unconfirmed-result finalization or exhausted notification additional-send policy",
+    "k6 traffic, Pod capacity, multi-AZ failure or data-loss proof"
+  ],
+  "sourceSha256": {
+    "delivery-result-worker/src/main/java/event/delivery/result/operations/CleanupOperations.java": "49412a846709d519ae4ccbc1653308ddd76605d3d07182b4dbc214e0d631dbf5",
+    "delivery-result-worker/src/main/java/event/delivery/result/operations/CleanupOperationsCli.java": "24c6a0d6176337d145c5f2670d35bc22a1cc98830051e456c1e85a37ee03d9f1",
+    "delivery-result-worker/src/main/java/event/delivery/result/operations/DeliveryOperations.java": "5cbd36ea3fe6328ab5379dd3831d98c3ea796898feaaa1106301f62ebb5aa6d2",
+    "delivery-result-worker/src/main/java/event/delivery/result/cleanup/CleanupRepository.java": "908e99eab4c9dcaa2ddf429f789de55663eb97bdc918209a009828a237a158a6",
+    "delivery-result-worker/src/main/resources/db/migration/V10__cleanup_operator_retry.sql": "ac74fcf0b291c963dbc11b576e65d37af4894ed3740dd1aec0d4ac09b8c100f7",
+    "delivery-result-worker/src/test/java/event/delivery/result/CleanupPostgresDynamoDbTest.java": "f5ca930d90155f977bba089fd4e30799797df16038c32d175a6875baa226513c",
+    "scripts/retry-cleanup.sh": "09b3d0afaaaa2c1d47c036bc233f6d8a2ba78de33c796c8017c9d0c5e8e0a3e7"
+  },
+  "postRunChanges": "Documentation and evidence only; no behavior changes after integration"
+}
