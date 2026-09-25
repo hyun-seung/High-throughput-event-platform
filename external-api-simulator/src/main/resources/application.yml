@@ -12,7 +12,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,prometheus,simulator
+        include: health,prometheus,simulator,customerResults
   metrics:
     tags:
       application: ${spring.application.name}
@@ -21,6 +21,10 @@ management:
         "[http.server.requests]": true
 
 simulator:
+  customer-results:
+    enabled: ${SIMULATOR_CUSTOMER_RESULTS_ENABLED:false}
+    secret: ${CUSTOMER_RESULT_SIMULATOR_SECRET:}
+    delay-millis: ${SIMULATOR_CUSTOMER_RESULTS_DELAY_MILLIS:5000}
   receipts:
     enabled: ${SIMULATOR_RECEIPTS_ENABLED:false}
     primary-url: ${SIMULATOR_RECEIPTS_PRIMARY_URL:http://127.0.0.1:8094/api/v1/receipts/mock-provider}

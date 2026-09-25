@@ -35,6 +35,16 @@ result:
   concurrency: ${RESULT_CONCURRENCY:3}
   redelivery-backoff-ms: ${RESULT_REDELIVERY_BACKOFF_MS:1000}
 
+notification:
+  enabled: ${CUSTOMER_NOTIFICATIONS_ENABLED:false}
+  concurrency: ${CUSTOMER_NOTIFICATION_CONCURRENCY:4}
+  poll-ms: ${CUSTOMER_NOTIFICATION_POLL_MS:100}
+  http-timeout: ${CUSTOMER_NOTIFICATION_HTTP_TIMEOUT:3s}
+  lease: ${CUSTOMER_NOTIFICATION_LEASE:30s}
+  retry-delay: ${CUSTOMER_NOTIFICATION_RETRY_DELAY:1s}
+  max-retry-delay: ${CUSTOMER_NOTIFICATION_MAX_RETRY_DELAY:60s}
+  max-batch-bytes: ${CUSTOMER_NOTIFICATION_MAX_BATCH_BYTES:262144}
+
 management:
   server:
     address: 127.0.0.1
@@ -49,3 +59,4 @@ management:
     distribution:
       percentiles-histogram:
         "[delivery.result.store.duration]": true
+        "[delivery.notification.http.duration]": true

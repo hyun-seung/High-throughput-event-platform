@@ -1,0 +1,313 @@
+{
+  "recordedAt": "2026-09-25T02:28:31.324976+00:00",
+  "baseCommit": "591255665c8db230082bebc3a6c9256ee970a8a8",
+  "workingTreeDirty": true,
+  "command": "DYNAMODB_TEST_ENDPOINT=http://localhost:18000 POSTGRES_TEST_URL=jdbc:postgresql://localhost:15432/delivery KAFKA_TEST_BOOTSTRAP_SERVERS=localhost:39092 JAVA_HOME=<JDK21> ./mvnw -q package",
+  "exitCode": 0,
+  "environment": {
+    "java": "21.0.7",
+    "springBoot": "4.1.0",
+    "postgresql": "17.11",
+    "postgresqlPort": 15432,
+    "kafkaBroker": "4.0.2",
+    "kafkaPort": 39092,
+    "dynamoDbLocalPort": 18000,
+    "http": "Actual loopback HTTP servers, dynamically allocated ports",
+    "isolation": "UUID test-owned PostgreSQL schemas / Kafka topics and groups; temporary app contexts and HTTP endpoints closed after tests"
+  },
+  "totals": {
+    "tests": 242,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "modules": {
+    "delivery-ingress-worker": {
+      "tests": 19,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "delivery-result-worker": {
+      "tests": 37,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "dispatch-worker": {
+      "tests": 120,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "event-api": {
+      "tests": 9,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "event-common": {
+      "tests": 11,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "external-api-simulator": {
+      "tests": 27,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "receipt-api": {
+      "tests": 19,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "newAndExtendedTests": [
+    {
+      "class": "event.delivery.result.FinalizedPostgresTest",
+      "name": "applicationStartsMigratesConsumesAndExposesPrometheus",
+      "seconds": 2.41,
+      "passed": true
+    },
+    {
+      "class": "event.delivery.result.NotificationPostgresTest",
+      "name": "byteLimitSplitsBatchesAndCustomersNeverMix",
+      "seconds": 0.985,
+      "passed": true
+    },
+    {
+      "class": "event.delivery.result.NotificationPostgresTest",
+      "name": "twentyRetriesKeepSameBatchBodyAndBudgetAcrossReconstructedWorkers",
+      "seconds": 0.341,
+      "passed": true
+    },
+    {
+      "class": "event.delivery.result.NotificationPostgresTest",
+      "name": "retryDoesNotRunBeforeDueAndOriginalBatchDoesNotAbsorbNewResults",
+      "seconds": 0.143,
+      "passed": true
+    },
+    {
+      "class": "event.delivery.result.NotificationPostgresTest",
+      "name": "parallelClaimHasOneOwnerAndExpiredOwnerCannotFinishNewAttempt",
+      "seconds": 0.238,
+      "passed": true
+    },
+    {
+      "class": "event.delivery.result.NotificationPostgresTest",
+      "name": "twentyOneUnconfirmedReservationsExhaustWithoutTwentySecondCall",
+      "seconds": 0.556,
+      "passed": true
+    },
+    {
+      "class": "event.delivery.result.NotificationPostgresTest",
+      "name": "versionOnePendingRowsSurviveMigrationAndCanBeNotified",
+      "seconds": 0.371,
+      "passed": true
+    },
+    {
+      "class": "event.delivery.result.NotificationPostgresTest",
+      "name": "only204AcknowledgesWholeBatchAndRedirectIsNeverFollowed(int)[1]",
+      "seconds": 0.11,
+      "passed": true
+    },
+    {
+      "class": "event.delivery.result.NotificationPostgresTest",
+      "name": "only204AcknowledgesWholeBatchAndRedirectIsNeverFollowed(int)[2]",
+      "seconds": 0.104,
+      "passed": true
+    },
+    {
+      "class": "event.delivery.result.NotificationPostgresTest",
+      "name": "only204AcknowledgesWholeBatchAndRedirectIsNeverFollowed(int)[3]",
+      "seconds": 0.102,
+      "passed": true
+    },
+    {
+      "class": "event.delivery.result.NotificationPostgresTest",
+      "name": "only204AcknowledgesWholeBatchAndRedirectIsNeverFollowed(int)[4]",
+      "seconds": 0.098,
+      "passed": true
+    },
+    {
+      "class": "event.delivery.result.NotificationPostgresTest",
+      "name": "only204AcknowledgesWholeBatchAndRedirectIsNeverFollowed(int)[5]",
+      "seconds": 0.128,
+      "passed": true
+    },
+    {
+      "class": "event.delivery.result.NotificationPostgresTest",
+      "name": "only204AcknowledgesWholeBatchAndRedirectIsNeverFollowed(int)[6]",
+      "seconds": 0.116,
+      "passed": true
+    },
+    {
+      "class": "event.delivery.result.NotificationPostgresTest",
+      "name": "responseLossRetriesSameIdsAndCustomerDeduplicationPreventsSecondEffect",
+      "seconds": 0.108,
+      "passed": true
+    },
+    {
+      "class": "event.delivery.result.NotificationPostgresTest",
+      "name": "slowCustomerDoesNotBlockOtherCustomerAndOneResultIsFlushedOnPoll",
+      "seconds": 0.128,
+      "passed": true
+    },
+    {
+      "class": "event.delivery.result.NotificationPostgresTest",
+      "name": "timeoutReturnsToPendingWithoutHoldingDatabaseLock",
+      "seconds": 0.614,
+      "passed": true
+    },
+    {
+      "class": "event.delivery.result.NotificationPostgresTest",
+      "name": "changedDestinationRetainsOldBatchWithoutSpendingBudget",
+      "seconds": 0.13,
+      "passed": true
+    },
+    {
+      "class": "event.delivery.result.NotificationPostgresTest",
+      "name": "unconfiguredCustomerKeepsPendingWithoutSpendingAttempts",
+      "seconds": 0.082,
+      "passed": true
+    },
+    {
+      "class": "event.delivery.result.NotificationPostgresTest",
+      "name": "claimRollbackDoesNotSpendAttemptOrSendHttp",
+      "seconds": 0.113,
+      "passed": true
+    },
+    {
+      "class": "event.delivery.result.NotificationPostgresTest",
+      "name": "databaseFailureAfterHttpAckRetainsLeaseAndRestartRetriesWithoutLosingResult",
+      "seconds": 0.128,
+      "passed": true
+    },
+    {
+      "class": "event.delivery.result.NotificationPostgresTest",
+      "name": "sendsUpToOneHundredWithoutWaitingForFullBatch(int)[1]",
+      "seconds": 0.11,
+      "passed": true
+    },
+    {
+      "class": "event.delivery.result.NotificationPostgresTest",
+      "name": "sendsUpToOneHundredWithoutWaitingForFullBatch(int)[2]",
+      "seconds": 0.291,
+      "passed": true
+    },
+    {
+      "class": "event.delivery.result.NotificationPostgresTest",
+      "name": "sendsUpToOneHundredWithoutWaitingForFullBatch(int)[3]",
+      "seconds": 0.285,
+      "passed": true
+    },
+    {
+      "class": "event.delivery.result.NotificationPostgresTest",
+      "name": "sendsUpToOneHundredWithoutWaitingForFullBatch(int)[4]",
+      "seconds": 0.278,
+      "passed": true
+    },
+    {
+      "class": "event.delivery.result.NotificationPropertiesTest",
+      "name": "rejectsUnsafeDestinationAndInsufficientLease",
+      "seconds": 0.001,
+      "passed": true
+    },
+    {
+      "class": "event.delivery.result.NotificationPropertiesTest",
+      "name": "retryDelayIsCappedAndUsesInitialAttemptAsOne",
+      "seconds": 0.0,
+      "passed": true
+    },
+    {
+      "class": "external.api.simulator.customer.CustomerResultSimulatorTest",
+      "name": "oversizedAndOverCountBodiesDoNotRecordEffects",
+      "seconds": 0.063,
+      "passed": true
+    },
+    {
+      "class": "external.api.simulator.customer.CustomerResultSimulatorTest",
+      "name": "actualApplicationServesAuthenticatedHttpAndLoopbackObservation",
+      "seconds": 1.066,
+      "passed": true
+    },
+    {
+      "class": "external.api.simulator.customer.CustomerResultSimulatorTest",
+      "name": "unauthorizedMismatchedTenantAndChangedBodyAreRejected",
+      "seconds": 0.004,
+      "passed": true
+    },
+    {
+      "class": "external.api.simulator.customer.CustomerResultSimulatorTest",
+      "name": "failureOnceThenAcknowledgementKeepsOneCustomerEffect",
+      "seconds": 0.004,
+      "passed": true
+    },
+    {
+      "class": "external.api.simulator.customer.CustomerResultSimulatorTest",
+      "name": "effectBeforeFailedAcknowledgementRemainsDeduplicated",
+      "seconds": 0.004,
+      "passed": true
+    }
+  ],
+  "verified": [
+    "1/99/100/101 result batches, maximum 100 items and configured UTF-8 byte size",
+    "Same customer only per batch; token and Idempotency-Key transmitted",
+    "Twenty-one reserved attempts then EXHAUSTED with unchanged provider outcome",
+    "Same batch ID/body across retries and reconstructed workers; finalized event replay does not reset counts",
+    "Future retry backoff permits new batch while retaining old immutable membership",
+    "Actual response loss after customer effect followed by retry and customer deduplication",
+    "SQL failure after HTTP 204 retains IN_FLIGHT; expired lease retries and recovers",
+    "Reservation rollback creates no HTTP call and consumes no attempt",
+    "Sixteen concurrent SQL claims have one owner; stale token cannot complete new attempt",
+    "Twenty-one unconfirmed reservations cannot generate a twenty-second call",
+    "Destination mismatch and missing customer configuration retain pending work",
+    "Only 204 acknowledges; 200/207/302/401/429/500 retry, no automatic redirect",
+    "Blocked customer HTTP does not block another customer; timeout does not hold DB transaction",
+    "V1 pending history/outbox survive Flyway V2 and can be notified",
+    "Actual Spring app with Kafka -> SQL -> HTTP -> DELIVERED and Prometheus",
+    "Actual simulator Spring app supports authenticated FAIL_ONCE HTTP and loopback observation"
+  ],
+  "notVerified": [
+    "JVM SIGKILL at callback boundary",
+    "PostgreSQL server/disk failure or multi-AZ failover",
+    "Production customer HTTP partial-ack contract",
+    "New high-TPS whole-flow benchmark",
+    "DynamoDB cleanup / cleanup acknowledgement",
+    "Grafana deployment of new notification metrics",
+    "Guaranteed customer receipt by business deadline during customer outage"
+  ],
+  "rawLog": {
+    "localPath": "/tmp/customer-notification-final-package.log",
+    "sha256": "1b3cf2b6912f454f6156c6852c28304859d0ed56c20dee814952a5340cf629f5"
+  },
+  "sourceSha256": {
+    "delivery-result-worker/src/main/java/event/delivery/result/DeliveryResultApplication.java": "dcff36be9c254dc4386e20d52074c04cd0a2cce70cbee634dbb7d4a3b2a410a3",
+    "delivery-result-worker/src/main/java/event/delivery/result/FinalizedCodec.java": "d435a200150f3c81c4b439ac16dd7fd545d9dff066055085758f85f66290976f",
+    "delivery-result-worker/src/main/java/event/delivery/result/FinalizedConsumer.java": "31281cb855ed7f7904bea5c3f64742e83738416d9219660f4454aa8f20847002",
+    "delivery-result-worker/src/main/java/event/delivery/result/FinalizedStore.java": "fef51753146eef529793809e3cc801d7b221102f4b2e0b6a9c2ad8834dc63ca1",
+    "delivery-result-worker/src/main/java/event/delivery/result/ResultConsumerConfiguration.java": "4b4a9a8cc491823a33b5fdf53c1479b9a38d9a16db9ab54abebc4d60c44b4e70",
+    "delivery-result-worker/src/main/java/event/delivery/result/notification/CustomerNotificationClient.java": "754d25930c238dc105365e95d0528d69b4db6388a53bd1f4ec1549ac00edac64",
+    "delivery-result-worker/src/main/java/event/delivery/result/notification/NotificationConfiguration.java": "bbcda0bdc3c0f90d86b204786c8731817e5987c5ada9e3406725e6a15ade621a",
+    "delivery-result-worker/src/main/java/event/delivery/result/notification/NotificationProperties.java": "388982ec62ad898a400399419b4c8fcb7e8a9f598405b2ce4f4402a522d401a0",
+    "delivery-result-worker/src/main/java/event/delivery/result/notification/NotificationRepository.java": "dfcfdbcfa69a2a42272056478c6751b8bafdb47fa41972c554be1ec76dddb681",
+    "delivery-result-worker/src/main/java/event/delivery/result/notification/NotificationScheduler.java": "c919bf6bf7e94797bc2b0e72445214701425e9baa534a6b2078319bd4e386837",
+    "delivery-result-worker/src/main/java/event/delivery/result/notification/NotificationService.java": "35de108ea37aaedebe9762dc950ad67f16a48630855777d3eff5ef142513993e",
+    "delivery-result-worker/src/main/resources/application.yml": "b56dff44c06f87307f35d450747c1a8bfced5f2f7fa4334a370043e1057b40eb",
+    "delivery-result-worker/src/main/resources/db/migration/V1__delivery_history_and_notification_outbox.sql": "b3562856ce082635e7e3a9d7bc9e0d06e5deb588fb877c01a3edc7ddb0897e89",
+    "delivery-result-worker/src/main/resources/db/migration/V2__customer_notification_batches.sql": "180b92105d8527fa8ca90b867da918eddc09e9d257e39c6c37c2db8625edb3e8",
+    "delivery-result-worker/src/test/java/event/delivery/result/FinalizedCodecTest.java": "a5c7e7fe3529d543d8800b37fd57cbfe93544615a219487e342dc1f562f5d979",
+    "delivery-result-worker/src/test/java/event/delivery/result/FinalizedPostgresTest.java": "fa8ab1878d7048397fcaf633029c8e3c40c1637f364e58d4b2c603233c6c923d",
+    "delivery-result-worker/src/test/java/event/delivery/result/NotificationPostgresTest.java": "a9ca4b46af8ff0974f2388d3939ec7536480c1267902bd080eb3cdd9b443063f",
+    "delivery-result-worker/src/test/java/event/delivery/result/NotificationPropertiesTest.java": "07a53bd1b1167932fd86751c3edef4106a80e674afecb9844bcf9219a88ed4ad",
+    "delivery-result-worker/src/test/java/event/delivery/result/NotificationTestServer.java": "96c146e90cfc4992baea8df8b7cbdd30663910f0c35146bcc3e42012956be0ad",
+    "event-common/src/main/java/event/common/notification/CustomerResultBatch.java": "86d0b7c177a00f3e75891c3f5208ecf8f21ca07c44bdbb1cf1e08b443933518f",
+    "external-api-simulator/src/main/java/external/api/simulator/customer/CustomerResultSimulator.java": "08a24f86a06b1c2292d842eff9b3823ea043fae627b51990c273c2851c121562",
+    "external-api-simulator/src/main/java/external/api/simulator/customer/CustomerResultSimulatorEndpoint.java": "5908f22b7e2b9fa2cac137e330ef5a8f7a57c8ca08547ea9c82af2e9f5080b34",
+    "external-api-simulator/src/main/resources/application.yml": "c1cc76374f10d3dbb86a34574d9ff79104584d6337733c99e2a5f7d0abdfc448",
+    "external-api-simulator/src/test/java/external/api/simulator/customer/CustomerResultSimulatorTest.java": "820d19875cf4fbadc175da06390a375652e6a9e444c3c43f0b3fd394395de975"
+  }
+}
