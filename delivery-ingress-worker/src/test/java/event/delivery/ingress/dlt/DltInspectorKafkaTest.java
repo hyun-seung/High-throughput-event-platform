@@ -48,6 +48,10 @@ class DltInspectorKafkaTest {
                 assertEquals(1, admin.listConsumerGroupOffsets(group).partitionsToOffsetAndMetadata().get(10, TimeUnit.SECONDS).get(tp).offset());
                 assertEquals(3, admin.listOffsets(Map.of(tp, OffsetSpec.latest())).all().get(10, TimeUnit.SECONDS).get(tp).offset());
                 assertEquals(first.records(), DltInspector.read(bootstrap, topic, 0, 0, 2, inspection).records());
+                assertEquals(1, DltInspector.fetchExact(bootstrap, topic, 0, 1).offset());
+                assertThrows(IllegalArgumentException.class, () -> DltInspector.fetchExact(bootstrap, topic, 0, 3));
+                admin.deleteRecords(Map.of(tp, RecordsToDelete.beforeOffset(1))).all().get(10, TimeUnit.SECONDS);
+                assertThrows(IllegalArgumentException.class, () -> DltInspector.fetchExact(bootstrap, topic, 0, 0));
                 assertThrows(IllegalArgumentException.class, () -> DltInspector.read(bootstrap, topic, 0, 4, 1, inspection));
             } finally {
                 admin.deleteConsumerGroups(List.of(group)).all().get(10, TimeUnit.SECONDS);

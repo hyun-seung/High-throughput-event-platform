@@ -1,0 +1,69 @@
+{
+  "date": "2026-09-25",
+  "status": "PASS",
+  "baseCommit": "a4d4a9a0c33befdb9149ba1edca36a617351ec50",
+  "runDirectory": ".poc-results/java-test-20260925143405-19259",
+  "javaIntegration": {
+    "suites": 38,
+    "executed": 324,
+    "skipped": 0,
+    "failures": 0,
+    "errors": 0
+  },
+  "newTests": {
+    "recoveryPlannerSqlKafkaIntegration": 10,
+    "dispatchIdempotencyExpiryAndOriginRace": 4,
+    "existingKafkaInspectorExtended": "exact read, end offset rejection, deleted offset rejection"
+  },
+  "tools": {
+    "applicationTests": "Java 21/JUnit, Maven Wrapper clean verify -Pintegration-tests",
+    "environment": "Bash + Docker Compose, fresh isolated project",
+    "performance": "Not run; k6 reserved for subsequent performance phase"
+  },
+  "infrastructure": {
+    "kafka": "apache/kafka:4.0.2",
+    "postgresql": "postgres:17-alpine",
+    "dynamodb": "amazon/dynamodb-local:2.6.1",
+    "redis": "redis:7.4-alpine"
+  },
+  "cleanup": {
+    "containersStopped": true,
+    "volumesRetained": true,
+    "testOwnedObjects": "UUID Kafka topics and DDB keys, isolated SQL schema removed by Java tests"
+  },
+  "packagedCli": {
+    "usageExitCode": 2,
+    "scope": "Packaged Spring Boot loader entry point smoke test; no separate full CLI process recovery test"
+  },
+  "verified": [
+    "Existing ORIGIN execution and original occurrence preserved through resume and expiry classification",
+    "Missing ORIGIN, existing SQL history or STEP, changed ORIGIN and completion fence held",
+    "SQL lookup errors fail closed",
+    "Kafka acknowledgement plus SQL operation and attempt persisted before success",
+    "Repeated acknowledged operation produces no additional Kafka record",
+    "Actual Kafka send followed by injected timeout retains PENDING and identical retry command",
+    "Concurrent operator receives BUSY; state change before send is audited and held",
+    "Original source coordinates cannot be reused with changed command",
+    "Duplicate execution command invokes provider once; expired command invokes provider zero times",
+    "ORIGIN deletion or replacement before dispatch claim prevents STEP creation",
+    "Existing normal v2 DynamoDB budget remains five successful write calls and seven item mutations"
+  ],
+  "notVerifiedOrImplemented": [
+    "New recovery CLI SIGKILL and SQL commit response-loss boundaries",
+    "ORIGIN-absent initial admission recovery or automatic DLT replay",
+    "Production operator authentication and automatic SQL pending-operation resumption",
+    "AWS regional or multi-AZ durability and performance capacity"
+  ],
+  "sourceSha256": {
+    "delivery-ingress-worker/src/main/java/event/delivery/ingress/dlt/DltRecoveryCli.java": "fd07e8b54b95ef818be74af487b9b20c611f4705ded21f8af127892f89598305",
+    "delivery-ingress-worker/src/main/java/event/delivery/ingress/dlt/DltRecoveryPlanner.java": "2a4ccfa10f4b41d2f55d550b034d3e472996f55a50e188dad662e8c0347460da",
+    "delivery-ingress-worker/src/main/java/event/delivery/ingress/dlt/DltRecoveryStore.java": "b8f3c202fcaabeba9fa66f15a175d280b9e4d7f581bcdf5c4e2af130aaa82d16",
+    "delivery-ingress-worker/src/main/java/event/delivery/ingress/dlt/DltInspector.java": "ebb080fb2709fd29ae3d465066e34257c99c8e14305b6074d9dbbadfd1991abd",
+    "delivery-ingress-worker/src/test/java/event/delivery/ingress/dlt/DltRecoveryIntegrationTest.java": "3764e3e1c625780718a3a82750668738d8f1016351f501f6a1f21f3b919a9baa",
+    "delivery-ingress-worker/src/test/java/event/delivery/ingress/dlt/DltInspectorKafkaTest.java": "fbe665d76a037c0bd5cb0dbaf5df8937a134eb771193e2b1afcd15f5d5ac2c24",
+    "dispatch-worker/src/test/java/event/delivery/dispatch/lifecycle/OriginStepDynamoDbTest.java": "3fa026ab30f1ade13407ef8cdda64baddfd124680201f227ac771b4b22d10ca8",
+    "delivery-result-worker/src/main/resources/db/migration/V4__dlt_recovery_handoff.sql": "27fbc85974229faa1ddaa84bf8855600c916493879b99822d6b49b6222778ad2",
+    "scripts/recover-dlt.sh": "66a7a1c6679357f0fdfc0f0375a7075a2010b3ae2800fe7ef4d98e2a5ff1a505"
+  },
+  "postRunChanges": "Documentation and DltRecoveryStore indentation only; no behavior changes"
+}
