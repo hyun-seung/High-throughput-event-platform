@@ -1,0 +1,155 @@
+{
+  "verifiedAtUtc": "2026-09-25T04:41:29.800764+00:00",
+  "implementationCommit": "6fff0044a2a15cb7abb7f4a56ff1d69a7c3a0a7a",
+  "physicalTables": [
+    "ORIGIN",
+    "STEP"
+  ],
+  "java": {
+    "total": {
+      "tests": 283,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "modules": {
+      "delivery-ingress-worker": {
+        "tests": 24,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "delivery-result-worker": {
+        "tests": 46,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "dispatch-worker": {
+        "tests": 147,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "event-api": {
+        "tests": 9,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "event-common": {
+        "tests": 11,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "external-api-simulator": {
+        "tests": 27,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "receipt-api": {
+        "tests": 19,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    }
+  },
+  "python": {
+    "pocEvidence": 10,
+    "offlineMigrationIntegration": 3,
+    "failures": 0
+  },
+  "dynamodbWriteBudgets": [
+    {
+      "mutationsByTable": {
+        "ORIGIN": 3,
+        "STEP": 15
+      },
+      "successfulConditionChecks": 2,
+      "updateItems": 14,
+      "successfulReadCalls": 18,
+      "deleteItems": 3,
+      "failedWriteCalls": 0,
+      "putItems": 1,
+      "successfulWriteCalls": 14,
+      "scenario": "v2_eight_no_response",
+      "mutatedItems": 18
+    },
+    {
+      "mutationsByTable": {
+        "ORIGIN": 3,
+        "STEP": 4
+      },
+      "successfulConditionChecks": 1,
+      "updateItems": 4,
+      "successfulReadCalls": 9,
+      "deleteItems": 2,
+      "failedWriteCalls": 0,
+      "putItems": 1,
+      "successfulWriteCalls": 5,
+      "scenario": "v2_normal_primary",
+      "mutatedItems": 7
+    },
+    {
+      "mutationsByTable": {
+        "ORIGIN": 3,
+        "STEP": 22
+      },
+      "successfulConditionChecks": 2,
+      "updateItems": 21,
+      "successfulReadCalls": 37,
+      "deleteItems": 3,
+      "failedWriteCalls": 0,
+      "putItems": 1,
+      "successfulWriteCalls": 21,
+      "scenario": "v2_eight_receipts",
+      "mutatedItems": 25
+    },
+    {
+      "mutationsByTable": {
+        "ORIGIN": 3,
+        "STEP": 25
+      },
+      "successfulConditionChecks": 2,
+      "updateItems": 24,
+      "successfulReadCalls": 46,
+      "deleteItems": 3,
+      "failedWriteCalls": 0,
+      "putItems": 1,
+      "successfulWriteCalls": 24,
+      "scenario": "v2_eight_receipts_review_expiry",
+      "mutatedItems": 28
+    }
+  ],
+  "commands": [
+    "DYNAMODB_TEST_ENDPOINT=http://localhost:18000 POSTGRES_TEST_URL=jdbc:postgresql://localhost:15432/delivery KAFKA_TEST_BOOTSTRAP_SERVERS=localhost:39092 REDIS_TEST_PORT=16379 JAVA_HOME=/Users/hyunseung/Library/Java/JavaVirtualMachines/temurin-21.0.7/Contents/Home ./mvnw -q package",
+    "python3 -m unittest discover -s scripts/poc -p 'test_*.py'",
+    "DYNAMODB_TEST_ENDPOINT=http://localhost:18000 .poc-tools/venv/bin/python -m unittest discover -s scripts/dynamodb -p 'test_*.py'"
+  ],
+  "logs": [
+    {
+      "localLog": "/tmp/origin-step-tables-final-package.log",
+      "sha256": "c872c64a7472c3c1a2803b881ac82d41ae92635f7741a5e4174725785cae168c"
+    },
+    {
+      "localLog": "/tmp/origin-step-table-migration-tests.log",
+      "sha256": "e1afdff33e2a3d2e971623484b4df1e18fc8b4018c6064b20a848d53705b9265"
+    }
+  ],
+  "verified": [
+    "실제 두 테이블에 ORIGIN/STEP이 각각 저장됨",
+    "테이블 간 성공 웹훅 트랜잭션의 조건 실패 시 STEP 변경도 취소됨",
+    "두 테이블 GSI의 페이지 조회",
+    "v1/v2 회귀·네 v2 경로 호출 및 테이블별 변경 수",
+    "기본 dry-run CLI·내용 보존·대상 충돌 차단·복사 응답 유실 후 재개"
+  ],
+  "limits": [
+    "테스트에서 만든 UUID별 원본 테이블과 대상 레코드만 이관/정리함",
+    "기존 delivery_state 데이터와 실행 중인 공용 앱은 변경하지 않음",
+    "운영 배포는 전체 writer 중지·데이터 복사·대조 후 재개 필요",
+    "항목 변경에는 삭제를 포함하며 행 개수나 WCU 또는 운영 호출 상한을 뜻하지 않음"
+  ]
+}
