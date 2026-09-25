@@ -1,0 +1,51 @@
+server:
+  address: 127.0.0.1
+  port: ${RESULT_HTTP_PORT:8095}
+
+spring:
+  application:
+    name: delivery-result-worker
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/delivery}
+    username: ${DB_USERNAME:delivery}
+    password: ${DB_PASSWORD:delivery}
+    hikari:
+      schema: ${RESULT_DB_SCHEMA:delivery_results}
+      maximum-pool-size: 6
+      connection-timeout: 3000
+      data-source-properties:
+        connectTimeout: 5
+        socketTimeout: 15
+  flyway:
+    default-schema: ${RESULT_DB_SCHEMA:delivery_results}
+    schemas: ${RESULT_DB_SCHEMA:delivery_results}
+    clean-disabled: true
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: ${RESULT_CONSUMER_GROUP:delivery-result-worker-v1}
+      auto-offset-reset: earliest
+      max-poll-records: 10
+      properties:
+        "[allow.auto.create.topics]": false
+        "[max.poll.interval.ms]": 300000
+
+result:
+  topic: ${FINALIZED_TOPIC:delivery.finalized.v1}
+  concurrency: ${RESULT_CONCURRENCY:3}
+  redelivery-backoff-ms: ${RESULT_REDELIVERY_BACKOFF_MS:1000}
+
+management:
+  server:
+    address: 127.0.0.1
+    port: ${RESULT_METRICS_PORT:19085}
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      percentiles-histogram:
+        "[delivery.result.store.duration]": true

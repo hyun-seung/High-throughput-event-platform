@@ -1,0 +1,180 @@
+{
+  "recordedAt": "2026-09-25T02:08:08.409141+00:00",
+  "baseCommit": "01a56ff3293733f67ec3837c1abc2e00eefc67b4",
+  "workingTreeDirty": true,
+  "command": "DYNAMODB_TEST_ENDPOINT=http://localhost:18000 POSTGRES_TEST_URL=jdbc:postgresql://localhost:15432/delivery KAFKA_TEST_BOOTSTRAP_SERVERS=localhost:39092 JAVA_HOME=<JDK21> ./mvnw -q package",
+  "exitCode": 0,
+  "environment": {
+    "java": "21.0.7",
+    "springBoot": "4.1.0",
+    "postgresql": "17.11",
+    "postgresqlPort": 15432,
+    "kafkaBroker": "4.0.2",
+    "kafkaPort": 39092,
+    "dynamoDbLocalPort": 18000,
+    "resourceIsolation": "UUID test-owned PostgreSQL schemas, Kafka topics and groups; removed after test",
+    "fsync": "on",
+    "synchronous_commit": "on"
+  },
+  "totals": {
+    "tests": 212,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "modules": {
+    "delivery-ingress-worker": {
+      "tests": 19,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "delivery-result-worker": {
+      "tests": 12,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "dispatch-worker": {
+      "tests": 120,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "event-api": {
+      "tests": 9,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "event-common": {
+      "tests": 11,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "external-api-simulator": {
+      "tests": 22,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "receipt-api": {
+      "tests": 19,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "newTests": [
+    {
+      "class": "event.delivery.result.FinalizedCodecTest",
+      "name": "rejectsWrongKeyIdsMissingDatesAndUnknownOutcome",
+      "seconds": 0.081,
+      "passed": true
+    },
+    {
+      "class": "event.delivery.result.FinalizedCodecTest",
+      "name": "roundTripIncludesNanosecondsAndBothRoutes",
+      "seconds": 0.011,
+      "passed": true
+    },
+    {
+      "class": "event.delivery.result.FinalizedCodecTest",
+      "name": "rejectsUnknownSchemaFieldsTrailingJsonAndMalformedPayloads",
+      "seconds": 0.004,
+      "passed": true
+    },
+    {
+      "class": "event.delivery.result.FinalizedPostgresTest",
+      "name": "failedReservationInsertRollsBackHistoryAndCanRecover",
+      "seconds": 0.399,
+      "passed": true
+    },
+    {
+      "class": "event.delivery.result.FinalizedPostgresTest",
+      "name": "storesBothRoutesAndAllOutcomesAndMigrationIsRepeatable",
+      "seconds": 0.147,
+      "passed": true
+    },
+    {
+      "class": "event.delivery.result.FinalizedPostgresTest",
+      "name": "missingReservationIsNotRecreatedAsAnUnintendedSecondNotification",
+      "seconds": 0.089,
+      "passed": true
+    },
+    {
+      "class": "event.delivery.result.FinalizedPostgresTest",
+      "name": "replayDoesNotResetDeliveredOrExhaustedNotification",
+      "seconds": 0.091,
+      "passed": true
+    },
+    {
+      "class": "event.delivery.result.FinalizedPostgresTest",
+      "name": "kafkaKeepsOffsetOnSqlRollbackThenRecoversAndDeduplicatesAfterCommittedStoreRestart",
+      "seconds": 2.7,
+      "passed": true
+    },
+    {
+      "class": "event.delivery.result.FinalizedPostgresTest",
+      "name": "concurrentDuplicatesProduceOneHistoryAndOneReservation",
+      "seconds": 0.187,
+      "passed": true
+    },
+    {
+      "class": "event.delivery.result.FinalizedPostgresTest",
+      "name": "malformedRecordAndContentConflictKeepOffsetWithoutDropping",
+      "seconds": 3.41,
+      "passed": true
+    },
+    {
+      "class": "event.delivery.result.FinalizedPostgresTest",
+      "name": "conflictNeverOverwritesHistoryOrReservationIncludingSubMicrosecondDates",
+      "seconds": 0.111,
+      "passed": true
+    },
+    {
+      "class": "event.delivery.result.FinalizedPostgresTest",
+      "name": "applicationStartsMigratesConsumesAndExposesPrometheus",
+      "seconds": 1.759,
+      "passed": true
+    }
+  ],
+  "verified": [
+    "24 concurrent identical events produce one history and one notification reservation",
+    "All final outcomes and both routes preserve immutable event including nanoseconds",
+    "Committed notification progress remains unchanged on replay",
+    "Conflicting result content cannot overwrite history",
+    "Failed reservation INSERT rolls back both records",
+    "Missing reservation is not silently recreated",
+    "Actual Kafka offset retained during SQL failure and progresses on recovery",
+    "Exception after actual SQL commit, then consumer container recreation, deduplicates without resetting notification",
+    "Malformed and conflicting records remain unacknowledged",
+    "Spring Boot starts from absent schema, migrates, consumes real Kafka, commits SQL pair and serves Prometheus"
+  ],
+  "notVerified": [
+    "Customer HTTP batching or delivery",
+    "Notification retry execution",
+    "JVM SIGKILL at SQL boundary",
+    "PostgreSQL server or storage outage",
+    "Multi-AZ failover or regional durability",
+    "New whole-flow performance/TPS",
+    "DynamoDB cleanup acknowledgement",
+    "Grafana scrape/deployment of this new worker"
+  ],
+  "rawLog": {
+    "localPath": "/tmp/delivery-result-full-package.log",
+    "sha256": "63808c699c2a10f0b543801f77225c4671b7af851a11ca58f914e1ba0b46a33c"
+  },
+  "sourceSha256": {
+    "delivery-result-worker/src/main/java/event/delivery/result/DeliveryResultApplication.java": "dcff36be9c254dc4386e20d52074c04cd0a2cce70cbee634dbb7d4a3b2a410a3",
+    "delivery-result-worker/src/main/java/event/delivery/result/FinalizedCodec.java": "d435a200150f3c81c4b439ac16dd7fd545d9dff066055085758f85f66290976f",
+    "delivery-result-worker/src/main/java/event/delivery/result/FinalizedConsumer.java": "31281cb855ed7f7904bea5c3f64742e83738416d9219660f4454aa8f20847002",
+    "delivery-result-worker/src/main/java/event/delivery/result/FinalizedStore.java": "fef51753146eef529793809e3cc801d7b221102f4b2e0b6a9c2ad8834dc63ca1",
+    "delivery-result-worker/src/main/java/event/delivery/result/ResultConsumerConfiguration.java": "4b4a9a8cc491823a33b5fdf53c1479b9a38d9a16db9ab54abebc4d60c44b4e70",
+    "delivery-result-worker/src/main/resources/application.yml": "e643b2a35f826e82cef29cd3195591f64145c940d3cd8e5921994c1cfb5e4f9b",
+    "delivery-result-worker/src/main/resources/db/migration/V1__delivery_history_and_notification_outbox.sql": "b3562856ce082635e7e3a9d7bc9e0d06e5deb588fb877c01a3edc7ddb0897e89",
+    "delivery-result-worker/src/test/java/event/delivery/result/FinalizedCodecTest.java": "a5c7e7fe3529d543d8800b37fd57cbfe93544615a219487e342dc1f562f5d979",
+    "delivery-result-worker/src/test/java/event/delivery/result/FinalizedPostgresTest.java": "28d10436bc86667b8480ba65bff9c59a1f81affde096d58d3229a88d0172c98c"
+  }
+}

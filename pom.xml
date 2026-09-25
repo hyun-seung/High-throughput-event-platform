@@ -29,6 +29,7 @@
         <module>dispatch-worker</module>
         <module>external-api-simulator</module>
         <module>receipt-api</module>
+        <module>delivery-result-worker</module>
     </modules>
 
     <properties>
