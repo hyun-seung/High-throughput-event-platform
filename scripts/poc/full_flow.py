@@ -83,6 +83,10 @@ class FullFlow:
     def fail_first_notification(self):
         return True
 
+    def before_customer_response(self, record):
+        """Test-server hook. False closes the request without an HTTP acknowledgement."""
+        return True
+
     def docker(self, *args, input=None):
         return subprocess.check_output(self.compose + list(args), cwd=ROOT, env=self.compose_env,
                                        text=True, input=input, timeout=240)
@@ -180,8 +184,11 @@ class FullFlow:
                         raise AssertionError('Invalid customer batch')
                     with owner.lock:
                         status = 503 if owner.fail_first_notification() and not owner.callback_records else 204
-                        owner.callback_records.append({'body': body, 'status': status,
-                                                       'receivedAt': datetime.now(timezone.utc).isoformat()})
+                        record = {'body': body, 'status': status, 'receivedAt': datetime.now(timezone.utc).isoformat()}
+                        owner.callback_records.append(record)
+                    if not owner.before_customer_response(record):
+                        self.close_connection = True
+                        return
                     self.send_response(status); self.send_header('Content-Length', '0'); self.end_headers()
                 except Exception as failure:
                     with owner.lock: owner.callback_errors.append(str(failure))
@@ -208,6 +215,8 @@ class FullFlow:
             'CUSTOMER_NOTIFICATIONS_ENABLED': 'true', 'DELIVERY_CLEANUP_ENABLED': 'true',
             'JWT_SECRET': 'bG9jYWwtZGV2ZWxvcG1lbnQtb25seS1zZWNyZXQtYXQtbGVhc3QtMzItYnl0ZXMtbG9uZw=='})
         env.update(self.application_overrides())
+        # Retain only in memory for owned-process restart tests; this environment includes test secrets.
+        self.application_env = env
         for name in MODULES:
             opts = [f'--server.port={self.ports[name]}', '--server.address=127.0.0.1',
                     f'--management.server.port={self.ports[name + "_metrics"]}']
