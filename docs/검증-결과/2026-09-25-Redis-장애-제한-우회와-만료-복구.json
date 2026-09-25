@@ -1,0 +1,762 @@
+{
+  "date": "2026-09-25",
+  "status": "PASS",
+  "baseCommit": "a7504f3aa5ef3ed45656a3ad71656bc80cd4e50d",
+  "runDirectory": ".poc-results/full-flow-26f9f2b32d1c",
+  "validation": {
+    "pythonTests": 45,
+    "pythonTestsStatus": "PASS",
+    "mavenPackage": "PASS (-DskipTests; Java production sources unchanged)",
+    "recoveryRunExitCode": 0
+  },
+  "summary": {
+    "passed": 3,
+    "historyRows": 3,
+    "resultCounts": {
+      "DELIVERED": 2,
+      "EXPIRED": 1
+    },
+    "bypassedRequests": 3,
+    "activeDuplicateBlocked": true,
+    "completedDuplicateBlockedAfterRestore": true,
+    "missingCompletionTtlsAfterRestore": {
+      "c765736b-43b8-35d2-b591-219c07c678b4": -2,
+      "11d88136-3d0b-380b-96ad-6934aa0f15e4": -2
+    },
+    "quotaNotBackfilled": true,
+    "providerCalls": 3,
+    "providerEffects": 3,
+    "applicationPidsUnchanged": true,
+    "finalOffsets": {
+      "delivery.requested.v1": [
+        {
+          "partition": 0,
+          "committed": -1001,
+          "high": 0,
+          "lag": 0
+        },
+        {
+          "partition": 1,
+          "committed": 1,
+          "high": 1,
+          "lag": 0
+        },
+        {
+          "partition": 2,
+          "committed": 4,
+          "high": 4,
+          "lag": 0
+        }
+      ],
+      "delivery.dispatch-requested.v1": [
+        {
+          "partition": 0,
+          "committed": -1001,
+          "high": 0,
+          "lag": 0
+        },
+        {
+          "partition": 1,
+          "committed": -1001,
+          "high": 0,
+          "lag": 0
+        },
+        {
+          "partition": 2,
+          "committed": 4,
+          "high": 4,
+          "lag": 0
+        }
+      ],
+      "delivery.receipt-received.v1": [
+        {
+          "partition": 0,
+          "committed": -1001,
+          "high": 0,
+          "lag": 0
+        },
+        {
+          "partition": 1,
+          "committed": -1001,
+          "high": 0,
+          "lag": 0
+        },
+        {
+          "partition": 2,
+          "committed": 2,
+          "high": 2,
+          "lag": 0
+        }
+      ],
+      "delivery.finalized.v1": [
+        {
+          "partition": 0,
+          "committed": -1001,
+          "high": 0,
+          "lag": 0
+        },
+        {
+          "partition": 1,
+          "committed": -1001,
+          "high": 0,
+          "lag": 0
+        },
+        {
+          "partition": 2,
+          "committed": 4,
+          "high": 4,
+          "lag": 0
+        }
+      ]
+    },
+    "completedAt": "2026-09-25T10:26:56.669739+00:00",
+    "scope": "local Redis unavailable/same-volume recovery; no HA/empty-cache restore/TPS capacity claim"
+  },
+  "environment": {
+    "runId": "full-flow-26f9f2b32d1c",
+    "ports": {
+      "kafka": 59253,
+      "redis": 59254,
+      "postgres": 59255,
+      "dynamo": 59256,
+      "tcp": 59257,
+      "provider": 59258,
+      "receipt": 59259,
+      "ingress": 59260,
+      "api": 59261,
+      "dispatch": 59262,
+      "result": 59263,
+      "provider_metrics": 59264,
+      "receipt_metrics": 59265,
+      "ingress_metrics": 59266,
+      "api_metrics": 59267,
+      "dispatch_metrics": 59268,
+      "result_metrics": 59269
+    },
+    "gitCommit": "a7504f3aa5ef3ed45656a3ad71656bc80cd4e50d",
+    "workingTreeDirty": true,
+    "jarSha256": {
+      "provider": "2c32cccc284b31a8c83dd1b27594146540c66de7e4cf159510cfd947900b4ae9",
+      "receipt": "2c9f0a48a73a5847690ca54754322d78dba1069be35abf385fe6043940bca812",
+      "ingress": "908c043760e8cc44a44fed241d6981df552f63a258682632bb46cee03de3fd48",
+      "api": "41335a64611edfd7bfcd6958c4c8e323e4cd77bcdf66580d9268fbf6277fab58",
+      "dispatch": "e217c2f69167c004fbfd4514cd135326772e58f6ff2d9a08c3cf274be353c9da",
+      "result": "23496c28bd4fcf26c6df281bce7b65ab80438b40892e9d7879b797fc8d8bc244"
+    },
+    "harnessSha256": "6e874e7d2b04176d91c1a06f5ef1a23db0ab9dea820fa929271a7f59707eab33",
+    "primaryTtlSeconds": 30,
+    "secondaryTtlSeconds": 40,
+    "recoveryPollMillis": 3000,
+    "infraStartup": "compose create -> docker start init -> wait init exit 0 -> start services -> healthcheck",
+    "productionRecoveryPollMillis": 600000,
+    "providerDeduplicate": false,
+    "scope": "single local Redis service outage and same AOF volume restore; not replica/HA/load proof",
+    "redisRecoveryHarnessSha256": "53b5c6d08a99b6e9099f0527a907357dc14781b94a1e54f76e71154fd89dd781",
+    "sharedRecoveryHarnessSha256": "946f379a8b22da68a9ab2a015dc8204b5c19abbd142b1c37d2474aefb51e729c"
+  },
+  "beforeOutage": {
+    "redis": {
+      "id": "c886ac53f87e6bf6235a4a2f48246d0784d38794f90cb43477fc3c3cb94095a4",
+      "status": "running",
+      "running": true,
+      "health": "healthy",
+      "volumes": [
+        "full-flow-26f9f2b32d1c_redis-data"
+      ],
+      "at": "2026-09-25T10:26:15.604019+00:00"
+    },
+    "applicationPids": {
+      "provider": 9614,
+      "receipt": 9616,
+      "ingress": 9638,
+      "api": 9643,
+      "dispatch": 9644,
+      "result": 9645
+    },
+    "bypassCount": 0.0
+  },
+  "redisStopped": {
+    "id": "c886ac53f87e6bf6235a4a2f48246d0784d38794f90cb43477fc3c3cb94095a4",
+    "status": "exited",
+    "running": false,
+    "health": "unhealthy",
+    "volumes": [
+      "full-flow-26f9f2b32d1c_redis-data"
+    ],
+    "at": "2026-09-25T10:26:15.991631+00:00"
+  },
+  "rejections": [
+    {
+      "label": "before-quota",
+      "status": 429,
+      "body": {
+        "status": 429,
+        "data": {
+          "code": 3002,
+          "message": "월 요청 허용량을 초과했습니다."
+        }
+      }
+    },
+    {
+      "label": "before-tps",
+      "status": 429,
+      "body": {
+        "status": 429,
+        "data": {
+          "code": 3001,
+          "message": "TPS 허용량을 초과했습니다."
+        }
+      }
+    },
+    {
+      "label": "restored-policy-quota",
+      "status": 429,
+      "body": {
+        "status": 429,
+        "data": {
+          "code": 3002,
+          "message": "월 요청 허용량을 초과했습니다."
+        }
+      }
+    },
+    {
+      "label": "after-quota",
+      "status": 429,
+      "body": {
+        "status": 429,
+        "data": {
+          "code": 3002,
+          "message": "월 요청 허용량을 초과했습니다."
+        }
+      }
+    },
+    {
+      "label": "after-tps",
+      "status": 429,
+      "body": {
+        "status": 429,
+        "data": {
+          "code": 3001,
+          "message": "TPS 허용량을 초과했습니다."
+        }
+      }
+    }
+  ],
+  "activeDuplicate": {
+    "requestKey": "11d88136-3d0b-380b-96ad-6934aa0f15e4",
+    "origin": {
+      "tenant_id": {
+        "N": "1"
+      },
+      "delivery_id": {
+        "S": "d52b3817-7662-4fad-a103-5152f04e8f59"
+      },
+      "created_at": {
+        "S": "2026-09-25T10:26:17.601625Z"
+      },
+      "fallback_allowed": {
+        "BOOL": false
+      },
+      "lifecycle_due": {
+        "N": "0"
+      },
+      "schema_version": {
+        "N": "2"
+      },
+      "occurred_at": {
+        "S": "2026-09-25T10:26:17.370573Z"
+      },
+      "event_id": {
+        "S": "2cfce271-373f-305e-9a1e-04a358682131"
+      },
+      "event_type": {
+        "S": "DELIVERY_REQUESTED"
+      },
+      "updated_at": {
+        "S": "2026-09-25T10:26:17.601625Z"
+      },
+      "lifecycle_bucket": {
+        "S": "lifecycle-v1-9"
+      },
+      "payload": {
+        "S": "{\"simulatorReceiptCodes\":[\"NONE\"]}"
+      },
+      "delivery_type": {
+        "S": "SMS"
+      },
+      "sk": {
+        "S": "META"
+      },
+      "pk": {
+        "S": "DELIVERY#11d88136-3d0b-380b-96ad-6934aa0f15e4"
+      },
+      "request_key": {
+        "S": "11d88136-3d0b-380b-96ad-6934aa0f15e4"
+      },
+      "status": {
+        "S": "ACCEPTED"
+      }
+    },
+    "step": {
+      "deadline_at": {
+        "N": "1790332007370"
+      },
+      "provider_processed_at": {
+        "S": "2026-09-25T10:26:19.227571Z"
+      },
+      "delivery_id": {
+        "S": "d52b3817-7662-4fad-a103-5152f04e8f59"
+      },
+      "created_at": {
+        "S": "2026-09-25T10:26:18.779769Z"
+      },
+      "version": {
+        "N": "1"
+      },
+      "lifecycle_due": {
+        "N": "1790332007370"
+      },
+      "schema_version": {
+        "N": "2"
+      },
+      "event_id": {
+        "S": "d22751eb-360b-308a-9258-13134748339c"
+      },
+      "updated_at": {
+        "S": "2026-09-25T10:26:19.228815Z"
+      },
+      "lifecycle_bucket": {
+        "S": "lifecycle-v1-9"
+      },
+      "provider": {
+        "S": "mock-provider"
+      },
+      "retry_count": {
+        "N": "0"
+      },
+      "sk": {
+        "S": "ATTEMPT#ff74c40c-18a7-37cd-94a7-cf4c78d4bc23"
+      },
+      "attempt_id": {
+        "S": "ff74c40c-18a7-37cd-94a7-cf4c78d4bc23"
+      },
+      "receipt_tracking_version": {
+        "N": "1"
+      },
+      "route_order": {
+        "N": "1"
+      },
+      "pk": {
+        "S": "DELIVERY#d52b3817-7662-4fad-a103-5152f04e8f59"
+      },
+      "request_key": {
+        "S": "11d88136-3d0b-380b-96ad-6934aa0f15e4"
+      },
+      "status": {
+        "S": "ACCEPTED"
+      }
+    },
+    "provider": {
+      "effects": 1,
+      "calls": 1
+    }
+  },
+  "duringOutage": {
+    "redis": {
+      "id": "c886ac53f87e6bf6235a4a2f48246d0784d38794f90cb43477fc3c3cb94095a4",
+      "status": "exited",
+      "running": false,
+      "health": "unhealthy",
+      "volumes": [
+        "full-flow-26f9f2b32d1c_redis-data"
+      ],
+      "at": "2026-09-25T10:26:48.802963+00:00"
+    },
+    "bypassedRequests": 3.0,
+    "cacheErrors": {
+      "ingress": 5.0,
+      "dispatch": 44.0,
+      "result": 6.0
+    },
+    "historyRows": 2,
+    "finalOffsets": {
+      "delivery.requested.v1": [
+        {
+          "partition": 0,
+          "committed": -1001,
+          "high": 0,
+          "lag": 0
+        },
+        {
+          "partition": 1,
+          "committed": 1,
+          "high": 1,
+          "lag": 0
+        },
+        {
+          "partition": 2,
+          "committed": 2,
+          "high": 2,
+          "lag": 0
+        }
+      ],
+      "delivery.dispatch-requested.v1": [
+        {
+          "partition": 0,
+          "committed": -1001,
+          "high": 0,
+          "lag": 0
+        },
+        {
+          "partition": 1,
+          "committed": -1001,
+          "high": 0,
+          "lag": 0
+        },
+        {
+          "partition": 2,
+          "committed": 3,
+          "high": 3,
+          "lag": 0
+        }
+      ],
+      "delivery.receipt-received.v1": [
+        {
+          "partition": 0,
+          "committed": -1001,
+          "high": 0,
+          "lag": 0
+        },
+        {
+          "partition": 1,
+          "committed": -1001,
+          "high": 0,
+          "lag": 0
+        },
+        {
+          "partition": 2,
+          "committed": 1,
+          "high": 1,
+          "lag": 0
+        }
+      ],
+      "delivery.finalized.v1": [
+        {
+          "partition": 0,
+          "committed": -1001,
+          "high": 0,
+          "lag": 0
+        },
+        {
+          "partition": 1,
+          "committed": -1001,
+          "high": 0,
+          "lag": 0
+        },
+        {
+          "partition": 2,
+          "committed": 3,
+          "high": 3,
+          "lag": 0
+        }
+      ]
+    }
+  },
+  "restored": {
+    "redis": {
+      "id": "c886ac53f87e6bf6235a4a2f48246d0784d38794f90cb43477fc3c3cb94095a4",
+      "status": "running",
+      "running": true,
+      "health": "healthy",
+      "volumes": [
+        "full-flow-26f9f2b32d1c_redis-data"
+      ],
+      "at": "2026-09-25T10:26:54.527855+00:00"
+    },
+    "missingCompletionTtls": {
+      "c765736b-43b8-35d2-b591-219c07c678b4": -2,
+      "11d88136-3d0b-380b-96ad-6934aa0f15e4": -2
+    },
+    "quotaUsage": 1
+  },
+  "cases": [
+    {
+      "name": "Redis 중단 중 정상 발송·고객 통지·정리",
+      "requestKey": "c765736b-43b8-35d2-b591-219c07c678b4",
+      "history": {
+        "result_json": {
+          "reason": "DELIVERED",
+          "eventId": "803ae8c8-c446-3a06-adac-3ef92289d81e",
+          "outcome": "DELIVERED",
+          "deadline": "2026-09-25T10:26:46.231Z",
+          "provider": "mock-provider",
+          "resultAt": "2026-09-25T10:26:18.900036Z",
+          "tenantId": 1,
+          "attemptId": "2e2ef8b7-d61e-3f22-8727-df314c5d58c3",
+          "eventType": "DeliveryFinalized",
+          "deliveryId": "e5668104-891b-4c7a-a85f-cb07d947a599",
+          "occurredAt": "2026-09-25T10:26:16.231326Z",
+          "requestKey": "c765736b-43b8-35d2-b591-219c07c678b4",
+          "routeOrder": 1,
+          "finalizedAt": "2026-09-25T10:26:19.270771Z",
+          "deliveryType": "SMS",
+          "schemaVersion": 2
+        },
+        "stored_at": "2026-09-25T10:26:20.023371+00:00",
+        "cleanup_completed_at": "2026-09-25T10:26:21.038773+00:00",
+        "notification_status": "DELIVERED",
+        "attempt_count": 1,
+        "cleanup_status": "DONE"
+      },
+      "provider": [
+        {
+          "effects": 1,
+          "calls": 1
+        },
+        {
+          "calls": 0,
+          "effects": 0
+        }
+      ],
+      "originAbsent": true,
+      "stepsAbsent": true,
+      "redisUnavailableAtCompletion": true
+    },
+    {
+      "name": "Redis 일정 없이 DDB 복구로 만료·진행 중 중복 차단",
+      "requestKey": "11d88136-3d0b-380b-96ad-6934aa0f15e4",
+      "history": {
+        "result_json": {
+          "reason": "PRIMARY_EXPIRED",
+          "eventId": "446bfdd7-0af5-387c-8ab4-0401d1242086",
+          "outcome": "EXPIRED",
+          "deadline": "2026-09-25T10:26:47.370Z",
+          "provider": "mock-provider",
+          "resultAt": "2026-09-25T10:26:47.370Z",
+          "tenantId": 1,
+          "attemptId": "ff74c40c-18a7-37cd-94a7-cf4c78d4bc23",
+          "eventType": "DeliveryFinalized",
+          "deliveryId": "d52b3817-7662-4fad-a103-5152f04e8f59",
+          "occurredAt": "2026-09-25T10:26:17.370573Z",
+          "requestKey": "11d88136-3d0b-380b-96ad-6934aa0f15e4",
+          "routeOrder": 1,
+          "finalizedAt": "2026-09-25T10:26:47.643208Z",
+          "deliveryType": "SMS",
+          "schemaVersion": 2
+        },
+        "stored_at": "2026-09-25T10:26:47.67404+00:00",
+        "cleanup_completed_at": "2026-09-25T10:26:48.258371+00:00",
+        "notification_status": "DELIVERED",
+        "attempt_count": 1,
+        "cleanup_status": "DONE"
+      },
+      "provider": [
+        {
+          "effects": 1,
+          "calls": 1
+        },
+        {
+          "calls": 0,
+          "effects": 0
+        }
+      ],
+      "originAbsent": true,
+      "stepsAbsent": true,
+      "redisUnavailableAtCompletion": true
+    },
+    {
+      "name": "Redis 복구 후 정책 적용·완료 TTL 생성",
+      "requestKey": "114b627c-fcd1-3e08-a7af-93199c2033b8",
+      "history": {
+        "result_json": {
+          "reason": "DELIVERED",
+          "eventId": "a6e45358-4c76-3024-8963-a0c3e07e6624",
+          "outcome": "DELIVERED",
+          "deadline": "2026-09-25T10:27:25.647Z",
+          "provider": "mock-provider",
+          "resultAt": "2026-09-25T10:26:55.918455Z",
+          "tenantId": 1,
+          "attemptId": "03f3b664-d357-38b4-ba1a-2601ff6b34a9",
+          "eventType": "DeliveryFinalized",
+          "deliveryId": "a4e0101a-5fb6-4fb5-aaeb-0915d3fae201",
+          "occurredAt": "2026-09-25T10:26:55.647924Z",
+          "requestKey": "114b627c-fcd1-3e08-a7af-93199c2033b8",
+          "routeOrder": 1,
+          "finalizedAt": "2026-09-25T10:26:55.935655Z",
+          "deliveryType": "SMS",
+          "schemaVersion": 2
+        },
+        "stored_at": "2026-09-25T10:26:55.986387+00:00",
+        "cleanup_completed_at": "2026-09-25T10:26:56.384533+00:00",
+        "notification_status": "DELIVERED",
+        "attempt_count": 1,
+        "cleanup_status": "DONE"
+      },
+      "provider": [
+        {
+          "effects": 1,
+          "calls": 1
+        },
+        {
+          "calls": 0,
+          "effects": 0
+        }
+      ],
+      "originAbsent": true,
+      "stepsAbsent": true,
+      "completedRedisPresent": true
+    }
+  ],
+  "customerReceipts": [
+    {
+      "body": {
+        "schemaVersion": 1,
+        "batchId": "dfa8bf9d-ef5d-44e4-96f7-9f1df4f4005d",
+        "tenantId": 1,
+        "results": [
+          {
+            "schemaVersion": 2,
+            "eventType": "DeliveryFinalized",
+            "eventId": "803ae8c8-c446-3a06-adac-3ef92289d81e",
+            "deliveryId": "e5668104-891b-4c7a-a85f-cb07d947a599",
+            "tenantId": 1,
+            "deliveryType": "SMS",
+            "outcome": "DELIVERED",
+            "reason": "DELIVERED",
+            "routeOrder": 1,
+            "attemptId": "2e2ef8b7-d61e-3f22-8727-df314c5d58c3",
+            "provider": "mock-provider",
+            "occurredAt": "2026-09-25T10:26:16.231326Z",
+            "resultAt": "2026-09-25T10:26:18.900036Z",
+            "finalizedAt": "2026-09-25T10:26:19.270771Z",
+            "deadline": "2026-09-25T10:26:46.231Z",
+            "requestKey": "c765736b-43b8-35d2-b591-219c07c678b4"
+          }
+        ]
+      },
+      "status": 204,
+      "receivedAt": "2026-09-25T10:26:20.118505+00:00"
+    },
+    {
+      "body": {
+        "schemaVersion": 1,
+        "batchId": "62695e34-ddd1-4a5a-b71a-9e53e66ed174",
+        "tenantId": 1,
+        "results": [
+          {
+            "schemaVersion": 2,
+            "eventType": "DeliveryFinalized",
+            "eventId": "446bfdd7-0af5-387c-8ab4-0401d1242086",
+            "deliveryId": "d52b3817-7662-4fad-a103-5152f04e8f59",
+            "tenantId": 1,
+            "deliveryType": "SMS",
+            "outcome": "EXPIRED",
+            "reason": "PRIMARY_EXPIRED",
+            "routeOrder": 1,
+            "attemptId": "ff74c40c-18a7-37cd-94a7-cf4c78d4bc23",
+            "provider": "mock-provider",
+            "occurredAt": "2026-09-25T10:26:17.370573Z",
+            "resultAt": "2026-09-25T10:26:47.370Z",
+            "finalizedAt": "2026-09-25T10:26:47.643208Z",
+            "deadline": "2026-09-25T10:26:47.370Z",
+            "requestKey": "11d88136-3d0b-380b-96ad-6934aa0f15e4"
+          }
+        ]
+      },
+      "status": 204,
+      "receivedAt": "2026-09-25T10:26:47.787197+00:00"
+    },
+    {
+      "body": {
+        "schemaVersion": 1,
+        "batchId": "b273e04a-bb1c-49a4-9dc2-ddd8607584e6",
+        "tenantId": 1,
+        "results": [
+          {
+            "schemaVersion": 2,
+            "eventType": "DeliveryFinalized",
+            "eventId": "a6e45358-4c76-3024-8963-a0c3e07e6624",
+            "deliveryId": "a4e0101a-5fb6-4fb5-aaeb-0915d3fae201",
+            "tenantId": 1,
+            "deliveryType": "SMS",
+            "outcome": "DELIVERED",
+            "reason": "DELIVERED",
+            "routeOrder": 1,
+            "attemptId": "03f3b664-d357-38b4-ba1a-2601ff6b34a9",
+            "provider": "mock-provider",
+            "occurredAt": "2026-09-25T10:26:55.647924Z",
+            "resultAt": "2026-09-25T10:26:55.918455Z",
+            "finalizedAt": "2026-09-25T10:26:55.935655Z",
+            "deadline": "2026-09-25T10:27:25.647Z",
+            "requestKey": "114b627c-fcd1-3e08-a7af-93199c2033b8"
+          }
+        ]
+      },
+      "status": 204,
+      "receivedAt": "2026-09-25T10:26:56.092572+00:00"
+    }
+  ],
+  "cleanup": {
+    "ownedProcessesStopped": true,
+    "composeProject": "full-flow-26f9f2b32d1c",
+    "containersStopped": true,
+    "volumesRetained": true
+  },
+  "containerStopVerification": "All five owned containers inspected Exited after test; shared environments unchanged and volumes retained.",
+  "metrics": {
+    "api-before.prom": {
+      "sha256": "c84f41a94fa8bfe5eef55ab5fcc93764752d6d04a4cbce0474b8a2b8774f4ad1",
+      "samples": [
+        "delivery_admission_duration_seconds_count{application=\"delivery-api\",outcome=\"allowed\"} 0",
+        "delivery_admission_duration_seconds_count{application=\"delivery-api\",outcome=\"blocked\"} 0",
+        "delivery_admission_duration_seconds_count{application=\"delivery-api\",outcome=\"error\"} 0",
+        "delivery_admission_duration_seconds_count{application=\"delivery-api\",outcome=\"monthly_quota_exceeded\"} 1",
+        "delivery_admission_duration_seconds_count{application=\"delivery-api\",outcome=\"policy_invalid\"} 0",
+        "delivery_admission_duration_seconds_count{application=\"delivery-api\",outcome=\"policy_not_found\"} 0",
+        "delivery_admission_duration_seconds_count{application=\"delivery-api\",outcome=\"redis_unavailable_bypass\"} 0",
+        "delivery_admission_duration_seconds_count{application=\"delivery-api\",outcome=\"tps_limit_exceeded\"} 1"
+      ]
+    },
+    "api-during.prom": {
+      "sha256": "a9a767db8080639c54455f9e8390e69826dae92e1e8b7ad465fca7e57f72de46",
+      "samples": [
+        "delivery_admission_duration_seconds_count{application=\"delivery-api\",outcome=\"allowed\"} 0",
+        "delivery_admission_duration_seconds_count{application=\"delivery-api\",outcome=\"blocked\"} 0",
+        "delivery_admission_duration_seconds_count{application=\"delivery-api\",outcome=\"error\"} 0",
+        "delivery_admission_duration_seconds_count{application=\"delivery-api\",outcome=\"monthly_quota_exceeded\"} 1",
+        "delivery_admission_duration_seconds_count{application=\"delivery-api\",outcome=\"policy_invalid\"} 0",
+        "delivery_admission_duration_seconds_count{application=\"delivery-api\",outcome=\"policy_not_found\"} 0",
+        "delivery_admission_duration_seconds_count{application=\"delivery-api\",outcome=\"redis_unavailable_bypass\"} 3",
+        "delivery_admission_duration_seconds_count{application=\"delivery-api\",outcome=\"tps_limit_exceeded\"} 1"
+      ]
+    },
+    "ingress-during.prom": {
+      "sha256": "c5c1e9cd1703d68fb77fcf328899e1b148b582f39f86279f137f345fad65225d",
+      "samples": [
+        "delivery_cache_errors_total{application=\"delivery-ingress-worker\",operation=\"read\"} 3.0",
+        "delivery_cache_errors_total{application=\"delivery-ingress-worker\",operation=\"schedule\"} 2.0"
+      ]
+    },
+    "dispatch-during.prom": {
+      "sha256": "ad8c54a24419ff3e23fc3c976871c01f929a08a0b0a90039bb37ddd4d251c795",
+      "samples": [
+        "delivery_cache_errors_total{application=\"dispatch-worker\",operation=\"due\"} 26.0",
+        "delivery_cache_errors_total{application=\"dispatch-worker\",operation=\"remove\"} 13.0",
+        "delivery_cache_errors_total{application=\"dispatch-worker\",operation=\"schedule\"} 5.0"
+      ]
+    },
+    "result-during.prom": {
+      "sha256": "4b5d19b18bc437849786f77d7ce4486598bdba00e8775ad3e786ebac1cb702d1",
+      "samples": [
+        "delivery_cache_errors_total{application=\"delivery-result-worker\",operation=\"complete\"} 2.0",
+        "delivery_cache_errors_total{application=\"delivery-result-worker\",operation=\"remove\"} 4.0"
+      ]
+    }
+  },
+  "limitations": [
+    "Connection outage and same AOF volume restart; not empty Redis restore, replica promotion, OOM/ACL or all exception types.",
+    "Completion cache writes that failed during outage are not reconstructed; same ClientMsgId can be admitted again once DDB is deleted and cache absent. No post-cleanup resend was injected for those two requests.",
+    "Quota usage during bypass is not automatically backfilled.",
+    "Test-only 3s DDB recovery poll, not production 10min timing, Pod maximum or 10,000 TPS proof."
+  ]
+}
