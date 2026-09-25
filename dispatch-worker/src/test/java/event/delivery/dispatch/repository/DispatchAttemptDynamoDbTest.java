@@ -583,7 +583,11 @@ class DispatchAttemptDynamoDbTest {
             }
         });
         http.start();
-        try (var tcp = new java.net.ServerSocket(0, 1, java.net.InetAddress.getLoopbackAddress());
+        var httpProperties = new event.delivery.dispatch.external.config.ExternalApiProperties(
+                "http://127.0.0.1:" + http.getAddress().getPort(), Duration.ofSeconds(2), Duration.ofSeconds(2));
+        var httpConfig = new event.delivery.dispatch.external.config.ExternalApiClientConfig();
+        try (var httpTransport = httpConfig.externalApiHttpClient(httpProperties);
+             var tcp = new java.net.ServerSocket(0, 1, java.net.InetAddress.getLoopbackAddress());
              var pool = Executors.newVirtualThreadPerTaskExecutor();
              var sender = new event.delivery.dispatch.external.client.TcpProviderClient(
                      new event.delivery.dispatch.external.config.TcpProviderProperties("localhost", tcp.getLocalPort(), Duration.ofSeconds(2), Duration.ofSeconds(2)), mapper)) {
@@ -603,7 +607,7 @@ class DispatchAttemptDynamoDbTest {
             var httpClient = new event.delivery.dispatch.external.client.ExternalApiClient(
                     new event.delivery.dispatch.external.config.ExternalApiClientConfig().externalApiRestClient(
                             org.springframework.web.client.RestClient.builder(),
-                            new event.delivery.dispatch.external.config.ExternalApiProperties("http://127.0.0.1:" + http.getAddress().getPort(), Duration.ofSeconds(2), Duration.ofSeconds(2))),
+                            httpProperties, httpTransport),
                     new DispatchProperties(PROVIDER, Duration.ofSeconds(30)));
             service(repository, httpClient, NOW).dispatch(event);
             service(repository, httpClient, NOW.plusSeconds(1)).dispatch(event);

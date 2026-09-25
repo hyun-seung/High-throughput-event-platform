@@ -52,6 +52,7 @@
 - [PostgreSQL 장애 중 결과 보존과 자동 복구 검증](docs/43-PostgreSQL-장애-중-결과-보존과-자동-복구-검증.md)
 - [DynamoDB 장애 시 발송 차단과 만료 복구 검증](docs/44-DynamoDB-장애-시-발송-차단과-만료-복구-검증.md)
 - [Redis 장애 시 제한 우회와 만료 복구 검증](docs/45-Redis-장애-시-제한-우회와-만료-복구-검증.md)
+- [Netty TCP와 HTTP 연결 풀 적용](docs/46-Netty-TCP와-HTTP-연결-풀-적용.md)
 - [설계 결정과 근거 목록](docs/adr/설계-결정과-근거-목록.md)
 
 ## Grafana 대시보드

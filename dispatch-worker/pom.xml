@@ -13,6 +13,9 @@
     <artifactId>dispatch-worker</artifactId>
 
     <dependencies>
+        <dependency><groupId>io.netty</groupId><artifactId>netty-transport</artifactId></dependency>
+        <dependency><groupId>io.netty</groupId><artifactId>netty-codec-base</artifactId></dependency>
+        <dependency><groupId>org.apache.httpcomponents.client5</groupId><artifactId>httpclient5</artifactId></dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>

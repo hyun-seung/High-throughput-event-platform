@@ -38,10 +38,13 @@ class ExternalApiClientTest {
     private HttpServer server;
     private ExecutorService executor;
     private ExternalApiClient client;
+    private org.apache.hc.client5.http.impl.classic.CloseableHttpClient transport;
     private volatile int status = 200;
     private volatile String body;
     private volatile boolean holdResponse;
     private volatile boolean holdBody;
+    private volatile boolean closeWithoutReply;
+    private final java.util.Set<Integer> remotePorts = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     @BeforeEach
     void start() throws Exception {
@@ -51,8 +54,10 @@ class ExternalApiClientTest {
         server.createContext("/api/v1/deliveries", exchange -> {
             try (exchange) {
                 calls.incrementAndGet();
+                remotePorts.add(exchange.getRemoteAddress().getPort());
                 receivedKey.set(exchange.getRequestHeaders().getFirst("Idempotency-Key"));
                 receivedBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+                if (closeWithoutReply) return;
                 if (holdResponse) {
                     try {
                         releaseResponse.await(5, TimeUnit.SECONDS);
@@ -82,13 +87,15 @@ class ExternalApiClientTest {
         server.start();
         var properties = new ExternalApiProperties("http://127.0.0.1:" + server.getAddress().getPort(),
                 Duration.ofSeconds(2), Duration.ofMillis(500));
-        client = new ExternalApiClient(new ExternalApiClientConfig().externalApiRestClient(RestClient.builder(), properties),
+        transport = new ExternalApiClientConfig().externalApiHttpClient(properties);
+        client = new ExternalApiClient(new ExternalApiClientConfig().externalApiRestClient(RestClient.builder(), properties, transport),
                 new DispatchProperties(null, null));
     }
 
     @AfterEach
-    void stop() {
+    void stop() throws Exception {
         releaseResponse.countDown();
+        if (transport != null) transport.close();
         if (server != null) server.stop(0);
         if (executor != null) executor.close();
     }
@@ -96,6 +103,21 @@ class ExternalApiClientTest {
     private String response(String id, String accepted, String code) {
         return "{\"deliveryId\":\"%s\",\"accepted\":%s,\"processedAt\":\"2026-09-24T00:00:01Z\",\"code\":%s}"
                 .formatted(id, accepted, code == null ? "null" : "\"" + code + "\"");
+    }
+
+    @Test
+    void successfulRequestsReuseConnection() {
+        body = response(event.deliveryId(), "true", "ACCEPTED");
+        for (int i = 0; i < 3; i++) assertTrue(client.send(event, "attempt-" + i).accepted());
+        assertEquals(3, calls.get());
+        assertEquals(1, remotePorts.size());
+    }
+
+    @Test
+    void lostResponseNeverTriggersHiddenTransportRetry() {
+        closeWithoutReply = true;
+        assertEquals(NO_RESPONSE, assertThrows(ProviderFailureException.class, () -> client.send(event, "attempt")).kind());
+        assertEquals(1, calls.get());
     }
 
     @Test
