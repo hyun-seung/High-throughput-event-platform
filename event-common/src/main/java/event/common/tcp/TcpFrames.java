@@ -7,7 +7,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 
-/** One exchange per connection: 4-byte big-endian length followed by UTF-8 JSON. */
+/** Sequential exchanges on a persistent connection: 4-byte big-endian length followed by UTF-8 JSON. */
 public final class TcpFrames {
     public static final int MAX_BYTES = 1024 * 1024;
     private TcpFrames() { }

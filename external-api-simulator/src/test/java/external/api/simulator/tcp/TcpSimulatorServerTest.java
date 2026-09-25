@@ -22,6 +22,20 @@ class TcpSimulatorServerTest {
     private final SimulatorLedger ledger = new SimulatorLedger(new SimulatorProperties(0, false, 100), new SimpleMeterRegistry());
 
     @Test
+    void persistentConnectionAcceptsMultipleFrames() throws Exception {
+        try (var server = start(); var socket = new Socket("127.0.0.1", server.port())) {
+            socket.setSoTimeout(2000);
+            for (int i = 0; i < 3; i++) {
+                TcpFrames.write(socket.getOutputStream(), mapper.writeValueAsBytes(new TcpDeliveryRequest(
+                        "delivery", "attempt-" + i, 1L, "SMS", Map.of(), Instant.now())));
+                var reply = mapper.readValue(TcpFrames.read(socket.getInputStream()), TcpDeliveryResponse.class);
+                assertEquals("attempt-" + i, reply.attemptId());
+                assertTrue(reply.accepted());
+            }
+        }
+    }
+
+    @Test
     void secondaryDoesNotInheritPrimaryFailureAndDeduplicationIsOff() throws Exception {
         try (var server = start()) {
             for (int i = 0; i < 2; i++) {

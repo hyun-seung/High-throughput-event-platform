@@ -29,6 +29,10 @@ external-api:
   base-url: ${EXTERNAL_API_BASE_URL:http://localhost:8090}
   connect-timeout: ${EXTERNAL_API_CONNECT_TIMEOUT:2s}
   read-timeout: ${EXTERNAL_API_READ_TIMEOUT:5s}
+  max-connections: ${EXTERNAL_API_MAX_CONNECTIONS:64}
+  max-connections-per-route: ${EXTERNAL_API_MAX_CONNECTIONS_PER_ROUTE:64}
+  acquire-timeout: ${EXTERNAL_API_ACQUIRE_TIMEOUT:2s}
+  max-idle-time: ${EXTERNAL_API_MAX_IDLE_TIME:30s}
 
 dispatch:
   lifecycle:
@@ -50,6 +54,10 @@ external-tcp:
   port: ${EXTERNAL_TCP_PORT:8093}
   connect-timeout: ${EXTERNAL_TCP_CONNECT_TIMEOUT:2s}
   exchange-timeout: ${EXTERNAL_TCP_EXCHANGE_TIMEOUT:5s}
+  max-connections: ${EXTERNAL_TCP_MAX_CONNECTIONS:32}
+  max-pending-acquires: ${EXTERNAL_TCP_MAX_PENDING_ACQUIRES:64}
+  acquire-timeout: ${EXTERNAL_TCP_ACQUIRE_TIMEOUT:2s}
+  io-threads: ${EXTERNAL_TCP_IO_THREADS:2}
 
 delivery:
   completed-retention: ${DELIVERY_COMPLETED_RETENTION:24h}
