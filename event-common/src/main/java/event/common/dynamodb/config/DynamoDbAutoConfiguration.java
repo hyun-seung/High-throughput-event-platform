@@ -11,7 +11,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
-import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient;
+import software.amazon.awssdk.http.apache5.Apache5HttpClient;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClientBuilder;
@@ -26,9 +26,16 @@ public class DynamoDbAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public DynamoDbClient dynamoDbClient(DynamoDbProperties properties, ObjectProvider<MeterRegistry> registries) {
+        properties.validateTransport();
         DynamoDbClientBuilder builder = DynamoDbClient.builder()
                 .region(Region.of(properties.getRegion()))
-                .httpClientBuilder(UrlConnectionHttpClient.builder());
+                .httpClientBuilder(Apache5HttpClient.builder()
+                        .maxConnections(properties.getMaxConnections())
+                        .connectionAcquisitionTimeout(properties.getAcquireTimeout())
+                        .connectionTimeout(properties.getConnectTimeout())
+                        .socketTimeout(properties.getSocketTimeout())
+                        .connectionMaxIdleTime(properties.getMaxIdleTime())
+                        .useIdleConnectionReaper(true));
         MeterRegistry registry = registries.getIfAvailable();
         if (registry != null) {
             builder.overrideConfiguration(config -> config.addExecutionInterceptor(new DynamoDbMetricsInterceptor(registry)));

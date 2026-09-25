@@ -87,26 +87,31 @@ public class TcpSimulatorServer implements SmartLifecycle, AutoCloseable {
     private void handle(Socket socket) {
         java.util.concurrent.ScheduledFuture<?> timeout = null;
         try (socket) {
-            timeout = timeouts.schedule(() -> closeSocket(socket), properties.exchangeTimeoutMillis(), TimeUnit.MILLISECONDS);
-            socket.setSoTimeout(properties.exchangeTimeoutMillis());
-            var request = mapper.readValue(TcpFrames.read(socket.getInputStream()), TcpDeliveryRequest.class);
-            if (request == null || request.attemptId() == null || request.payload() == null) return;
-            Object mode = request.payload().getOrDefault("simulatorTcpMode", "normal");
-            if (!Set.of("normal", "close-after-effect", "wrong-attempt").contains(mode)) return;
-            var payload = new HashMap<>(request.payload());
-            // First-provider failure scenarios must not accidentally reject the alternative provider.
-            payload.remove("forceFail");
-            payload.put("simulatorResultCode", payload.getOrDefault("simulatorTcpResultCode", "ACCEPTED"));
-            var providerRequest = new ProviderDispatchRequest(request.deliveryId(),
-                    request.tenantId(), request.deliveryType(), payload, request.occurredAt(), request.invocation());
-            var receipt = receipts.plan(true, request.attemptId(), providerRequest);
-            var received = ledger.receive("tcp:" + request.attemptId(), providerRequest);
-            if (received.accepted()) receipts.accepted(receipt);
-            if (mode.equals("close-after-effect")) return;
-            SimulatorReceiptSender.delayResponse(receipt);
-            var response = new TcpDeliveryResponse(received.deliveryId(), mode.equals("wrong-attempt") ? "unrelated" : request.attemptId(),
-                    received.accepted(), received.processedAt(), received.accepted() ? "RECEIVED" : received.code());
-            TcpFrames.write(socket.getOutputStream(), mapper.writeValueAsBytes(response));
+            while (running && !socket.isClosed()) {
+                timeout = timeouts.schedule(() -> closeSocket(socket), properties.exchangeTimeoutMillis(), TimeUnit.MILLISECONDS);
+                socket.setSoTimeout(properties.exchangeTimeoutMillis());
+                var request = mapper.readValue(TcpFrames.read(socket.getInputStream()), TcpDeliveryRequest.class);
+                if (request == null || request.attemptId() == null || request.payload() == null) return;
+                Object mode = request.payload().getOrDefault("simulatorTcpMode", "normal");
+                if (!Set.of("normal", "close-after-effect", "wrong-attempt").contains(mode)) return;
+                var payload = new HashMap<>(request.payload());
+                // First-provider failure scenarios must not accidentally reject the alternative provider.
+                payload.remove("forceFail");
+                payload.put("simulatorResultCode", payload.getOrDefault("simulatorTcpResultCode", "ACCEPTED"));
+                var providerRequest = new ProviderDispatchRequest(request.deliveryId(),
+                        request.tenantId(), request.deliveryType(), payload, request.occurredAt(), request.invocation());
+                var receipt = receipts.plan(true, request.attemptId(), providerRequest);
+                var received = ledger.receive("tcp:" + request.attemptId(), providerRequest);
+                if (received.accepted()) receipts.accepted(receipt);
+                if (mode.equals("close-after-effect")) return;
+                SimulatorReceiptSender.delayResponse(receipt);
+                var response = new TcpDeliveryResponse(received.deliveryId(), mode.equals("wrong-attempt") ? "unrelated" : request.attemptId(),
+                        received.accepted(), received.processedAt(), received.accepted() ? "RECEIVED" : received.code());
+                TcpFrames.write(socket.getOutputStream(), mapper.writeValueAsBytes(response));
+                // If the deadline is already firing, leave this stream closed rather than reuse it.
+                if (!timeout.cancel(false)) return;
+                timeout = null;
+            }
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
         } catch (IOException | RuntimeException ignored) {
