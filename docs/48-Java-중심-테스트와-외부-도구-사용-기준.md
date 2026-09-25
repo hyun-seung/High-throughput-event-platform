@@ -30,7 +30,7 @@ bash scripts/test-java.sh integration
 - JDK 표준 XML 파서로 Surefire 결과를 집계한다. 통합 실행에 skipped가 하나라도 있으면 실행 스크립트도 실패한다. Maven 실패와 집계 실패를 모두 검사한다.
 - clean으로 이전 Surefire 결과를 없앤 뒤 실행한다. `.poc-results/<run>/`에 Java 버전·도구 역할·기준 커밋·Maven 로그·실행/미실행/실패/오류 집계·환경 종료 결과를 남긴다.
 - 기본 포트는 Kafka 49092, Redis 46379, PostgreSQL 45432, DynamoDB 48000이다. 이미 사용 중이면 기존 서비스를 건드리지 않고 실패한다. `JAVA_TEST_KAFKA_PORT`, `JAVA_TEST_REDIS_PORT`, `JAVA_TEST_POSTGRES_PORT`, `JAVA_TEST_DYNAMODB_PORT`로 바꾼다. 동시 실행은 포트를 서로 다르게 지정한다.
-- 종료 시 소유한 컨테이너만 정지하고 볼륨은 보존한다. 기존 개발/모니터링 프로젝트나 업무 토픽에 연결하지 않는다. 통합 실행은 Docker가 필요하며 서버/AZ 장애 보장을 대체하지 않는다.
+- 종료 시 해당 실행이 소유한 컨테이너·네트워크는 `docker compose down`으로 제거하고 데이터 볼륨은 보존한다(`--volumes` 미사용). 이전의 stop만 하는 방식은 테스트 네트워크 누적으로 Docker 주소 풀이 소진돼 변경했다. 기존 개발/모니터링 프로젝트나 업무 토픽은 건드리지 않는다. 통합 실행은 Docker가 필요하며 서버/AZ 장애 보장을 대체하지 않는다.
 
 ## 3. k6 성능 기준
 
