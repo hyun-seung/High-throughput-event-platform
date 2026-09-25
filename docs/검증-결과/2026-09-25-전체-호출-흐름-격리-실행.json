@@ -1,0 +1,101 @@
+{
+  "date": "2026-09-25",
+  "status": "BLOCKED_INFRA_START",
+  "fullFlowCasesPassed": 0,
+  "fullFlowCasesPlanned": 6,
+  "applicationProcessesStarted": 0,
+  "scope": "v2 API -> HTTP/TCP provider -> receipt -> SQL -> customer HTTP -> DynamoDB cleanup",
+  "runDirectory": ".poc-results/full-flow-79bd19f72117",
+  "failure": {
+    "type": "TimeoutExpired",
+    "message": "Command '['docker', 'compose', '-p', 'full-flow-79bd19f72117', '-f', '/Users/hyunseung/IdeaProjects/High-Throughtput/platform/compose.yml', 'up', '-d', '--wait', '--wait-timeout', '180']' timed out after 240 seconds"
+  },
+  "cleanup": {
+    "ownedProcessesStopped": true,
+    "composeProject": "full-flow-79bd19f72117",
+    "containersStopped": true,
+    "volumesRetained": true
+  },
+  "observedContainerState": {
+    "services": [
+      "kafka",
+      "redis",
+      "postgres",
+      "dynamodb-local"
+    ],
+    "status": "created",
+    "running": false,
+    "pid": 0,
+    "error": ""
+  },
+  "rootCause": "Not established; new container start did not complete before 240s runner timeout.",
+  "checks": [
+    {
+      "command": "./mvnw -q -DskipTests package",
+      "jdk": 21,
+      "result": "PASS",
+      "note": "Packaging only; not an additional Java test run.",
+      "log": "/tmp/full-flow-build.log"
+    },
+    {
+      "command": ".poc-tools/venv/bin/python -m unittest discover -s scripts/poc -p 'test_*.py'",
+      "result": "PASS",
+      "tests": 16,
+      "existingEvidenceTests": 10,
+      "newFullFlowEvidenceTests": 6,
+      "log": "/tmp/full-flow-python-tests.log"
+    },
+    {
+      "command": "./mvnw -q -pl dispatch-worker -am -Dtest=LifecycleSchedulerTest -Dsurefire.failIfNoSpecifiedTests=false test",
+      "result": "PASS",
+      "tests": 2,
+      "note": "Prior ten-minute recovery change; mock clock/repositories."
+    }
+  ],
+  "executedEnvironment": {
+    "runId": "full-flow-79bd19f72117",
+    "ports": {
+      "kafka": 50599,
+      "redis": 50600,
+      "postgres": 50601,
+      "dynamo": 50602,
+      "tcp": 50603,
+      "provider": 50604,
+      "receipt": 50605,
+      "ingress": 50606,
+      "api": 50607,
+      "dispatch": 50608,
+      "result": 50609,
+      "provider_metrics": 50610,
+      "receipt_metrics": 50611,
+      "ingress_metrics": 50612,
+      "api_metrics": 50613,
+      "dispatch_metrics": 50614,
+      "result_metrics": 50615
+    },
+    "gitCommit": "3dbcea0c87315485d9af1daf95ac0e6c03c2dcd9",
+    "workingTreeDirty": true,
+    "jarSha256": {
+      "provider": "2c32cccc284b31a8c83dd1b27594146540c66de7e4cf159510cfd947900b4ae9",
+      "receipt": "2c9f0a48a73a5847690ca54754322d78dba1069be35abf385fe6043940bca812",
+      "ingress": "908c043760e8cc44a44fed241d6981df552f63a258682632bb46cee03de3fd48",
+      "api": "41335a64611edfd7bfcd6958c4c8e323e4cd77bcdf66580d9268fbf6277fab58",
+      "dispatch": "c22b0c5f355360e10fb95973392d5ff683f74c98f716b52d5115733f9716ced9",
+      "result": "fcb2c26974d0c1f0cebbb95647dd8e78fb11a008a0adb674d7099657c307540a"
+    },
+    "harnessSha256": "5cf096a32beb769a68834fb4c285837132cb02a07a8893d476f2ab6b965c545a",
+    "primaryTtlSeconds": 8,
+    "secondaryTtlSeconds": 12,
+    "recoveryPollMillis": 3000,
+    "productionRecoveryPollMillis": 600000,
+    "providerDeduplicate": false,
+    "scope": "small-count functional proof, not load/HA/production timing proof"
+  },
+  "currentSourceSha256": {
+    "scripts/poc/full_flow.py": "ea09075c2e423ee80d244e6005923b7b046a2a99b2191f8bac963a0ac56d0d6b",
+    "scripts/poc/test_full_flow.py": "a4ad373050cd6241f39923d5758fe4af47bfee4971d2ed79a685490172e64451",
+    "docs/04-요청-접수부터-최종-결과까지의-전체-흐름.md": "870855df518a71323134118bc3423524748427ffb84426bfa049eb2279af3cbd"
+  },
+  "sourceCaveat": "Harness readiness and evidence validation were revised after launch. Infrastructure never started; neither revision has a successful full-flow run.",
+  "next": "Rerun full_flow.py on a Docker engine able to start new containers; then measure whole-flow load and failure recovery."
+}
