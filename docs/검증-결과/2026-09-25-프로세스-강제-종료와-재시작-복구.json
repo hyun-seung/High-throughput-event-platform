@@ -1,0 +1,866 @@
+{
+  "date": "2026-09-25",
+  "status": "PASS",
+  "baseCommit": "383ba7420edfc2b06f4bfbf3ed8da16588a80bde",
+  "runDirectory": ".poc-results/full-flow-1592b5c2a023",
+  "validation": {
+    "pythonTests": 33,
+    "pythonTestsStatus": "PASS",
+    "mavenPackage": "PASS (-DskipTests; Java production sources unchanged)",
+    "processRecoveryExitCode": 0
+  },
+  "summary": {
+    "passed": 3,
+    "historyRows": 3,
+    "actualSigkills": 3,
+    "restarts": {
+      "result": 2,
+      "dispatch": 1
+    },
+    "providerCalls": 3,
+    "providerEffects": 3,
+    "customerBatchReplayIdentical": true,
+    "unknownPreservedWithoutResend": true,
+    "originalDeadlinePreserved": true,
+    "finalOffsets": {
+      "delivery.requested.v1": [
+        {
+          "partition": 0,
+          "committed": 3,
+          "high": 3,
+          "lag": 0
+        },
+        {
+          "partition": 1,
+          "committed": -1001,
+          "high": 0,
+          "lag": 0
+        },
+        {
+          "partition": 2,
+          "committed": -1001,
+          "high": 0,
+          "lag": 0
+        }
+      ],
+      "delivery.dispatch-requested.v1": [
+        {
+          "partition": 0,
+          "committed": -1001,
+          "high": 0,
+          "lag": 0
+        },
+        {
+          "partition": 1,
+          "committed": -1001,
+          "high": 0,
+          "lag": 0
+        },
+        {
+          "partition": 2,
+          "committed": 3,
+          "high": 3,
+          "lag": 0
+        }
+      ],
+      "delivery.receipt-received.v1": [
+        {
+          "partition": 0,
+          "committed": -1001,
+          "high": 0,
+          "lag": 0
+        },
+        {
+          "partition": 1,
+          "committed": -1001,
+          "high": 0,
+          "lag": 0
+        },
+        {
+          "partition": 2,
+          "committed": 2,
+          "high": 2,
+          "lag": 0
+        }
+      ],
+      "delivery.finalized.v1": [
+        {
+          "partition": 0,
+          "committed": -1001,
+          "high": 0,
+          "lag": 0
+        },
+        {
+          "partition": 1,
+          "committed": -1001,
+          "high": 0,
+          "lag": 0
+        },
+        {
+          "partition": 2,
+          "committed": 19,
+          "high": 19,
+          "lag": 0
+        }
+      ]
+    },
+    "completedAt": "2026-09-25T09:50:33.544784+00:00",
+    "scope": "small-count process crash recovery; not load/AZ proof"
+  },
+  "environment": {
+    "runId": "full-flow-1592b5c2a023",
+    "ports": {
+      "kafka": 54892,
+      "redis": 54893,
+      "postgres": 54894,
+      "dynamo": 54895,
+      "tcp": 54896,
+      "provider": 54897,
+      "receipt": 54898,
+      "ingress": 54899,
+      "api": 54900,
+      "dispatch": 54901,
+      "result": 54902,
+      "provider_metrics": 54903,
+      "receipt_metrics": 54904,
+      "ingress_metrics": 54905,
+      "api_metrics": 54906,
+      "dispatch_metrics": 54907,
+      "result_metrics": 54908
+    },
+    "gitCommit": "383ba7420edfc2b06f4bfbf3ed8da16588a80bde",
+    "workingTreeDirty": true,
+    "jarSha256": {
+      "provider": "2c32cccc284b31a8c83dd1b27594146540c66de7e4cf159510cfd947900b4ae9",
+      "receipt": "2c9f0a48a73a5847690ca54754322d78dba1069be35abf385fe6043940bca812",
+      "ingress": "908c043760e8cc44a44fed241d6981df552f63a258682632bb46cee03de3fd48",
+      "api": "41335a64611edfd7bfcd6958c4c8e323e4cd77bcdf66580d9268fbf6277fab58",
+      "dispatch": "e217c2f69167c004fbfd4514cd135326772e58f6ff2d9a08c3cf274be353c9da",
+      "result": "23496c28bd4fcf26c6df281bce7b65ab80438b40892e9d7879b797fc8d8bc244"
+    },
+    "harnessSha256": "6e874e7d2b04176d91c1a06f5ef1a23db0ab9dea820fa929271a7f59707eab33",
+    "primaryTtlSeconds": 90,
+    "secondaryTtlSeconds": 30,
+    "recoveryPollMillis": 3000,
+    "infraStartup": "compose create -> docker start init -> wait init exit 0 -> start services -> healthcheck",
+    "productionRecoveryPollMillis": 600000,
+    "providerDeduplicate": false,
+    "scope": "real SIGKILL/restart, small-count functional proof; not TPS/Kubernetes/AZ proof",
+    "dispatchLeaseSeconds": 10,
+    "customerHttpTimeoutSeconds": 10,
+    "customerLeaseSeconds": 20,
+    "recoveryHarnessSha256": "946f379a8b22da68a9ab2a015dc8204b5c19abbd142b1c37d2474aefb51e729c"
+  },
+  "processTransitions": [
+    {
+      "application": "result",
+      "action": "SIGKILL",
+      "pid": 5526,
+      "exitCode": -9,
+      "at": "2026-09-25T09:47:27.336853+00:00"
+    },
+    {
+      "application": "result",
+      "action": "restart",
+      "pid": 5530,
+      "at": "2026-09-25T09:47:30.755948+00:00"
+    },
+    {
+      "application": "result",
+      "action": "SIGKILL",
+      "pid": 5530,
+      "exitCode": -9,
+      "at": "2026-09-25T09:48:14.901718+00:00"
+    },
+    {
+      "application": "result",
+      "action": "restart",
+      "pid": 5612,
+      "at": "2026-09-25T09:48:15.345207+00:00"
+    },
+    {
+      "application": "dispatch",
+      "action": "SIGKILL",
+      "pid": 5525,
+      "exitCode": -9,
+      "at": "2026-09-25T09:49:01.687887+00:00"
+    },
+    {
+      "application": "dispatch",
+      "action": "restart",
+      "pid": 5653,
+      "at": "2026-09-25T09:49:01.767519+00:00"
+    }
+  ],
+  "boundaries": {
+    "before-sql-kill-boundary": {
+      "step": {
+        "deadline_at": {
+          "N": "1790329737442"
+        },
+        "provider_processed_at": {
+          "S": "2026-09-25T09:47:29.062672Z"
+        },
+        "delivery_id": {
+          "S": "a5775623-9df7-4662-899f-47f054f3ccf5"
+        },
+        "receipt_invocation": {
+          "N": "1"
+        },
+        "created_at": {
+          "S": "2026-09-25T09:47:28.837499Z"
+        },
+        "schema_version": {
+          "N": "2"
+        },
+        "publish_state": {
+          "S": "PENDING"
+        },
+        "updated_at": {
+          "S": "2026-09-25T09:47:29.687992Z"
+        },
+        "lifecycle_bucket": {
+          "S": "lifecycle-v1-2"
+        },
+        "provider": {
+          "S": "mock-provider"
+        },
+        "retry_count": {
+          "N": "0"
+        },
+        "sk": {
+          "S": "ATTEMPT#3811b8bc-2f48-35a8-9e3d-e31aca095c18"
+        },
+        "attempt_id": {
+          "S": "3811b8bc-2f48-35a8-9e3d-e31aca095c18"
+        },
+        "route_order": {
+          "N": "1"
+        },
+        "receipt_event_id": {
+          "S": "39e0d42f-38cb-37d2-8371-099758287c4e"
+        },
+        "lifecycle_closed": {
+          "BOOL": true
+        },
+        "receipt_fingerprint": {
+          "S": "e1a65302b1fc782550b5ba8e277cb756ea17e5ee983bf4e89715653cdc6b45fa"
+        },
+        "receipt_resume": {
+          "BOOL": false
+        },
+        "version": {
+          "N": "2"
+        },
+        "lifecycle_due": {
+          "N": "0"
+        },
+        "receipt_received_at": {
+          "S": "2026-09-25T09:47:29.348709Z"
+        },
+        "event_id": {
+          "S": "4e11892d-41b8-348a-b823-3f4d87b71aac"
+        },
+        "result_event": {
+          "S": "{\"schemaVersion\":2,\"eventType\":\"DeliveryFinalized\",\"eventId\":\"1d61ceb6-d036-343d-8539-b2adbcc63425\",\"deliveryId\":\"a5775623-9df7-4662-899f-47f054f3ccf5\",\"tenantId\":1,\"deliveryType\":\"SMS\",\"outcome\":\"DELIVERED\",\"reason\":\"DELIVERED\",\"routeOrder\":1,\"attemptId\":\"3811b8bc-2f48-35a8-9e3d-e31aca095c18\",\"provider\":\"mock-provider\",\"occurredAt\":\"2026-09-25T09:47:27.442990Z\",\"resultAt\":\"2026-09-25T09:47:29.348709Z\",\"finalizedAt\":\"2026-09-25T09:47:29.687992Z\",\"deadline\":\"2026-09-25T09:48:57.442Z\",\"requestKey\":\"ceeb1e1a-df9c-3653-9764-315d879f8e22\"}"
+        },
+        "receipt_code": {
+          "S": "DELIVERED"
+        },
+        "receipt_tracking_version": {
+          "N": "1"
+        },
+        "pk": {
+          "S": "DELIVERY#a5775623-9df7-4662-899f-47f054f3ccf5"
+        },
+        "provider_result_at": {
+          "S": "2026-09-25T09:47:29.064379Z"
+        },
+        "request_key": {
+          "S": "ceeb1e1a-df9c-3653-9764-315d879f8e22"
+        },
+        "status": {
+          "S": "DELIVERED"
+        }
+      },
+      "offsets": [
+        {
+          "partition": 0,
+          "committed": -1001,
+          "high": 0,
+          "lag": 0
+        },
+        {
+          "partition": 1,
+          "committed": -1001,
+          "high": 0,
+          "lag": 0
+        },
+        {
+          "partition": 2,
+          "committed": -1001,
+          "high": 1,
+          "lag": 1
+        }
+      ],
+      "historyRows": 0
+    },
+    "customer-ack-loss-boundary": {
+      "batch": {
+        "batch_id": "90ed8012-aeca-47e2-8e58-27474324174a",
+        "status": "IN_FLIGHT",
+        "attempt_count": 1,
+        "request_body": "{\"schemaVersion\":1,\"batchId\":\"90ed8012-aeca-47e2-8e58-27474324174a\",\"tenantId\":1,\"results\":[{\"schemaVersion\":2,\"eventType\":\"DeliveryFinalized\",\"eventId\":\"9f528283-b38f-398b-a9c6-cb3ef954611a\",\"deliveryId\":\"22d8a8a9-3f64-4e0b-aa3b-9fe3b286be75\",\"tenantId\":1,\"deliveryType\":\"SMS\",\"outcome\":\"DELIVERED\",\"reason\":\"DELIVERED\",\"routeOrder\":1,\"attemptId\":\"b4671dfb-4c84-35b2-a7f2-71c9b254af63\",\"provider\":\"mock-provider\",\"occurredAt\":\"2026-09-25T09:48:14.008354Z\",\"resultAt\":\"2026-09-25T09:48:14.236706Z\",\"finalizedAt\":\"2026-09-25T09:48:14.253580Z\",\"deadline\":\"2026-09-25T09:49:44.008Z\",\"requestKey\":\"12990caf-ca96-381b-a477-7089f3aa1538\"}]}",
+        "lease_until": "2026-09-25T09:48:34.326173+00:00"
+      },
+      "customerBodyReceivedWithoutAck": {
+        "body": {
+          "schemaVersion": 1,
+          "batchId": "90ed8012-aeca-47e2-8e58-27474324174a",
+          "tenantId": 1,
+          "results": [
+            {
+              "schemaVersion": 2,
+              "eventType": "DeliveryFinalized",
+              "eventId": "9f528283-b38f-398b-a9c6-cb3ef954611a",
+              "deliveryId": "22d8a8a9-3f64-4e0b-aa3b-9fe3b286be75",
+              "tenantId": 1,
+              "deliveryType": "SMS",
+              "outcome": "DELIVERED",
+              "reason": "DELIVERED",
+              "routeOrder": 1,
+              "attemptId": "b4671dfb-4c84-35b2-a7f2-71c9b254af63",
+              "provider": "mock-provider",
+              "occurredAt": "2026-09-25T09:48:14.008354Z",
+              "resultAt": "2026-09-25T09:48:14.236706Z",
+              "finalizedAt": "2026-09-25T09:48:14.253580Z",
+              "deadline": "2026-09-25T09:49:44.008Z",
+              "requestKey": "12990caf-ca96-381b-a477-7089f3aa1538"
+            }
+          ]
+        },
+        "status": 0,
+        "receivedAt": "2026-09-25T09:48:14.334272+00:00",
+        "responseWithheld": true
+      }
+    },
+    "dispatch-unknown-boundary": {
+      "step": {
+        "deadline_at": {
+          "N": "1790329831512"
+        },
+        "delivery_id": {
+          "S": "4d642b0b-f5da-4b3c-89de-43c8c1938f15"
+        },
+        "created_at": {
+          "S": "2026-09-25T09:49:01.604299Z"
+        },
+        "version": {
+          "N": "1"
+        },
+        "lifecycle_due": {
+          "N": "1790329831512"
+        },
+        "schema_version": {
+          "N": "2"
+        },
+        "event_id": {
+          "S": "e4bf6243-adae-3eeb-ac93-ef5867286789"
+        },
+        "updated_at": {
+          "S": "2026-09-25T09:49:01.604299Z"
+        },
+        "lifecycle_bucket": {
+          "S": "lifecycle-v1-14"
+        },
+        "provider": {
+          "S": "mock-provider"
+        },
+        "retry_count": {
+          "N": "0"
+        },
+        "sk": {
+          "S": "ATTEMPT#a2148230-de05-345f-8203-f2849bf5ceff"
+        },
+        "attempt_id": {
+          "S": "a2148230-de05-345f-8203-f2849bf5ceff"
+        },
+        "lease_until": {
+          "N": "1790329751604"
+        },
+        "receipt_tracking_version": {
+          "N": "1"
+        },
+        "route_order": {
+          "N": "1"
+        },
+        "pk": {
+          "S": "DELIVERY#4d642b0b-f5da-4b3c-89de-43c8c1938f15"
+        },
+        "request_key": {
+          "S": "2297ea86-5fd4-3ed7-96e9-b8d0f0362449"
+        },
+        "status": {
+          "S": "PROCESSING"
+        }
+      },
+      "provider": {
+        "calls": 1,
+        "effects": 1
+      },
+      "offsets": [
+        {
+          "partition": 0,
+          "committed": -1001,
+          "high": 0,
+          "lag": 0
+        },
+        {
+          "partition": 1,
+          "committed": -1001,
+          "high": 0,
+          "lag": 0
+        },
+        {
+          "partition": 2,
+          "committed": 2,
+          "high": 3,
+          "lag": 1
+        }
+      ]
+    }
+  },
+  "cases": [
+    {
+      "name": "결과 worker 종료 중 Kafka·STEP 보존 후 SQL 인계 복구",
+      "requestKey": "ceeb1e1a-df9c-3653-9764-315d879f8e22",
+      "history": {
+        "result_json": {
+          "reason": "DELIVERED",
+          "eventId": "1d61ceb6-d036-343d-8539-b2adbcc63425",
+          "outcome": "DELIVERED",
+          "deadline": "2026-09-25T09:48:57.442Z",
+          "provider": "mock-provider",
+          "resultAt": "2026-09-25T09:47:29.348709Z",
+          "tenantId": 1,
+          "attemptId": "3811b8bc-2f48-35a8-9e3d-e31aca095c18",
+          "eventType": "DeliveryFinalized",
+          "deliveryId": "a5775623-9df7-4662-899f-47f054f3ccf5",
+          "occurredAt": "2026-09-25T09:47:27.442990Z",
+          "requestKey": "ceeb1e1a-df9c-3653-9764-315d879f8e22",
+          "routeOrder": 1,
+          "finalizedAt": "2026-09-25T09:47:29.687992Z",
+          "deliveryType": "SMS",
+          "schemaVersion": 2
+        },
+        "stored_at": "2026-09-25T09:48:12.613443+00:00",
+        "cleanup_completed_at": "2026-09-25T09:48:13.032242+00:00",
+        "notification_status": "DELIVERED",
+        "attempt_count": 1,
+        "cleanup_status": "DONE"
+      },
+      "provider": [
+        {
+          "calls": 1,
+          "effects": 1
+        },
+        {
+          "calls": 0,
+          "effects": 0
+        }
+      ],
+      "originAbsent": true,
+      "stepsAbsent": true,
+      "completedRedisPresent": true,
+      "offsetsWhileStopped": [
+        {
+          "partition": 0,
+          "committed": -1001,
+          "high": 0,
+          "lag": 0
+        },
+        {
+          "partition": 1,
+          "committed": -1001,
+          "high": 0,
+          "lag": 0
+        },
+        {
+          "partition": 2,
+          "committed": -1001,
+          "high": 1,
+          "lag": 1
+        }
+      ]
+    },
+    {
+      "name": "고객 본문 수신 후 응답 미확인 종료·동일 묶음 재전송",
+      "requestKey": "12990caf-ca96-381b-a477-7089f3aa1538",
+      "history": {
+        "result_json": {
+          "reason": "DELIVERED",
+          "eventId": "9f528283-b38f-398b-a9c6-cb3ef954611a",
+          "outcome": "DELIVERED",
+          "deadline": "2026-09-25T09:49:44.008Z",
+          "provider": "mock-provider",
+          "resultAt": "2026-09-25T09:48:14.236706Z",
+          "tenantId": 1,
+          "attemptId": "b4671dfb-4c84-35b2-a7f2-71c9b254af63",
+          "eventType": "DeliveryFinalized",
+          "deliveryId": "22d8a8a9-3f64-4e0b-aa3b-9fe3b286be75",
+          "occurredAt": "2026-09-25T09:48:14.008354Z",
+          "requestKey": "12990caf-ca96-381b-a477-7089f3aa1538",
+          "routeOrder": 1,
+          "finalizedAt": "2026-09-25T09:48:14.253580Z",
+          "deliveryType": "SMS",
+          "schemaVersion": 2
+        },
+        "stored_at": "2026-09-25T09:48:14.297012+00:00",
+        "cleanup_completed_at": "2026-09-25T09:48:19.057896+00:00",
+        "notification_status": "DELIVERED",
+        "attempt_count": 2,
+        "cleanup_status": "DONE"
+      },
+      "provider": [
+        {
+          "calls": 1,
+          "effects": 1
+        },
+        {
+          "calls": 0,
+          "effects": 0
+        }
+      ],
+      "originAbsent": true,
+      "stepsAbsent": true,
+      "completedRedisPresent": true,
+      "batchBeforeKill": {
+        "batch_id": "90ed8012-aeca-47e2-8e58-27474324174a",
+        "status": "IN_FLIGHT",
+        "attempt_count": 1,
+        "request_body": "{\"schemaVersion\":1,\"batchId\":\"90ed8012-aeca-47e2-8e58-27474324174a\",\"tenantId\":1,\"results\":[{\"schemaVersion\":2,\"eventType\":\"DeliveryFinalized\",\"eventId\":\"9f528283-b38f-398b-a9c6-cb3ef954611a\",\"deliveryId\":\"22d8a8a9-3f64-4e0b-aa3b-9fe3b286be75\",\"tenantId\":1,\"deliveryType\":\"SMS\",\"outcome\":\"DELIVERED\",\"reason\":\"DELIVERED\",\"routeOrder\":1,\"attemptId\":\"b4671dfb-4c84-35b2-a7f2-71c9b254af63\",\"provider\":\"mock-provider\",\"occurredAt\":\"2026-09-25T09:48:14.008354Z\",\"resultAt\":\"2026-09-25T09:48:14.236706Z\",\"finalizedAt\":\"2026-09-25T09:48:14.253580Z\",\"deadline\":\"2026-09-25T09:49:44.008Z\",\"requestKey\":\"12990caf-ca96-381b-a477-7089f3aa1538\"}]}",
+        "lease_until": "2026-09-25T09:48:34.326173+00:00"
+      },
+      "batchAfterRestart": {
+        "batch_id": "90ed8012-aeca-47e2-8e58-27474324174a",
+        "status": "DELIVERED",
+        "attempt_count": 2,
+        "request_body": "{\"schemaVersion\":1,\"batchId\":\"90ed8012-aeca-47e2-8e58-27474324174a\",\"tenantId\":1,\"results\":[{\"schemaVersion\":2,\"eventType\":\"DeliveryFinalized\",\"eventId\":\"9f528283-b38f-398b-a9c6-cb3ef954611a\",\"deliveryId\":\"22d8a8a9-3f64-4e0b-aa3b-9fe3b286be75\",\"tenantId\":1,\"deliveryType\":\"SMS\",\"outcome\":\"DELIVERED\",\"reason\":\"DELIVERED\",\"routeOrder\":1,\"attemptId\":\"b4671dfb-4c84-35b2-a7f2-71c9b254af63\",\"provider\":\"mock-provider\",\"occurredAt\":\"2026-09-25T09:48:14.008354Z\",\"resultAt\":\"2026-09-25T09:48:14.236706Z\",\"finalizedAt\":\"2026-09-25T09:48:14.253580Z\",\"deadline\":\"2026-09-25T09:49:44.008Z\",\"requestKey\":\"12990caf-ca96-381b-a477-7089f3aa1538\"}]}",
+        "lease_until": null
+      }
+    },
+    {
+      "name": "업체 효과 후 발송 worker 종료·자동 재발송 없이 원래 기한 만료",
+      "requestKey": "2297ea86-5fd4-3ed7-96e9-b8d0f0362449",
+      "history": {
+        "result_json": {
+          "reason": "PRIMARY_EXPIRED",
+          "eventId": "c07fccdc-2dbf-3c28-bf08-f4d4e30ed793",
+          "outcome": "EXPIRED",
+          "deadline": "2026-09-25T09:50:31.512Z",
+          "provider": "mock-provider",
+          "resultAt": "2026-09-25T09:50:31.512Z",
+          "tenantId": 1,
+          "attemptId": "a2148230-de05-345f-8203-f2849bf5ceff",
+          "eventType": "DeliveryFinalized",
+          "deliveryId": "4d642b0b-f5da-4b3c-89de-43c8c1938f15",
+          "occurredAt": "2026-09-25T09:49:01.512402Z",
+          "requestKey": "2297ea86-5fd4-3ed7-96e9-b8d0f0362449",
+          "routeOrder": 1,
+          "finalizedAt": "2026-09-25T09:50:32.018502Z",
+          "deliveryType": "SMS",
+          "schemaVersion": 2
+        },
+        "stored_at": "2026-09-25T09:50:32.114136+00:00",
+        "cleanup_completed_at": "2026-09-25T09:50:32.404949+00:00",
+        "notification_status": "DELIVERED",
+        "attempt_count": 1,
+        "cleanup_status": "DONE"
+      },
+      "provider": [
+        {
+          "calls": 1,
+          "effects": 1
+        },
+        {
+          "calls": 0,
+          "effects": 0
+        }
+      ],
+      "originAbsent": true,
+      "stepsAbsent": true,
+      "completedRedisPresent": true,
+      "stepBeforeKill": {
+        "deadline_at": {
+          "N": "1790329831512"
+        },
+        "delivery_id": {
+          "S": "4d642b0b-f5da-4b3c-89de-43c8c1938f15"
+        },
+        "created_at": {
+          "S": "2026-09-25T09:49:01.604299Z"
+        },
+        "version": {
+          "N": "1"
+        },
+        "lifecycle_due": {
+          "N": "1790329831512"
+        },
+        "schema_version": {
+          "N": "2"
+        },
+        "event_id": {
+          "S": "e4bf6243-adae-3eeb-ac93-ef5867286789"
+        },
+        "updated_at": {
+          "S": "2026-09-25T09:49:01.604299Z"
+        },
+        "lifecycle_bucket": {
+          "S": "lifecycle-v1-14"
+        },
+        "provider": {
+          "S": "mock-provider"
+        },
+        "retry_count": {
+          "N": "0"
+        },
+        "sk": {
+          "S": "ATTEMPT#a2148230-de05-345f-8203-f2849bf5ceff"
+        },
+        "attempt_id": {
+          "S": "a2148230-de05-345f-8203-f2849bf5ceff"
+        },
+        "lease_until": {
+          "N": "1790329751604"
+        },
+        "receipt_tracking_version": {
+          "N": "1"
+        },
+        "route_order": {
+          "N": "1"
+        },
+        "pk": {
+          "S": "DELIVERY#4d642b0b-f5da-4b3c-89de-43c8c1938f15"
+        },
+        "request_key": {
+          "S": "2297ea86-5fd4-3ed7-96e9-b8d0f0362449"
+        },
+        "status": {
+          "S": "PROCESSING"
+        }
+      },
+      "stepAfterReplay": {
+        "deadline_at": {
+          "N": "1790329831512"
+        },
+        "delivery_id": {
+          "S": "4d642b0b-f5da-4b3c-89de-43c8c1938f15"
+        },
+        "created_at": {
+          "S": "2026-09-25T09:49:01.604299Z"
+        },
+        "version": {
+          "N": "1"
+        },
+        "lifecycle_due": {
+          "N": "1790329831512"
+        },
+        "schema_version": {
+          "N": "2"
+        },
+        "event_id": {
+          "S": "e4bf6243-adae-3eeb-ac93-ef5867286789"
+        },
+        "updated_at": {
+          "S": "2026-09-25T09:49:01.604299Z"
+        },
+        "lifecycle_bucket": {
+          "S": "lifecycle-v1-14"
+        },
+        "provider": {
+          "S": "mock-provider"
+        },
+        "retry_count": {
+          "N": "0"
+        },
+        "sk": {
+          "S": "ATTEMPT#a2148230-de05-345f-8203-f2849bf5ceff"
+        },
+        "attempt_id": {
+          "S": "a2148230-de05-345f-8203-f2849bf5ceff"
+        },
+        "lease_until": {
+          "N": "1790329751604"
+        },
+        "receipt_tracking_version": {
+          "N": "1"
+        },
+        "route_order": {
+          "N": "1"
+        },
+        "pk": {
+          "S": "DELIVERY#4d642b0b-f5da-4b3c-89de-43c8c1938f15"
+        },
+        "request_key": {
+          "S": "2297ea86-5fd4-3ed7-96e9-b8d0f0362449"
+        },
+        "status": {
+          "S": "PROCESSING"
+        }
+      },
+      "uncommittedDispatchOffsets": [
+        {
+          "partition": 0,
+          "committed": -1001,
+          "high": 0,
+          "lag": 0
+        },
+        {
+          "partition": 1,
+          "committed": -1001,
+          "high": 0,
+          "lag": 0
+        },
+        {
+          "partition": 2,
+          "committed": 2,
+          "high": 3,
+          "lag": 1
+        }
+      ]
+    }
+  ],
+  "customerReceipts": [
+    {
+      "body": {
+        "schemaVersion": 1,
+        "batchId": "0d96f13e-f60e-49fa-850d-d161f9ef5cd5",
+        "tenantId": 1,
+        "results": [
+          {
+            "schemaVersion": 2,
+            "eventType": "DeliveryFinalized",
+            "eventId": "1d61ceb6-d036-343d-8539-b2adbcc63425",
+            "deliveryId": "a5775623-9df7-4662-899f-47f054f3ccf5",
+            "tenantId": 1,
+            "deliveryType": "SMS",
+            "outcome": "DELIVERED",
+            "reason": "DELIVERED",
+            "routeOrder": 1,
+            "attemptId": "3811b8bc-2f48-35a8-9e3d-e31aca095c18",
+            "provider": "mock-provider",
+            "occurredAt": "2026-09-25T09:47:27.442990Z",
+            "resultAt": "2026-09-25T09:47:29.348709Z",
+            "finalizedAt": "2026-09-25T09:47:29.687992Z",
+            "deadline": "2026-09-25T09:48:57.442Z",
+            "requestKey": "ceeb1e1a-df9c-3653-9764-315d879f8e22"
+          }
+        ]
+      },
+      "status": 204,
+      "receivedAt": "2026-09-25T09:48:12.700204+00:00"
+    },
+    {
+      "body": {
+        "schemaVersion": 1,
+        "batchId": "90ed8012-aeca-47e2-8e58-27474324174a",
+        "tenantId": 1,
+        "results": [
+          {
+            "schemaVersion": 2,
+            "eventType": "DeliveryFinalized",
+            "eventId": "9f528283-b38f-398b-a9c6-cb3ef954611a",
+            "deliveryId": "22d8a8a9-3f64-4e0b-aa3b-9fe3b286be75",
+            "tenantId": 1,
+            "deliveryType": "SMS",
+            "outcome": "DELIVERED",
+            "reason": "DELIVERED",
+            "routeOrder": 1,
+            "attemptId": "b4671dfb-4c84-35b2-a7f2-71c9b254af63",
+            "provider": "mock-provider",
+            "occurredAt": "2026-09-25T09:48:14.008354Z",
+            "resultAt": "2026-09-25T09:48:14.236706Z",
+            "finalizedAt": "2026-09-25T09:48:14.253580Z",
+            "deadline": "2026-09-25T09:49:44.008Z",
+            "requestKey": "12990caf-ca96-381b-a477-7089f3aa1538"
+          }
+        ]
+      },
+      "status": 0,
+      "receivedAt": "2026-09-25T09:48:14.334272+00:00",
+      "responseWithheld": true
+    },
+    {
+      "body": {
+        "schemaVersion": 1,
+        "batchId": "90ed8012-aeca-47e2-8e58-27474324174a",
+        "tenantId": 1,
+        "results": [
+          {
+            "schemaVersion": 2,
+            "eventType": "DeliveryFinalized",
+            "eventId": "9f528283-b38f-398b-a9c6-cb3ef954611a",
+            "deliveryId": "22d8a8a9-3f64-4e0b-aa3b-9fe3b286be75",
+            "tenantId": 1,
+            "deliveryType": "SMS",
+            "outcome": "DELIVERED",
+            "reason": "DELIVERED",
+            "routeOrder": 1,
+            "attemptId": "b4671dfb-4c84-35b2-a7f2-71c9b254af63",
+            "provider": "mock-provider",
+            "occurredAt": "2026-09-25T09:48:14.008354Z",
+            "resultAt": "2026-09-25T09:48:14.236706Z",
+            "finalizedAt": "2026-09-25T09:48:14.253580Z",
+            "deadline": "2026-09-25T09:49:44.008Z",
+            "requestKey": "12990caf-ca96-381b-a477-7089f3aa1538"
+          }
+        ]
+      },
+      "status": 204,
+      "receivedAt": "2026-09-25T09:48:34.402595+00:00"
+    },
+    {
+      "body": {
+        "schemaVersion": 1,
+        "batchId": "f8ecc949-46f8-4b1e-9082-c7f11975b81a",
+        "tenantId": 1,
+        "results": [
+          {
+            "schemaVersion": 2,
+            "eventType": "DeliveryFinalized",
+            "eventId": "c07fccdc-2dbf-3c28-bf08-f4d4e30ed793",
+            "deliveryId": "4d642b0b-f5da-4b3c-89de-43c8c1938f15",
+            "tenantId": 1,
+            "deliveryType": "SMS",
+            "outcome": "EXPIRED",
+            "reason": "PRIMARY_EXPIRED",
+            "routeOrder": 1,
+            "attemptId": "a2148230-de05-345f-8203-f2849bf5ceff",
+            "provider": "mock-provider",
+            "occurredAt": "2026-09-25T09:49:01.512402Z",
+            "resultAt": "2026-09-25T09:50:31.512Z",
+            "finalizedAt": "2026-09-25T09:50:32.018502Z",
+            "deadline": "2026-09-25T09:50:31.512Z",
+            "requestKey": "2297ea86-5fd4-3ed7-96e9-b8d0f0362449"
+          }
+        ]
+      },
+      "status": 204,
+      "receivedAt": "2026-09-25T09:50:32.269754+00:00"
+    }
+  ],
+  "cleanup": {
+    "ownedProcessesStopped": true,
+    "composeProject": "full-flow-1592b5c2a023",
+    "containersStopped": true,
+    "volumesRetained": true
+  },
+  "containerStopVerification": "All five owned containers inspected Exited after test; shared containers untouched.",
+  "limitations": [
+    "Small-count local JVM SIGKILL/restart proof, not performance/Kubernetes/AZ/storage-failure proof.",
+    "Customer body can be received more than once when acknowledgement is unknown; same batch ID and body are preserved.",
+    "P-01 stops the worker before SQL consumption, not during SQL commit.",
+    "P-03 observes simulator effects in test code only; production provider lookup and operator action API were not added."
+  ],
+  "dockerStartup": "Initial start stalled in Created for five owned containers; existing Created-only retry workaround succeeded."
+}
