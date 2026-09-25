@@ -62,7 +62,8 @@ class DltRecoveryIntegrationTest {
             statement.execute("CREATE SCHEMA " + schema);
             statement.execute("SET search_path TO " + schema);
             for (String migration : List.of("V1__delivery_history_and_notification_outbox.sql", "V2__customer_notification_batches.sql",
-                    "V3__delivery_cleanup_reservations.sql", "V4__dlt_recovery_handoff.sql", "V5__dlt_history_coverage.sql")) {
+                    "V3__delivery_cleanup_reservations.sql", "V4__dlt_recovery_handoff.sql", "V5__dlt_history_coverage.sql",
+                    "V6__dlt_recovery_checkpoint.sql")) {
                 try (var resource = DltRecoveryIntegrationTest.class.getResourceAsStream("/db/migration/" + migration)) {
                     assertNotNull(resource); statement.execute(new String(resource.readAllBytes(), StandardCharsets.UTF_8));
                 }
@@ -149,6 +150,129 @@ class DltRecoveryIntegrationTest {
     }
     Map<String, AttributeValue> origin() {
         return db.getItem(r -> r.tableName("ORIGIN").key(DeliveryCompletion.metaKey(admitted.requestKey())).consistentRead(true)).item();
+    }
+
+    DltRecoveryResumer resumer(Instant now) {
+        return new DltRecoveryResumer(store, planner(now), topic, topic, "source", this::publish);
+    }
+    void agePending(UUID operation) throws Exception {
+        try (var connection = connect(); var update = connection.prepareStatement("UPDATE " + schema
+                + ".dlt_recovery_operation SET updated_at=clock_timestamp()-interval '2 minutes' WHERE operation_id=?")) {
+            update.setObject(1, operation); update.executeUpdate();
+        }
+    }
+    DltRecoveryStore.Result submitPending(DltRecoveryPlanner.Plan plan) {
+        return store.apply(topic, topic, plan, "tester", "submit recovery", () -> { throw new IllegalStateException("SQL down"); },
+                this::publish, DltRecoveryCheckpoint.capture(plan, record));
+    }
+
+    @Test void autoResumeRecoversPersistedStartedWithoutReadingKafkaSource() throws Exception {
+        removeOrigin(); enableRestore(NOW.minusSeconds(1));
+        var plan = planner(NOW).plan(record);
+        // Model abrupt termination after STARTED commit; no exception recovery/finish call is allowed.
+        assertThrows(AssertionError.class, () -> store.apply(topic, topic, plan, "tester", "crash boundary",
+                () -> { throw new AssertionError("termination model"); }, this::publish, DltRecoveryCheckpoint.capture(plan, record)));
+        assertEquals(1, count("dlt_recovery_operation WHERE cluster_alias='" + topic + "' AND state='PENDING'"));
+        UUID operation;
+        try (var connection = connect(); var query = connection.prepareStatement("SELECT operation_id FROM " + schema
+                + ".dlt_recovery_operation WHERE cluster_alias=?")) {
+            query.setString(1, topic);
+            try (var row = query.executeQuery()) { assertTrue(row.next()); operation = row.getObject(1, UUID.class); }
+        }
+        agePending(operation);
+        var cycle = resumer(NOW.plus(Duration.ofHours(8))).runOnce(10, Duration.ofSeconds(30));
+        assertEquals(1, cycle.selected()); assertEquals("ACKNOWLEDGED", cycle.results().getFirst().status());
+        var received = MAPPER.readValue(DltInspector.fetchExact(bootstrap, topic, 0, 0).value(), DeliveryEvent.class);
+        assertEquals(plan.command(), received); assertEquals(NOW, received.occurredAt());
+        assertEquals(1, count("dlt_recovery_attempt WHERE operation_id='" + operation + "' AND actor='dlt-auto-resumer' AND outcome='ACKNOWLEDGED'"));
+        assertEquals(0, resumer(NOW).runOnce(10, Duration.ofSeconds(30)).selected());
+    }
+
+    @Test void autoResumeReleasesInterruptedHoldUsingSameExecution() throws Exception {
+        removeOrigin(); enableRestore(NOW.minusSeconds(1));
+        var plan = planner(NOW).plan(record);
+        var result = store.apply(topic, topic, plan, "tester", "interrupt after reserve", () -> {
+            new DeliveryRepository(db, MAPPER).reserveRecovery(admitted.execution(plan.command().deliveryId()), plan.command().deliveryId());
+            throw new IllegalStateException("history unavailable");
+        }, this::publish, DltRecoveryCheckpoint.capture(plan, record));
+        assertTrue(origin().containsKey(DeliveryCompletion.RECOVERY_HOLD));
+        agePending(result.operationId());
+        assertEquals("ACKNOWLEDGED", resumer(NOW).runOnce(10, Duration.ofSeconds(30)).results().getFirst().status());
+        assertEquals(plan.command().deliveryId(), origin().get("delivery_id").s());
+        assertFalse(origin().containsKey(DeliveryCompletion.RECOVERY_HOLD)); assertEquals(1, records());
+    }
+
+    @Test void automaticAckLossRetryPublishesIdenticalCommandAndThenStops() throws Exception {
+        var plan = planner(NOW).plan(record);
+        var result = store.apply(topic, topic, plan, "tester", "ack lost", () -> planner(NOW).plan(record), command -> {
+            publish(command); throw new TimeoutException();
+        }, DltRecoveryCheckpoint.capture(plan, record));
+        assertEquals(0, resumer(NOW).runOnce(10, Duration.ofSeconds(30)).selected());
+        agePending(result.operationId());
+        assertEquals("ACKNOWLEDGED", resumer(NOW).runOnce(10, Duration.ofSeconds(30)).results().getFirst().status());
+        assertEquals(2, records());
+        assertArrayEquals(DltInspector.fetchExact(bootstrap, topic, 0, 0).value(), DltInspector.fetchExact(bootstrap, topic, 0, 1).value());
+        assertEquals(0, resumer(NOW).runOnce(10, Duration.ofSeconds(30)).selected());
+    }
+
+    @Test void completedExecutionIsHeldAndNotAutomaticallyRetried() throws Exception {
+        var result = submitPending(planner(NOW).plan(record)); agePending(result.operationId());
+        history(); removeOrigin();
+        assertEquals("HELD_STATE_CHANGED", resumer(NOW).runOnce(10, Duration.ofSeconds(30)).results().getFirst().status());
+        assertEquals(0, records()); assertTrue(origin().isEmpty());
+        assertEquals(0, resumer(NOW).runOnce(10, Duration.ofSeconds(30)).selected());
+    }
+
+    @Test void changedGenerationCannotBeActivatedBeforeStoredCommandComparison() throws Exception {
+        var result = submitPending(planner(NOW).plan(record)); agePending(result.operationId());
+        removeOrigin(); enableRestore(NOW.minusSeconds(1));
+        // Even if absent history now permits a new reservation, the old operation authorizes a different execution.
+        assertEquals("HELD_STATE_CHANGED", resumer(NOW).runOnce(10, Duration.ofSeconds(30)).results().getFirst().status());
+        assertTrue(origin().isEmpty()); assertEquals(0, records());
+    }
+
+    @Test void pendingSelectionIsScopedBoundedAndLeavesLegacyOperationsManual() throws Exception {
+        var plan = planner(NOW).plan(record);
+        var result = submitPending(plan); agePending(result.operationId());
+        assertEquals(1, store.pending(topic, topic, 1, Duration.ofSeconds(30)).size());
+        assertTrue(store.pending("other", topic, 1, Duration.ofSeconds(30)).isEmpty());
+        assertTrue(store.pending(topic, "other", 1, Duration.ofSeconds(30)).isEmpty());
+        assertThrows(IllegalArgumentException.class, () -> store.pending(topic, topic, 101, Duration.ofSeconds(30)));
+        assertThrows(IllegalArgumentException.class, () -> store.pending(topic, topic, 1, Duration.ZERO));
+        var legacy = store.apply("legacy-" + topic, topic, plan, "tester", "old operation",
+                () -> { throw new IllegalStateException(); }, this::publish);
+        agePending(legacy.operationId());
+        assertTrue(store.pending("legacy-" + topic, topic, 1, Duration.ofSeconds(30)).isEmpty());
+    }
+
+    @Test void autoResumeUsesManualLockAndRejectsStaleSelection() throws Exception {
+        var plan = planner(NOW).plan(record); var result = submitPending(plan); agePending(result.operationId());
+        var candidate = store.pending(topic, topic, 1, Duration.ofSeconds(30)).getFirst();
+        var checkpoint = MAPPER.readValue(candidate.checkpointJson(), DltRecoveryCheckpoint.class);
+        var entered = new CountDownLatch(1); var release = new CountDownLatch(1);
+        try (var executor = Executors.newSingleThreadExecutor()) {
+            var manual = executor.submit(() -> store.apply(topic, topic, plan, "tester", "manual retry", () -> {
+                entered.countDown();
+                try { assertTrue(release.await(10, TimeUnit.SECONDS)); }
+                catch (InterruptedException e) { throw new RuntimeException(e); }
+                throw new IllegalStateException("still unavailable");
+            }, this::publish));
+            try {
+                assertTrue(entered.await(10, TimeUnit.SECONDS));
+                assertEquals("BUSY", store.resume(topic, topic, candidate, checkpoint, () -> planner(NOW).prepare(record), this::publish).status());
+            } finally { release.countDown(); }
+            assertEquals("UNCONFIRMED", manual.get(10, TimeUnit.SECONDS).status());
+        }
+        assertEquals("SKIPPED_CHANGED", store.resume(topic, topic, candidate, checkpoint, () -> planner(NOW).prepare(record), this::publish).status());
+        assertEquals(0, records());
+    }
+
+    @Test void checkpointRejectsChangedInputBeforeOperationWrite() throws Exception {
+        var plan = planner(NOW).plan(record);
+        var changed = DltInspectionTest.record(DeliveryEvent.requested(UUID.randomUUID().toString(), 999L, "SMS", Map.of("text", "changed"), NOW).forAdmission());
+        assertThrows(IllegalArgumentException.class, () -> DltRecoveryCheckpoint.capture(plan, changed));
+        assertEquals(0, count("dlt_recovery_operation WHERE cluster_alias='" + topic + "'"));
+        assertEquals(0, records());
     }
 
     @Test void coverageIsRequiredAndNeverBackdatesItselfForOldRequests() throws Exception {

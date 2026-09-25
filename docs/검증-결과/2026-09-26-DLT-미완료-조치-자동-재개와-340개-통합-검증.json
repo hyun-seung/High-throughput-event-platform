@@ -1,0 +1,66 @@
+{
+  "date": "2026-09-26",
+  "status": "PASS",
+  "baseCommit": "25133937fd521b7071305663a2cdb5460c466b27",
+  "runDirectory": ".poc-results/java-test-20260925153229-23688",
+  "javaIntegration": {
+    "suites": 38,
+    "executed": 340,
+    "skipped": 0,
+    "failures": 0,
+    "errors": 0
+  },
+  "newTests": {
+    "automaticRecoveryIntegration": 8,
+    "totalDltRecoveryIntegration": 25
+  },
+  "tools": {
+    "applicationTests": "Java 21/JUnit, Maven Wrapper clean verify -Pintegration-tests",
+    "environment": "Bash + Docker Compose, fresh isolated project",
+    "performance": "Not run; k6 reserved for performance phase"
+  },
+  "infrastructure": {
+    "kafka": "apache/kafka:4.0.2",
+    "postgresql": "postgres:17-alpine",
+    "dynamodb": "amazon/dynamodb-local:2.6.1",
+    "redis": "redis:7.4-alpine"
+  },
+  "cleanup": {
+    "containersStopped": true,
+    "volumesRetained": true
+  },
+  "packagedCli": {
+    "usageExitCode": 2,
+    "scope": "Packaged Java entry point usage smoke check; actual resume behavior exercised via Java integration, not a separate continuous CLI process"
+  },
+  "verified": [
+    "Exact inspected DLT input and immutable authorized command are durably recorded together with PENDING operation",
+    "STARTED-only termination modeled with injected Error resumes from SQL checkpoint without Kafka source lookup",
+    "Interrupted held ORIGIN resumes using same execution and releases hold after state/history checks",
+    "Original occurrence and expiry preserved after eight-hour delay",
+    "Actual Kafka send followed by timeout retries identical command and excludes acknowledged operation",
+    "Completed history transitions pending work to HELD without publication",
+    "Changed execution identity is compared before provisional ORIGIN reservation or activation",
+    "Candidate scope, minimum age, maximum limit validation and exclusion of legacy operations without checkpoint",
+    "Manual and automatic recovery share advisory lock; stale selection is skipped after newer manual attempt",
+    "Changed source input rejected before checkpoint insertion",
+    "Existing normal successful DynamoDB write budget remains five calls and seven item mutations"
+  ],
+  "notVerifiedOrImplemented": [
+    "Actual SIGKILL for the new automatic resumer or all SQL commit response-loss boundaries",
+    "Automatic consumption of DLT records not yet registered as SQL recovery operations",
+    "Authenticated operator identity, production deployment and automatic alert routing",
+    "Full continuous CLI process restart test or performance capacity"
+  ],
+  "sourceSha256": {
+    "delivery-ingress-worker/src/main/java/event/delivery/ingress/dlt/DltRecoveryCli.java": "b3e812297f472ea972af9280e5688f117873017f993f0024a88a517075433c5a",
+    "delivery-ingress-worker/src/main/java/event/delivery/ingress/dlt/DltRecoveryPlanner.java": "8a5124414968fe3c86040b7b29fb6ff401c4273d415055401a4b97a683c1b455",
+    "delivery-ingress-worker/src/main/java/event/delivery/ingress/dlt/DltRecoveryStore.java": "2a9512ee0fd4c564199d29819b9e558d586b33f3cfc6f938423f423123581f3a",
+    "delivery-ingress-worker/src/main/java/event/delivery/ingress/dlt/DltRecoveryCheckpoint.java": "41a5f250e5109237f7c8e84fac6beba878507a32b1f59a03cb09d69bf312738e",
+    "delivery-ingress-worker/src/main/java/event/delivery/ingress/dlt/DltRecoveryResumer.java": "a165710c1e57f6259e15c058a0dca4d7d501a76f8c8a61dde5d7bea0b1c1a991",
+    "delivery-ingress-worker/src/test/java/event/delivery/ingress/dlt/DltRecoveryIntegrationTest.java": "058143e0370866e00d5c5966e2c4a5932d721b231cd6def69407062414188703",
+    "delivery-result-worker/src/main/resources/db/migration/V6__dlt_recovery_checkpoint.sql": "6d8d28ecffcbfed59a47bba77a8314254edbb5b63702bdeef50ec4b3d718b2fe",
+    "scripts/recover-dlt.sh": "6557cb3c4cbfc3f99c1163226a385d3496d24e9d51938e8a452b5aff070d8ad2"
+  },
+  "postRunChanges": "Documentation and evidence only; no behavior changes after successful integration"
+}

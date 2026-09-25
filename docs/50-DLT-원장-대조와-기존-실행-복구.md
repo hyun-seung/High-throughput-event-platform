@@ -1,6 +1,6 @@
 # DLT 원장 대조와 기존 실행 복구
 
-2026-09-26. [읽기 전용 분류](49-DLT-조회와-재처리-대상-분류.md)에 이어, **기존 실행 재개와 최초 ORIGIN 저장 전 실패의 수동 복구를 수행하는 Java CLI**를 구현했다. SQL에 인계 요청·시도·Kafka ack를 남긴다. 초기 원본 복구는 이력 보존 범위를 명시적으로 활성화한 경우에만 허용한다. 자동 DLT 소비는 아직 없다.
+2026-09-26. [읽기 전용 분류](49-DLT-조회와-재처리-대상-분류.md)에 이어, **기존 실행·초기 원본의 수동 복구와 SQL에 등록된 미완료 조치의 자동 재개**를 구현했다. SQL에 인계 요청·시도·Kafka ack를 남긴다. 초기 원본 복구는 이력 보존 범위를 명시적으로 활성화한 경우에만 허용한다. 아직 등록하지 않은 DLT를 자동 소비하는 기능은 없다.
 
 ## 1. 처리 흐름과 재접수를 하지 않는 이유
 
@@ -65,7 +65,7 @@ SQL 또는 DynamoDB 조회가 실패하면 상태를 모르는 채 진행하지 
 3. **예약 이후 SQL 주 DB의 새 조회로** 이력을 재확인한다. 정상 정리는 이력 commit 후 ORIGIN을 지우므로, 예약 직전 완료·정리된 실행의 이력도 확인할 수 있다. 완료 이력이 발견되면 자신이 예약한 보류 원본만 조건부 삭제하고 발송하지 않는다.
 4. 이력 없음·보존 범위·예약 소유자가 유효하면 보류를 제거하고 Lifecycle GSI를 설정한다. 이후 기존 dispatch 명령을 발행하고 SQL에 Kafka ack를 남긴다.
 
-예약 직후 SQL 장애·프로세스 종료가 나면 보류가 남아 같은 작업으로 다시 대조한다. 활성화 후 Kafka 인계 전에 종료되면 ORIGIN의 Lifecycle 조회가 복구할 수 있다. 그 사이 STEP이 생성되면 CLI는 기존 worker의 처리에 맡긴다. 보류 원본은 자동 만료 대상이 아니므로 **활성화 전 중단된 조치는 현재 운영자가 재개해야 한다**.
+예약 직후 SQL 장애·프로세스 종료가 나면 보류가 남아 같은 작업으로 다시 대조한다. 활성화 후 Kafka 인계 전에 종료되면 ORIGIN의 Lifecycle 조회가 복구할 수 있다. 그 사이 STEP이 생성되면 CLI는 기존 worker의 처리에 맡긴다. 보류 원본은 Lifecycle 자동 만료 대상이 아니므로 **저장된 복구 체크포인트가 있는 PENDING 작업은 자동 재개 worker로, 나머지는 수동으로 재개한다**.
 
 **공식 근거와 설계 판단:** PostgreSQL Read Committed의 각 SELECT는 조회 시작 전 commit된 데이터를 읽는다. 따라서 예약 이후 주 DB의 새 스냅샷으로 확인해야 하며, 지연 복제본이나 오래된 트랜잭션 스냅샷을 사용하면 이 근거가 성립하지 않는다. DynamoDB 조건부 예약·발송 선점과 기존 SQL commit→ORIGIN 삭제 순서를 조합한 설계이며, 저장소 간 원자적 트랜잭션을 주장하지 않는다. [PostgreSQL 격리 수준](https://www.postgresql.org/docs/17/transaction-iso.html), [DynamoDB 트랜잭션](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/transaction-apis.html).
 
@@ -91,7 +91,7 @@ Kafka producer idempotence만으로 재실행된 CLI 사이의 중복까지 막�
 
 ## 4. 로컬 PoC 실행
 
-JDK 21로 빌드한 JAR와 **V5까지 반영된** result worker SQL schema가 필요하다. 외부 실행 도구는 **Bash**이고 조회·판단·JDBC·Kafka 전송은 모두 Java다. 로컬 Kafka/DynamoDB/PostgreSQL 주소만 허용한다.
+JDK 21로 빌드한 JAR와 **V6까지 반영된** result worker SQL schema가 필요하다. 외부 실행 도구는 **Bash**이고 조회·판단·JDBC·Kafka 전송은 모두 Java다. 로컬 Kafka/DynamoDB/PostgreSQL 주소만 허용한다.
 
 초기 복구를 켜려면 모든 ingress·dispatch 인스턴스에 보류 조건을 이해하는 버전을 적용하고, SQL 주 DB 연결 및 이력 보존을 확인한 뒤 다음을 실행한다. 기존 실행의 재개에는 활성화가 필요 없다.
 
@@ -101,7 +101,7 @@ UPDATE delivery_results.dlt_history_coverage
 SET origin_restore_enabled = true WHERE singleton;
 ```
 
-`complete_since`는 마이그레이션 시각으로 시작한다. 오래된 DLT를 처리하려고 임의로 과거로 돌리지 않는다. 이력 삭제·PITR·DB 교체 등으로 보존 조건이 깨질 때는 복구 CLI 실행을 중단하고 비활성화한 뒤, 이력이 연속 보존되는 범위를 다시 정해야 한다. 플래그 변경은 진행 중인 활성화를 원자적으로 취소하는 기능이 아니므로 실행 중인 CLI도 함께 중단해야 한다.
+`complete_since`는 마이그레이션 시각으로 시작한다. 오래된 DLT를 처리하려고 임의로 과거로 돌리지 않는다. 이력 삭제·PITR·DB 교체 등으로 보존 조건이 깨질 때는 수동 CLI와 자동 재개 프로세스를 모두 중단하고 비활성화한 뒤, 이력이 연속 보존되는 범위를 다시 정해야 한다. 플래그 변경은 진행 중인 활성화를 원자적으로 취소하는 기능이 아니다.
 
 ```sh
 export JAVA_HOME=/path/to/jdk21
@@ -129,7 +129,7 @@ bash scripts/recover-dlt.sh apply delivery.requested.dlt.v1 0 42 \
 
 Java/JUnit으로 실제 PostgreSQL·DynamoDB Local·Kafka를 연결해 다음을 검증한다. 환경 실행·종료는 Bash + Docker Compose가 맡는다.
 
-최신 실행 결과: **전체 332개 통과, 실패·오류·미실행 0개**. 기존 324개에 초기 복구 통합 7개와 발송 보류 경계 1개를 추가했다. [검증 결과 JSON](검증-결과/2026-09-26-DLT-초기-원본-복구와-332개-통합-검증.json)에 도구·실행 폴더·소스 지문·정리 결과를 남겼다.
+최신 실행 결과: **전체 340개 통과, 실패·오류·미실행 0개**. 기존 332개에 자동 재개 통합 8개를 추가했다. [검증 결과 JSON](검증-결과/2026-09-26-DLT-미완료-조치-자동-재개와-340개-통합-검증.json)에 도구·실행 폴더·소스 지문·정리 결과를 남겼다.
 
 - 원래 시각·실행 ID 보존, 만료 분류, 원장 없음·이력 있음·원장 불일치·완료 표시·기존 STEP 보류, SQL 조회 실패 시 중단.
 - 실제 Kafka 인계와 SQL ack/조치 기록, 동일 작업 재실행 시 추가 발행 없음.
@@ -140,7 +140,32 @@ Java/JUnit으로 실제 PostgreSQL·DynamoDB Local·Kafka를 연결해 다음을
 - 복구 기본 비활성화·보존 시작 경계, 초기 원본 복원과 실제 Kafka/SQL 인계, 동일 작업 중복 억제, 만료된 원래 시각·설정 유지.
 - 예약 후 SQL 오류 주입 시 보류 원본 유지와 동일 실행 재개, 예약 후 완료 이력 발견 시 자신의 보류 원본만 삭제, 정상 접수 선점 시 원본 보존.
 - 보류 중 ingress·dispatch·Lifecycle의 외부 발송 차단, 보류 해제 후 중복 명령의 업체 호출 1회, 복구 비활성화 후 예약 상태 유지.
+- STARTED commit 후 종료를 Error 주입으로 모델링한 자동 재개, SQL 체크포인트만으로 원래 만료 시각 유지, 중단된 ORIGIN 보류 해제, 응답 유실 후 동일 command 재인계.
+- 완료 이력·실행 변경 시 HELD와 발송 없음, 최소 경과 시간·조회 범위·상한·구형 작업 제외, 수동 잠금 경합·오래된 선택 결과 차단, 원문 변조 거부. 실제 SIGKILL 시험과 구분한다.
 
 실제 SIGKILL·SQL commit 응답 유실을 포함한 모든 종료 지점을 이 시험이 검증한 것은 아니다. 성능/TPS 시험도 아니며, 성능 부하는 개발 완료 후 **k6**로 진행한다.
 
-다음 DLT 범위는 **SQL PENDING/STARTED와 보류 원본의 자동 재개 및 미처리 DLT 인계**다. 이력 보존 범위 밖의 요청은 여전히 보류하며, 실제 운영 인증·권한·감사와 보존 기간 감시도 남아 있다. 현재 수동 CLI와 기존 Lifecycle만으로 모든 DLT의 고객 결과 기한 보장이 완료됐다고 보지 않는다.
+다음 DLT 범위는 **미등록 DLT의 인계·보류·보존 감시**다. 이력 보존 범위 밖의 요청은 여전히 보류하며, 실제 운영 인증·권한·감사도 남아 있다. 현재 복구 도구와 Lifecycle만으로 모든 DLT의 고객 결과 기한 보장이 완료됐다고 보지 않는다.
+
+## 6. 중단된 조치의 자동 재개
+
+`V6__dlt_recovery_checkpoint.sql`은 복구 원장에 `checkpoint_json`을 추가한다. 새 CLI `apply`는 승인된 command와 정확한 원문 key/value/header·DLT 좌표·분류 정보를 최초 PENDING 저장과 함께 commit한다. 자동 재개는 이 SQL 원문을 사용하므로 DLT offset이 보관 기간을 지나도 이미 등록된 작업을 이어갈 수 있다. 기존 행은 원문을 추정해 채우지 않으며 체크포인트가 없으면 수동 처리 대상으로 남긴다.
+
+```sh
+# 위 로컬 환경 변수 설정 후, 최대 10건·최근 변경 후 30초가 지난 작업을 한 번 처리
+bash scripts/recover-dlt.sh resume-once 10 30
+# 같은 조건으로 계속 실행. 각 처리 묶음이 끝난 뒤 30초 대기
+bash scripts/recover-dlt.sh resume 10 30
+```
+
+자동 재개 프로세스는 명시적으로 실행해야 하며 ingress 시작만으로 켜지지 않는다. 건수는 1~100, 대기·최소 경과 시간은 1~3,600초다. 클러스터 별칭·대상 토픽이 일치하는 `PENDING`만 오래된 변경 순서로 읽고 한 건씩 처리한다. SQL 조회 실패도 다음 주기까지 대기한다. 업무 발송 재시도 3회와 운영 복구 재개 횟수는 별개다.
+
+- 수동 apply와 같은 SQL advisory lock을 사용한다. 잠금 뒤에도 선택 당시 상태·변경 시각을 대조하므로 다른 조치가 처리한 오래된 조회 결과로 즉시 다시 발행하지 않는다.
+- SQL에 저장된 동일 command와 현재 계획을 **ORIGIN 예약·활성화 전에** 비교한다. 실행 ID가 바뀌면 새 세대를 만들지 않고 HELD로 남긴다. 재개 후에도 원래 인입 시각·만료·대체 설정을 유지한다.
+- SQL 이력이나 STEP이 생겼거나 보존 조건이 깨졌으면 HELD로 남기고 자동 재시도에서 제외한다. 이는 운영 확인 대상이며 최종 처리 성공 표시가 아니다. ACKNOWLEDGED도 자동 대상에서 제외한다.
+- SQL·Kafka 일시 오류는 PENDING/UNCONFIRMED로 남아 다음 주기에 재시도한다. STARTED만 남은 종료도 같은 경로다. 기존 시도 기록은 보존하고 새 시도에 `dlt-auto-resumer`라는 로컬 조치자 이름을 남긴다.
+- 출력은 선택 수·작업 ID·결과 상태이며 원문은 출력하지 않는다. 체크포인트는 원문과 header를 포함하므로 SQL 조치 원장에 동일한 접근·보존 통제를 적용한다. 손상된 체크포인트·설정 불일치의 반복 UNCONFIRMED/SOURCE_MISMATCH는 운영 확인 대상이다.
+
+`resume-once`는 처리 대상이 없거나 모두 인계 완료/이미 완료/다른 조치로 변경된 경우 0, 보류·잠금 경합·미확인은 3, 조회·설정 예외는 1이다. 원본 DLT 삭제나 업무 consumer offset commit은 수행하지 않는다. **아직 apply하지 않은 DLT 전체의 자동 처리와 운영 인증·경보는 별도 후속 작업**이다.
+
+정상 발송 경로에 SQL 또는 DynamoDB 쓰기를 추가하지 않는다. 추가 비용은 운영 복구 원문의 SQL 저장 공간, 주기 SQL 조회·시도 기록, 기존 원장 대조와 필요 시 원본 복원 쓰기다.

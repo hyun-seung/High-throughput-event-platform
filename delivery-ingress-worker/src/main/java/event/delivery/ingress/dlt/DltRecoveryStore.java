@@ -5,6 +5,10 @@ import tools.jackson.databind.json.JsonMapper;
 import java.nio.charset.StandardCharsets;
 import java.sql.*;
 import java.util.UUID;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.List;
+import java.util.ArrayList;
 import java.util.function.Supplier;
 
 /** Durable operations outbox. The session lock serializes operators; Kafka/SQL are not atomic. */
@@ -13,6 +17,7 @@ public final class DltRecoveryStore implements DltRecoveryPlanner.HistoryReader 
     @FunctionalInterface public interface Publisher { Ack send(DeliveryEvent command) throws Exception; }
     public record Ack(String topic, int partition, long offset) { }
     public record Result(UUID operationId, String status) { }
+    public record Pending(UUID operationId, String checkpointJson, Instant updatedAt) { }
     private final Connections connections;
     private final String schema;
     private final JsonMapper mapper = JsonMapper.builder().build();
@@ -40,15 +45,61 @@ public final class DltRecoveryStore implements DltRecoveryPlanner.HistoryReader 
 
     public Result apply(String cluster, String targetTopic, DltRecoveryPlanner.Plan plan, String actor, String reason,
                         Supplier<DltRecoveryPlanner.Plan> recheck, Publisher publisher) {
+        return apply(cluster, targetTopic, plan, actor, reason, recheck, publisher, null, null);
+    }
+
+    public Result apply(String cluster, String targetTopic, DltRecoveryPlanner.Plan plan, String actor, String reason,
+                        Supplier<DltRecoveryPlanner.Plan> recheck, Publisher publisher, DltRecoveryCheckpoint checkpoint) {
+        return apply(cluster, targetTopic, plan, actor, reason, recheck, publisher, checkpoint, null);
+    }
+
+    public List<Pending> pending(String cluster, String targetTopic, int limit, Duration minimumAge) {
+        if (limit < 1 || limit > 100 || minimumAge == null || minimumAge.compareTo(Duration.ofSeconds(1)) < 0
+                || minimumAge.compareTo(Duration.ofHours(1)) > 0) throw new IllegalArgumentException("Invalid resume bounds");
+        try (var connection = connections.open(); var query = connection.prepareStatement("SELECT operation_id,checkpoint_json,updated_at FROM "
+                + schema + ".dlt_recovery_operation WHERE cluster_alias=? AND target_topic=? AND state='PENDING' "
+                + "AND checkpoint_json IS NOT NULL AND updated_at <= clock_timestamp() - (? * interval '1 millisecond') "
+                + "ORDER BY updated_at,operation_id LIMIT ?")) {
+            query.setQueryTimeout(5);
+            query.setString(1, cluster); query.setString(2, targetTopic); query.setLong(3, minimumAge.toMillis()); query.setInt(4, limit);
+            var pending = new ArrayList<Pending>();
+            try (var rows = query.executeQuery()) {
+                while (rows.next()) pending.add(new Pending(rows.getObject(1, UUID.class), rows.getString(2), rows.getTimestamp(3).toInstant()));
+            }
+            return List.copyOf(pending);
+        } catch (SQLException unavailable) { throw new IllegalStateException("SQL recovery scan unavailable", unavailable); }
+    }
+
+    Result resume(String cluster, String targetTopic, Pending pending, DltRecoveryCheckpoint checkpoint,
+                  Supplier<DltRecoveryPlanner.Plan> recheck, Publisher publisher) {
+        if (!pending.operationId().equals(operationId(cluster, checkpoint.plan()))) throw new IllegalArgumentException("Operation mismatch");
+        return apply(cluster, targetTopic, checkpoint.plan(), "dlt-auto-resumer", "Resume persisted recovery operation",
+                recheck, publisher, checkpoint, pending.updatedAt());
+    }
+
+    private static UUID operationId(String cluster, DltRecoveryPlanner.Plan plan) {
+        var source = plan.preview().dlt().source();
+        return UUID.nameUUIDFromBytes((cluster + ":" + source.topic() + ":" + source.partition() + ":" + source.offset())
+                .getBytes(StandardCharsets.UTF_8));
+    }
+
+    private Result apply(String cluster, String targetTopic, DltRecoveryPlanner.Plan plan, String actor, String reason,
+                         Supplier<DltRecoveryPlanner.Plan> recheck, Publisher publisher,
+                         DltRecoveryCheckpoint checkpoint, Instant expectedUpdatedAt) {
         if (cluster == null || !cluster.matches("[A-Za-z0-9._-]{1,100}") || targetTopic == null
                 || !targetTopic.matches("[A-Za-z0-9._-]{1,249}") || actor == null || !actor.matches("[A-Za-z0-9._@-]{1,100}")
                 || reason == null || reason.isBlank() || reason.length() > 500 || reason.chars().anyMatch(Character::isISOControl)
                 || !plan.eligible()) throw new IllegalArgumentException("Eligible plan, cluster, actor and reason required");
         var dlt = plan.preview().dlt();
         var source = dlt.source();
-        UUID operation = UUID.nameUUIDFromBytes((cluster + ":" + source.topic() + ":" + source.partition() + ":" + source.offset())
-                .getBytes(StandardCharsets.UTF_8));
+        UUID operation = operationId(cluster, plan);
         String command = mapper.writeValueAsString(plan.command());
+        String checkpointJson = null;
+        if (checkpoint != null) {
+            checkpoint.validate();
+            if (!plan.equals(checkpoint.plan())) throw new IllegalArgumentException("Checkpoint plan mismatch");
+            checkpointJson = mapper.writeValueAsString(checkpoint);
+        }
         try (var connection = connections.open()) {
             try (var lock = connection.prepareStatement("SELECT pg_try_advisory_lock(?)")) {
                 lock.setLong(1, operation.getMostSignificantBits());
@@ -56,15 +107,16 @@ public final class DltRecoveryStore implements DltRecoveryPlanner.HistoryReader 
             }
             try {
                 // Connection closure releases the session lock after a process crash. Normal exits unlock explicitly.
-                try (var insert = connection.prepareStatement("INSERT INTO " + schema + ".dlt_recovery_operation "
-                        + "(operation_id,cluster_alias,source_topic,source_partition,source_offset,value_sha256,execution_id,target_topic,command_json,state) "
-                        + "VALUES (?,?,?,?,?,?,?::uuid,?,?,'PENDING') ON CONFLICT DO NOTHING")) {
+                if (expectedUpdatedAt == null) try (var insert = connection.prepareStatement("INSERT INTO " + schema + ".dlt_recovery_operation "
+                        + "(operation_id,cluster_alias,source_topic,source_partition,source_offset,value_sha256,execution_id,target_topic,command_json,state,checkpoint_json) "
+                        + "VALUES (?,?,?,?,?,?,?::uuid,?,?,'PENDING',?) ON CONFLICT DO NOTHING")) {
                     insert.setObject(1, operation); insert.setString(2, cluster); insert.setString(3, source.topic());
                     insert.setInt(4, source.partition()); insert.setLong(5, source.offset()); insert.setString(6, dlt.valueSha256());
                     insert.setString(7, plan.preview().executionId()); insert.setString(8, targetTopic); insert.setString(9, command);
+                    insert.setString(10, checkpointJson);
                     insert.executeUpdate();
                 }
-                try (var query = connection.prepareStatement("SELECT state,value_sha256,execution_id,target_topic,command_json FROM "
+                try (var query = connection.prepareStatement("SELECT state,value_sha256,execution_id,target_topic,command_json,updated_at,checkpoint_json FROM "
                         + schema + ".dlt_recovery_operation WHERE operation_id=?")) {
                     query.setObject(1, operation);
                     try (var row = query.executeQuery()) {
@@ -72,6 +124,9 @@ public final class DltRecoveryStore implements DltRecoveryPlanner.HistoryReader 
                                 || !plan.preview().executionId().equals(row.getString(3)) || !targetTopic.equals(row.getString(4))
                                 || !command.equals(row.getString(5))) throw new IllegalStateException("Recovery identity conflict");
                         if ("ACKNOWLEDGED".equals(row.getString(1))) return new Result(operation, "ALREADY_ACKNOWLEDGED");
+                        if (expectedUpdatedAt != null && (!"PENDING".equals(row.getString(1))
+                                || !expectedUpdatedAt.equals(row.getTimestamp(6).toInstant()))) return new Result(operation, "SKIPPED_CHANGED");
+                        if (expectedUpdatedAt != null && !checkpointJson.equals(row.getString(7))) throw new IllegalStateException("Checkpoint changed");
                     }
                 }
                 UUID attempt = UUID.randomUUID();
