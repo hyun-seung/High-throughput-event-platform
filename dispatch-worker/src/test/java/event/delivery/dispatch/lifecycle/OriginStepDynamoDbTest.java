@@ -12,7 +12,7 @@ import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import java.time.*;
 import java.util.*;
 import java.util.concurrent.*;
-import static event.common.dynamodb.DynamoDbTableNames.DELIVERY_STATE;
+import static event.common.dynamodb.DynamoDbTableNames.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 /** Same real-DB budget harness, now exercising the v2 ORIGIN/STEP contract. */
@@ -30,7 +30,7 @@ class OriginStepDynamoDbTest extends DynamoDbWriteBudgetTest {
         item.put("delivery_type", AttributeValue.fromS("SMS")); item.put("payload", AttributeValue.fromS(mapper.writeValueAsString(event.payload())));
         item.put("occurred_at", AttributeValue.fromS(START.toString())); item.put("fallback_allowed", AttributeValue.fromBool(fallback));
         LifecycleIndex.add(item, event.deliveryId(), 0);
-        db.putItem(r -> r.tableName(DELIVERY_STATE).item(item).conditionExpression("attribute_not_exists(pk)"));
+        db.putItem(r -> r.tableName(tableForKey(item)).item(item).conditionExpression("attribute_not_exists(pk)"));
         receipts.retryPublisher(retries::add);
     }
     @Override void invoke(int route, int invocation, boolean accepted, String code) {
@@ -81,6 +81,28 @@ class OriginStepDynamoDbTest extends DynamoDbWriteBudgetTest {
         }
         finish("v2_eight_receipts_review_expiry", 24, 28, 0);
     }
+    @Test void physicalTablesAndCrossTableReceiptTransactionPreserveAtomicity() {
+        ingress(false); invoke(1, 1, true, null);
+        var originKey = DeliveryCompletion.metaKey(event.requestKey());
+        var stepKey = LifecycleRepository.key(event.deliveryId(), "ATTEMPT#" + id(1));
+        assertFalse(db.getItem(r -> r.tableName(ORIGIN).key(originKey).consistentRead(true)).item().isEmpty());
+        assertTrue(db.getItem(r -> r.tableName(STEP).key(originKey).consistentRead(true)).item().isEmpty());
+        assertFalse(db.getItem(r -> r.tableName(STEP).key(stepKey).consistentRead(true)).item().isEmpty());
+        assertTrue(db.getItem(r -> r.tableName(ORIGIN).key(stepKey).consistentRead(true)).item().isEmpty());
+        var before = lifecycle.read(event.deliveryId(), "ATTEMPT#" + id(1));
+        var receipt = ReceiptEvent.received(UUID.randomUUID().toString(), event.deliveryId(), id(1), PRIMARY, 1,
+                ReceiptOutcome.DELIVERED, "DELIVERED", START, START, 1);
+        db.updateItem(r -> r.tableName(ORIGIN).key(originKey).updateExpression("SET completion_event_id = :other")
+                .expressionAttributeValues(Map.of(":other", AttributeValue.fromS("conflicting-result"))));
+        assertThrows(IllegalStateException.class, () -> receipts.apply(receipt, START));
+        assertEquals(before, lifecycle.read(event.deliveryId(), "ATTEMPT#" + id(1)));
+        db.updateItem(r -> r.tableName(ORIGIN).key(originKey).updateExpression("REMOVE completion_event_id"));
+        assertEquals("delivered", receipts.apply(receipt, START).outcome());
+        service.reconcile(event.deliveryId()); assertTrue(new DeliveryCompactor(db).compact(results.getFirst()));
+        assertTrue(db.getItem(r -> r.tableName(ORIGIN).key(originKey).consistentRead(true)).item().isEmpty());
+        assertTrue(db.getItem(r -> r.tableName(STEP).key(stepKey).consistentRead(true)).item().isEmpty());
+    }
+
     @Test void concurrentRetryCommandsAdvanceOnceAndLateResultCannotOverwrite() throws Exception {
         ingress(false);
         var first = attempts.claim(event, id(1), PRIMARY, START, START.plusSeconds(30), START.plusSeconds(100)).attempt();
@@ -104,7 +126,7 @@ class OriginStepDynamoDbTest extends DynamoDbWriteBudgetTest {
         assertEquals(DispatchClaimStatus.ALREADY_ACCEPTED, attempts.claim(old, id(1), PRIMARY, START, START.plusSeconds(30), START.plusSeconds(100)).status());
         var newOrigin = new HashMap<>(DeliveryCompletion.metaKey(old.requestKey()));
         newOrigin.put("delivery_id", AttributeValue.fromS(UUID.randomUUID().toString()));
-        db.putItem(r -> r.tableName(DELIVERY_STATE).item(newOrigin));
+        db.putItem(r -> r.tableName(tableForKey(newOrigin)).item(newOrigin));
         assertFalse(compactor.compact(result));
         assertEquals(newOrigin, lifecycle.read(old.requestKey(), "META"));
         var receipt = ReceiptEvent.received(UUID.randomUUID().toString(), old.deliveryId(), id(1), PRIMARY, 1, ReceiptOutcome.DELIVERED, "DELIVERED", START, START, 1);
@@ -207,7 +229,7 @@ class OriginStepDynamoDbTest extends DynamoDbWriteBudgetTest {
 
     @Override @AfterEach void cleanup() {
         budget.enabled = false;
-        if (event != null) db.deleteItem(r -> r.tableName(DELIVERY_STATE).key(DeliveryCompletion.metaKey(event.requestKey())));
+        if (event != null) db.deleteItem(r -> r.tableName(tableForKey(DeliveryCompletion.metaKey(event.requestKey()))).key(DeliveryCompletion.metaKey(event.requestKey())));
         super.cleanup();
     }
 }

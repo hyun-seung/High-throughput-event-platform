@@ -64,7 +64,7 @@ import event.delivery.dispatch.consumer.DispatchRequestConsumer;
 import tools.jackson.databind.json.JsonMapper;
 
 import static event.common.dynamodb.DynamoDbAttributeNames.*;
-import static event.common.dynamodb.DynamoDbTableNames.DELIVERY_STATE;
+import static event.common.dynamodb.DynamoDbTableNames.*;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.AdditionalAnswers.delegatesTo;
 import static org.mockito.ArgumentMatchers.any;
@@ -115,12 +115,14 @@ class DispatchAttemptDynamoDbTest {
         for (var ownEvent : ownEvents) {
             var parent = stored(ownEvent);
             if (parent.containsKey("secondary_attempt_id")) {
-                client.deleteItem(request -> request.tableName(DELIVERY_STATE).key(Map.of(
+                client.deleteItem(request -> request.tableName(tableForKey(Map.of(
+                        PK, AttributeValue.fromS("DELIVERY#" + ownEvent.deliveryId()),
+                        SK, AttributeValue.fromS("ATTEMPT#" + parent.get("secondary_attempt_id").s())))).key(Map.of(
                         PK, AttributeValue.fromS("DELIVERY#" + ownEvent.deliveryId()),
                         SK, AttributeValue.fromS("ATTEMPT#" + parent.get("secondary_attempt_id").s()))));
             }
-            client.deleteItem(request -> request.tableName(DELIVERY_STATE).key(key(ownEvent)));
-            client.deleteItem(request -> request.tableName(DELIVERY_STATE).key(DeliveryCompletion.metaKey(ownEvent.deliveryId())));
+            client.deleteItem(request -> request.tableName(tableForKey(key(ownEvent))).key(key(ownEvent)));
+            client.deleteItem(request -> request.tableName(tableForKey(DeliveryCompletion.metaKey(ownEvent.deliveryId()))).key(DeliveryCompletion.metaKey(ownEvent.deliveryId())));
         }
     }
 
@@ -620,7 +622,7 @@ class DispatchAttemptDynamoDbTest {
     void legacyPrimaryDeadlineRemainsReadableAfterUpgrade() {
         var original = claim(event, NOW).attempt();
         repository.recordFailure(original, retryAt(NOW.plusSeconds(1)));
-        client.updateItem(request -> request.tableName(DELIVERY_STATE).key(key(event))
+        client.updateItem(request -> request.tableName(tableForKey(key(event))).key(key(event))
                 .updateExpression("SET primary_deadline = deadline_at REMOVE deadline_at, route_order"));
         var resumed = claim(event, NOW.plusSeconds(1));
         assertEquals(DispatchClaimStatus.CLAIMED, resumed.status());
@@ -637,7 +639,7 @@ class DispatchAttemptDynamoDbTest {
 
     private Map<String, AttributeValue> storedSecondary() {
         var id = stored(event).get("secondary_attempt_id").s();
-        return client.getItem(request -> request.tableName(DELIVERY_STATE).consistentRead(true).key(Map.of(
+        return client.getItem(request -> request.tableName(STEP).consistentRead(true).key(Map.of(
                 PK, AttributeValue.fromS("DELIVERY#" + event.deliveryId()), SK, AttributeValue.fromS("ATTEMPT#" + id)))).item();
     }
 
@@ -754,7 +756,7 @@ class DispatchAttemptDynamoDbTest {
                 999L, "EMAIL", Map.of("body", "test"), NOW).toDispatchRequested();
         var origin = new java.util.HashMap<>(DeliveryCompletion.metaKey(result.deliveryId()));
         origin.put("delivery_id", AttributeValue.fromS(result.deliveryId()));
-        client.putItem(r -> r.tableName(DELIVERY_STATE).item(origin));
+        client.putItem(r -> r.tableName(tableForKey(origin)).item(origin));
         ownEvents.add(result);
         return result;
     }
@@ -783,7 +785,7 @@ class DispatchAttemptDynamoDbTest {
     }
 
     private Map<String, AttributeValue> stored(DeliveryEvent request) {
-        return client.getItem(read -> read.tableName(DELIVERY_STATE).key(key(request)).consistentRead(true)).item();
+        return client.getItem(read -> read.tableName(tableForKey(key(request))).key(key(request)).consistentRead(true)).item();
     }
 
     private void assertReview(DeliveryEvent request) {

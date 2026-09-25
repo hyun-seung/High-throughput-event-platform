@@ -48,7 +48,7 @@ import org.springframework.kafka.support.serializer.JacksonJsonDeserializer;
 import event.delivery.dispatch.config.DispatchFailureConfiguration;
 
 import static event.common.dynamodb.DynamoDbAttributeNames.*;
-import static event.common.dynamodb.DynamoDbTableNames.DELIVERY_STATE;
+import static event.common.dynamodb.DynamoDbTableNames.*;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.AdditionalAnswers.delegatesTo;
 import static org.mockito.ArgumentMatchers.any;
@@ -87,7 +87,7 @@ class ReceiptResultDynamoDbTest {
     }
 
     @AfterEach void cleanup() {
-        keys.forEach(key -> db.deleteItem(r -> r.tableName(DELIVERY_STATE).key(key)));
+        keys.forEach(key -> db.deleteItem(r -> r.tableName(tableForKey(key)).key(key)));
     }
     @AfterAll static void close() { if (db != null) db.close(); }
 
@@ -110,7 +110,7 @@ class ReceiptResultDynamoDbTest {
 
     @Test void legacyFirstInvocationAndPrimaryDeadlineAreStillReadable() {
         accepted(event);
-        db.updateItem(r -> r.tableName(DELIVERY_STATE).key(ReceiptResultRepository.attemptKey(event.deliveryId(), id(event, 1)))
+        db.updateItem(r -> r.tableName(tableForKey(ReceiptResultRepository.attemptKey(event.deliveryId(), id(event, 1)))).key(ReceiptResultRepository.attemptKey(event.deliveryId(), id(event, 1)))
                 .updateExpression("SET primary_deadline = :deadline REMOVE deadline_at, route_order")
                 .expressionAttributeValues(Map.of(":deadline", AttributeValue.fromN(Long.toString(NOW.plus(Duration.ofHours(3)).toEpochMilli())))));
         service.process(receipt(event, 1, "DELIVERED", null));
@@ -424,7 +424,7 @@ class ReceiptResultDynamoDbTest {
         item.put(TENANT_ID, AttributeValue.fromN("999")); item.put(DELIVERY_TYPE, AttributeValue.fromS("SMS"));
         item.put(PAYLOAD, AttributeValue.fromS(mapper.writeValueAsString(result.payload())));
         item.put(OCCURRED_AT, AttributeValue.fromS(NOW.toString())); item.put(FALLBACK_ALLOWED, AttributeValue.fromBool(allowed));
-        db.putItem(r -> r.tableName(DELIVERY_STATE).item(item));
+        db.putItem(r -> r.tableName(tableForKey(item)).item(item));
         keys.add(metaKey);
         keys.add(ReceiptResultRepository.attemptKey(result.deliveryId(), id(result, 1)));
         keys.add(ReceiptResultRepository.attemptKey(result.deliveryId(), id(result, 2)));
@@ -451,7 +451,7 @@ class ReceiptResultDynamoDbTest {
     void track(ReceiptEvent receipt) { keys.add(ReceiptResultRepository.receiptKey(receipt.eventId())); }
     Map<String, AttributeValue> ledger(ReceiptEvent receipt) { return read(ReceiptResultRepository.receiptKey(receipt.eventId())); }
     Map<String, AttributeValue> stored(DeliveryEvent e, int route) { return read(ReceiptResultRepository.attemptKey(e.deliveryId(), id(e, route))); }
-    Map<String, AttributeValue> read(Map<String, AttributeValue> key) { return db.getItem(r -> r.tableName(DELIVERY_STATE).key(key).consistentRead(true)).item(); }
+    Map<String, AttributeValue> read(Map<String, AttributeValue> key) { return db.getItem(r -> r.tableName(tableForKey(key)).key(key).consistentRead(true)).item(); }
 
     static class MutableClock extends Clock {
         volatile Instant now = NOW;

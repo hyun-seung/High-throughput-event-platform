@@ -90,9 +90,9 @@ def post(path, payload, expected, headers=None):
         return json.load(response)["data"]
 
 
-def state(delivery_id):
+def state(delivery_id, table):
     query = {
-        "TableName": "delivery_state", "ConsistentRead": True,
+        "TableName": table, "ConsistentRead": True,
         "KeyConditionExpression": "pk = :pk",
         "ExpressionAttributeValues": {":pk": {"S": "DELIVERY#" + delivery_id}},
     }
@@ -139,10 +139,10 @@ def main():
     print(f"PASS: two HTTP 202 responses with deliveryId={delivery_id}", flush=True)
     deadline = time.monotonic() + 30
     while time.monotonic() < deadline:
-        items = state(delivery_id)
+        items = state(delivery_id, "ORIGIN")
         meta = [item for item in items if item["sk"]["S"] == "META"]
         execution_id = meta[0].get("delivery_id", {}).get("S", delivery_id) if meta else delivery_id
-        execution_items = state(execution_id) if execution_id != delivery_id else items
+        execution_items = state(execution_id, "STEP")
         attempts = [item for item in execution_items if item["sk"]["S"].startswith("ATTEMPT#")]
         if len(attempts) > 1:
             raise RuntimeError("More than one dispatch attempt exists")

@@ -12,38 +12,44 @@ import java.time.Instant;
 import java.util.*;
 
 import static event.common.dynamodb.DynamoDbAttributeNames.*;
-import static event.common.dynamodb.DynamoDbTableNames.DELIVERY_STATE;
+import static event.common.dynamodb.DynamoDbTableNames.*;
 
 public class LifecycleRepository {
+    public static final int RECOVERY_SHARDS = LifecycleIndex.SHARDS * 2;
     private final DynamoDbClient db;
     private final JsonMapper mapper;
     public LifecycleRepository(DynamoDbClient db, JsonMapper mapper) { this.db = db; this.mapper = mapper; }
 
     public Map<String, AttributeValue> read(String delivery, String sk) {
-        var item = db.getItem(r -> r.tableName(DELIVERY_STATE).key(key(delivery, sk)).consistentRead(true)).item();
+        var item = db.getItem(r -> r.tableName(tableForKey(key(delivery, sk))).key(key(delivery, sk)).consistentRead(true)).item();
         if (!sk.equals("FINAL") || !item.isEmpty()) return item;
-        return db.query(r -> r.tableName(DELIVERY_STATE).consistentRead(true)
+        return db.query(r -> r.tableName(STEP).consistentRead(true)
                 .keyConditionExpression("pk = :pk AND begins_with(sk, :prefix)")
                 .expressionAttributeValues(Map.of(":pk", s("DELIVERY#" + delivery), ":prefix", s("ATTEMPT#"))))
                 .items().stream().filter(i -> i.containsKey("result_event")).findFirst().orElse(Map.of());
     }
     public void requireNoOtherPrimary(String delivery, String expectedId) {
-        var items = db.query(r -> r.tableName(DELIVERY_STATE).consistentRead(true)
+        var items = db.query(r -> r.tableName(STEP).consistentRead(true)
                 .keyConditionExpression("pk = :pk AND begins_with(sk, :prefix)")
                 .expressionAttributeValues(Map.of(":pk", s("DELIVERY#" + delivery), ":prefix", s("ATTEMPT#")))).items();
         if (items.stream().anyMatch(i -> route(i) == 1 && !expectedId.equals(text(i, ATTEMPT_ID))))
             throw new IllegalStateException("Persisted primary provider differs from configuration");
     }
     public QueryResponse due(int shard, Instant now, int limit, Map<String, AttributeValue> cursor) {
-        return db.query(r -> r.tableName(DELIVERY_STATE).indexName(LifecycleIndex.NAME)
+        if (shard < 0 || shard >= RECOVERY_SHARDS) throw new IllegalArgumentException("Invalid recovery shard");
+        String table = shard < LifecycleIndex.SHARDS ? ORIGIN : STEP;
+        return db.query(r -> r.tableName(table).indexName(LifecycleIndex.NAME)
                 .keyConditionExpression("lifecycle_bucket = :bucket AND lifecycle_due <= :now")
-                .expressionAttributeValues(Map.of(":bucket", s(LifecycleIndex.bucket(shard)), ":now", n(now.toEpochMilli())))
+                .expressionAttributeValues(Map.of(":bucket", s(LifecycleIndex.bucket(shard % LifecycleIndex.SHARDS)), ":now", n(now.toEpochMilli())))
                 .limit(limit).exclusiveStartKey(cursor.isEmpty() ? null : cursor));
     }
     public void requireIndex() {
-        var index = db.describeTable(r -> r.tableName(DELIVERY_STATE)).table().globalSecondaryIndexes().stream()
+        for (String table : List.of(ORIGIN, STEP)) requireIndex(table);
+    }
+    private void requireIndex(String table) {
+        var index = db.describeTable(r -> r.tableName(table)).table().globalSecondaryIndexes().stream()
                 .filter(i -> i.indexName().equals(LifecycleIndex.NAME)).findFirst().orElseThrow(() ->
-                        new IllegalStateException("Install lifecycle_due_v1 before enabling lifecycle worker"));
+                        new IllegalStateException("Install lifecycle_due_v1 on " + table + " before enabling lifecycle worker"));
         if (index.indexStatus() != IndexStatus.ACTIVE || index.projection().projectionType() != ProjectionType.KEYS_ONLY
                 || !index.keySchema().equals(LifecycleIndex.definition().keySchema()))
             throw new IllegalStateException("Lifecycle index is not active or has an incompatible schema");
@@ -55,7 +61,7 @@ public class LifecycleRepository {
         if (now.isBefore(deadline)) return false;
         int route = route(item);
         try {
-            db.updateItem(r -> r.tableName(DELIVERY_STATE).key(key(delivery, text(item, SK)))
+            db.updateItem(r -> r.tableName(STEP).key(key(delivery, text(item, SK)))
                     .conditionExpression("#status = :old AND #version = :version AND #deadline <= :now")
                     .updateExpression("SET #status = :pending, #version = #version + :one, failure_reason = :reason, "
                             + "failure_observed_at = :at, updated_at = :at, lifecycle_due = :zero REMOVE lease_until, next_attempt_at")
@@ -72,7 +78,7 @@ public class LifecycleRepository {
     /** Once an Attempt exists, its own durable index replaces the pre-dispatch recovery entry. */
     public void releaseMeta(String delivery, Map<String, AttributeValue> meta) {
         if (!meta.containsKey(LifecycleIndex.BUCKET) || "2".equals(meta.getOrDefault("schema_version", n(1)).n())) return;
-        db.updateItem(r -> r.tableName(DELIVERY_STATE).key(key(delivery, "META"))
+        db.updateItem(r -> r.tableName(ORIGIN).key(key(delivery, "META"))
                 .conditionExpression("attribute_exists(pk)")
                 .updateExpression("REMOVE lifecycle_bucket, lifecycle_due"));
     }
@@ -81,7 +87,7 @@ public class LifecycleRepository {
         long due = deadline(child).toEpochMilli();
         if (parent.containsKey(LifecycleIndex.DUE) && Long.parseLong(parent.get(LifecycleIndex.DUE).n()) == due) return;
         try {
-            db.updateItem(r -> r.tableName(DELIVERY_STATE).key(key(delivery, text(parent, SK)))
+            db.updateItem(r -> r.tableName(STEP).key(key(delivery, text(parent, SK)))
                     .conditionExpression("#version = :version AND secondary_attempt_id = :child AND attribute_not_exists(lifecycle_closed)")
                     .updateExpression("SET lifecycle_due = :due")
                     .expressionAttributeNames(Map.of("#version", VERSION))
@@ -105,11 +111,11 @@ public class LifecycleRepository {
         finalItem.put("publish_state", s("PENDING")); finalItem.put(CREATED_AT, s(now.toString()));
         LifecycleIndex.add(finalItem, event.deliveryId(), 0);
         var writes = new ArrayList<TransactWriteItem>();
-        writes.add(TransactWriteItem.builder().update(Update.builder().tableName(DELIVERY_STATE).key(key(event.requestKey(), "META"))
+        writes.add(TransactWriteItem.builder().update(Update.builder().tableName(ORIGIN).key(key(event.requestKey(), "META"))
                 .conditionExpression("delivery_id = :execution AND attribute_not_exists(completion_event_id)")
                 .updateExpression("SET completion_event_id = :event REMOVE lifecycle_bucket, lifecycle_due")
                 .expressionAttributeValues(Map.of(":event", s(result.eventId()), ":execution", s(event.deliveryId()))).build()).build());
-        if (event.schemaVersion() < 2) writes.add(TransactWriteItem.builder().put(Put.builder().tableName(DELIVERY_STATE).item(finalItem)
+        if (event.schemaVersion() < 2) writes.add(TransactWriteItem.builder().put(Put.builder().tableName(STEP).item(finalItem)
                 .conditionExpression("attribute_not_exists(pk)").build()).build());
         writes.add(closeAttempt(event.deliveryId(), terminal, null, event.schemaVersion() >= 2 ? result : null));
         if (route(terminal) == 2) writes.add(closeAttempt(event.deliveryId(), parent, text(terminal, ATTEMPT_ID), null));
@@ -132,7 +138,7 @@ public class LifecycleRepository {
             values.put(":bucket", s(LifecycleIndex.bucket(delivery))); values.put(":zero", n(0));
             update = "SET lifecycle_closed = :closed, result_event = :result, publish_state = :pending, lifecycle_bucket = :bucket, lifecycle_due = :zero";
         }
-        return TransactWriteItem.builder().update(Update.builder().tableName(DELIVERY_STATE).key(key(delivery, text(item, SK)))
+        return TransactWriteItem.builder().update(Update.builder().tableName(STEP).key(key(delivery, text(item, SK)))
                 .conditionExpression(condition).updateExpression(update)
                 .expressionAttributeNames(Map.of("#version", VERSION, "#status", STATUS)).expressionAttributeValues(values).build()).build();
     }
@@ -142,7 +148,7 @@ public class LifecycleRepository {
         var publication = mapper.readValue(event, DeliveryFinalized.class);
         String publicationKey = publication.schemaVersion() >= 2 ? "ATTEMPT#" + publication.attemptId() : "FINAL";
         try {
-            db.updateItem(r -> r.tableName(DELIVERY_STATE).key(key(delivery, publicationKey))
+            db.updateItem(r -> r.tableName(STEP).key(key(delivery, publicationKey))
                     .conditionExpression("publish_state = :pending AND result_event = :event")
                     .updateExpression("SET publish_state = :done, published_at = :now REMOVE lifecycle_bucket, lifecycle_due")
                     .expressionAttributeValues(Map.of(":pending", s("PENDING"), ":done", s("PUBLISHED"), ":event", s(event), ":now", s(now.toString()))));

@@ -28,7 +28,7 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
 
-import static event.common.dynamodb.DynamoDbTableNames.DELIVERY_STATE;
+import static event.common.dynamodb.DynamoDbTableNames.*;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
@@ -76,9 +76,9 @@ class LifecycleDynamoDbTest {
     @AfterEach void cleanup() {
         for (var event : events) {
             for (String sk : List.of("META", "FINAL", "ATTEMPT#" + id(event, 1), "ATTEMPT#" + id(event, 2)))
-                db.deleteItem(r -> r.tableName(DELIVERY_STATE).key(LifecycleRepository.key(event.deliveryId(), sk)));
+                db.deleteItem(r -> r.tableName(tableForKey(LifecycleRepository.key(event.deliveryId(), sk))).key(LifecycleRepository.key(event.deliveryId(), sk)));
         }
-        receipts.forEach(id -> db.deleteItem(r -> r.tableName(DELIVERY_STATE).key(ReceiptResultRepository.receiptKey(id))));
+        receipts.forEach(id -> db.deleteItem(r -> r.tableName(tableForKey(ReceiptResultRepository.receiptKey(id))).key(ReceiptResultRepository.receiptKey(id))));
         metrics.close();
     }
     @AfterAll static void close() { db.close(); }
@@ -235,7 +235,7 @@ class LifecycleDynamoDbTest {
         try {
             assertThrows(IllegalStateException.class, () -> service.reconcile(event.deliveryId()));
             assertEquals(0, primaryCalls.get());
-        } finally { db.deleteItem(r -> r.tableName(DELIVERY_STATE).key(LifecycleRepository.key(event.deliveryId(), "ATTEMPT#" + other))); }
+        } finally { db.deleteItem(r -> r.tableName(tableForKey(LifecycleRepository.key(event.deliveryId(), "ATTEMPT#" + other))).key(LifecycleRepository.key(event.deliveryId(), "ATTEMPT#" + other))); }
     }
 
     @Test void staleExpirySnapshotCannotOverwriteReceiptSuccess() {
@@ -252,13 +252,15 @@ class LifecycleDynamoDbTest {
         Set<String> found = new HashSet<>();
         long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
         while (found.size() < 2 && System.nanoTime() < until) {
-            Map<String, AttributeValue> cursor = Map.of();
-            do {
-                var page = lifecycle.due(shard, NOW, 1, cursor);
-                page.items().stream().filter(i -> i.get("pk").s().equals("DELIVERY#" + event.deliveryId()))
-                        .forEach(i -> found.add(i.get("sk").s()));
-                cursor = page.lastEvaluatedKey();
-            } while (!cursor.isEmpty());
+            for (int tableShard : List.of(shard, shard + LifecycleIndex.SHARDS)) {
+                Map<String, AttributeValue> cursor = Map.of();
+                do {
+                    var page = lifecycle.due(tableShard, NOW, 1, cursor);
+                    page.items().stream().filter(i -> i.get("pk").s().equals("DELIVERY#" + event.deliveryId()))
+                            .forEach(i -> found.add(i.get("sk").s()));
+                    cursor = page.lastEvaluatedKey();
+                } while (!cursor.isEmpty());
+            }
             if (found.size() < 2) Thread.sleep(20);
         }
         assertEquals(Set.of("META", "ATTEMPT#" + id(event, 1)), found);
@@ -291,9 +293,9 @@ class LifecycleDynamoDbTest {
         assertThrows(ConditionalCheckFailedException.class, () -> attempts.markAccepted(originalAttempt, NOW, NOW));
         var late = ReceiptEvent.received(UUID.randomUUID().toString(), event.deliveryId(), id(event, 1), PRIMARY, 1, ReceiptOutcome.DELIVERED, "DELIVERED", NOW, NOW, 1);
         assertEquals("late_discarded", sources.apply(late, NOW).outcome());
-        assertTrue(db.getItem(r -> r.tableName(DELIVERY_STATE).key(ReceiptResultRepository.receiptKey(late.eventId())).consistentRead(true)).item().isEmpty());
-        for (String receipt : receipts) assertTrue(db.getItem(r -> r.tableName(DELIVERY_STATE).key(ReceiptResultRepository.receiptKey(receipt)).consistentRead(true)).item().isEmpty());
-        assertEquals(1, db.query(r -> r.tableName(DELIVERY_STATE).consistentRead(true).keyConditionExpression("pk = :pk")
+        assertTrue(db.getItem(r -> r.tableName(tableForKey(ReceiptResultRepository.receiptKey(late.eventId()))).key(ReceiptResultRepository.receiptKey(late.eventId())).consistentRead(true)).item().isEmpty());
+        for (String receipt : receipts) assertTrue(db.getItem(r -> r.tableName(tableForKey(ReceiptResultRepository.receiptKey(receipt))).key(ReceiptResultRepository.receiptKey(receipt)).consistentRead(true)).item().isEmpty());
+        assertEquals(0, db.query(r -> r.tableName(STEP).consistentRead(true).keyConditionExpression("pk = :pk")
                 .expressionAttributeValues(Map.of(":pk", AttributeValue.fromS("DELIVERY#" + event.deliveryId())))).count());
     }
 
@@ -313,7 +315,7 @@ class LifecycleDynamoDbTest {
         receipts.add(delivered.eventId()); sources.apply(delivered, clock.now); service.reconcile(event.deliveryId());
         assertEquals(2, item(event, 1).get(DeliveryCompletion.RECEIPT_IDS).ss().size());
         new DeliveryCompactor(db).compact(published.getFirst());
-        for (String receipt : receipts) assertTrue(db.getItem(r -> r.tableName(DELIVERY_STATE).key(ReceiptResultRepository.receiptKey(receipt)).consistentRead(true)).item().isEmpty());
+        for (String receipt : receipts) assertTrue(db.getItem(r -> r.tableName(tableForKey(ReceiptResultRepository.receiptKey(receipt))).key(ReceiptResultRepository.receiptKey(receipt)).consistentRead(true)).item().isEmpty());
     }
 
     @Test void bothRoutesCompactAndStaleSecondaryPlanCannotRecreateAttempt() {
@@ -331,11 +333,11 @@ class LifecycleDynamoDbTest {
     @Test void unpublishedOrLegacyUntrackedExecutionIsRetained() {
         var event = event(false); accepted(event); success(event, 1); service.reconcile(event.deliveryId());
         var result = published.getFirst();
-        db.updateItem(r -> r.tableName(DELIVERY_STATE).key(LifecycleRepository.key(event.deliveryId(), "FINAL"))
+        db.updateItem(r -> r.tableName(tableForKey(LifecycleRepository.key(event.deliveryId(), "FINAL"))).key(LifecycleRepository.key(event.deliveryId(), "FINAL"))
                 .updateExpression("SET publish_state = :pending").expressionAttributeValues(Map.of(":pending", AttributeValue.fromS("PENDING"))));
         assertThrows(IllegalStateException.class, () -> new DeliveryCompactor(db).compact(result));
         lifecycle.published(event.deliveryId(), LifecycleRepository.text(lifecycle.read(event.deliveryId(), "FINAL"), "result_event"), NOW);
-        db.updateItem(r -> r.tableName(DELIVERY_STATE).key(LifecycleRepository.key(event.deliveryId(), "ATTEMPT#" + id(event, 1)))
+        db.updateItem(r -> r.tableName(tableForKey(LifecycleRepository.key(event.deliveryId(), "ATTEMPT#" + id(event, 1)))).key(LifecycleRepository.key(event.deliveryId(), "ATTEMPT#" + id(event, 1)))
                 .updateExpression("REMOVE receipt_tracking_version"));
         assertThrows(IllegalStateException.class, () -> new DeliveryCompactor(db).compact(result));
         assertTrue(lifecycle.read(event.deliveryId(), "META").containsKey("payload")); assertFalse(item(event, 1).isEmpty());
@@ -344,7 +346,7 @@ class LifecycleDynamoDbTest {
     @Test void failedConditionalDeleteRollsBackEntireCompaction() {
         var event = event(false); accepted(event); success(event, 1); service.reconcile(event.deliveryId());
         String receipt = receipts.getFirst();
-        db.updateItem(r -> r.tableName(DELIVERY_STATE).key(ReceiptResultRepository.receiptKey(receipt))
+        db.updateItem(r -> r.tableName(tableForKey(ReceiptResultRepository.receiptKey(receipt))).key(ReceiptResultRepository.receiptKey(receipt))
                 .updateExpression("SET delivery_id = :different").expressionAttributeValues(Map.of(":different", AttributeValue.fromS("different-test-delivery"))));
         assertThrows(TransactionCanceledException.class, () -> new DeliveryCompactor(db).compact(published.getFirst()));
         assertTrue(lifecycle.read(event.deliveryId(), "META").containsKey("payload"));
@@ -418,7 +420,7 @@ class LifecycleDynamoDbTest {
         item.put("payload", AttributeValue.fromS(mapper.writeValueAsString(event.payload())));
         item.put("occurred_at", AttributeValue.fromS(NOW.toString())); item.put("fallback_allowed", AttributeValue.fromBool(fallback));
         LifecycleIndex.add(item, event.deliveryId(), 0);
-        db.putItem(r -> r.tableName(DELIVERY_STATE).item(item)); return event;
+        db.putItem(r -> r.tableName(tableForKey(item)).item(item)); return event;
     }
     DispatchAttempt claim(DeliveryEvent event) { return attempts.claim(event, id(event, 1), PRIMARY, NOW, NOW.plusSeconds(1), NOW.plusSeconds(3)).attempt(); }
     void accepted(DeliveryEvent event) { attempts.markAccepted(claim(event), NOW, NOW); }

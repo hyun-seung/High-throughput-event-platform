@@ -31,7 +31,7 @@ import static event.common.dynamodb.DynamoDbAttributeNames.SK;
 import static event.common.dynamodb.DynamoDbAttributeNames.STATUS;
 import static event.common.dynamodb.DynamoDbAttributeNames.TENANT_ID;
 import static event.common.dynamodb.DynamoDbAttributeNames.UPDATED_AT;
-import static event.common.dynamodb.DynamoDbTableNames.DELIVERY_STATE;
+import static event.common.dynamodb.DynamoDbTableNames.ORIGIN;
 
 @Repository
 public class DeliveryRepository {
@@ -65,7 +65,7 @@ public class DeliveryRepository {
         DeliveryEvent candidate = event.schemaVersion() >= 2 ? event.execution(java.util.UUID.randomUUID().toString()) : event;
         Map<String, AttributeValue> item = toItem(candidate);
         PutItemRequest request = PutItemRequest.builder()
-                .tableName(DELIVERY_STATE)
+                .tableName(ORIGIN)
                 .item(item)
                 .conditionExpression("attribute_not_exists(#pk) AND attribute_not_exists(#sk)")
                 .expressionAttributeNames(Map.of("#pk", PK, "#sk", SK))
@@ -84,7 +84,7 @@ public class DeliveryRepository {
 
     private SavedDelivery loadExistingDelivery(DeliveryEvent event) {
         Map<String, AttributeValue> existing = dynamoDbClient.getItem(GetItemRequest.builder()
-                        .tableName(DELIVERY_STATE)
+                        .tableName(ORIGIN)
                         .key(key(event.requestKey()))
                         .consistentRead(true)
                         .build())

@@ -53,7 +53,7 @@ import static event.common.dynamodb.DynamoDbAttributeNames.SK;
 import static event.common.dynamodb.DynamoDbAttributeNames.STATUS;
 import static event.common.dynamodb.DynamoDbAttributeNames.UPDATED_AT;
 import static event.common.dynamodb.DynamoDbAttributeNames.VERSION;
-import static event.common.dynamodb.DynamoDbTableNames.DELIVERY_STATE;
+import static event.common.dynamodb.DynamoDbTableNames.*;
 
 @Repository
 @RequiredArgsConstructor
@@ -129,7 +129,7 @@ public class DispatchAttemptRepository implements DispatchAttemptStore {
         );
 
         UpdateItemRequest request = UpdateItemRequest.builder()
-                .tableName(DELIVERY_STATE)
+                .tableName(STEP)
                 .key(key)
                 .conditionExpression("attribute_not_exists(#pk)")
                 .updateExpression("SET #attemptId = :attemptId, #deliveryId = :deliveryId, "
@@ -145,11 +145,11 @@ public class DispatchAttemptRepository implements DispatchAttemptStore {
 
         try {
             dynamoDbClient.transactWriteItems(TransactWriteItemsRequest.builder().transactItems(
-                    TransactWriteItem.builder().conditionCheck(ConditionCheck.builder().tableName(DELIVERY_STATE)
+                    TransactWriteItem.builder().conditionCheck(ConditionCheck.builder().tableName(ORIGIN)
                             .key(DeliveryCompletion.metaKey(event.requestKey()))
                             .conditionExpression("attribute_exists(pk) AND delivery_id = :execution AND attribute_not_exists(completion_event_id)")
                             .expressionAttributeValues(Map.of(":execution", text(event.deliveryId()))).build()).build(),
-                    TransactWriteItem.builder().update(Update.builder().tableName(DELIVERY_STATE).key(request.key())
+                    TransactWriteItem.builder().update(Update.builder().tableName(STEP).key(request.key())
                             .conditionExpression(request.conditionExpression()).updateExpression(request.updateExpression())
                             .expressionAttributeNames(request.expressionAttributeNames()).expressionAttributeValues(request.expressionAttributeValues()).build()).build()).build());
             if (!event.requestKey().equals(event.deliveryId())) cache.removeSchedule(event.requestKey());
@@ -167,7 +167,7 @@ public class DispatchAttemptRepository implements DispatchAttemptStore {
         if (!event.fallbackAllowed()) return Optional.empty();
         var key = key(event.deliveryId(), primaryAttemptId);
         for (int retry = 0; retry < 2; retry++) {
-            var item = dynamoDbClient.getItem(GetItemRequest.builder().tableName(DELIVERY_STATE).key(key)
+            var item = dynamoDbClient.getItem(GetItemRequest.builder().tableName(STEP).key(key)
                     .consistentRead(true).build()).item();
             if (item.isEmpty() || !DECISION_PENDING.equals(item.get(STATUS).s())) {
                 if (completionRecorded(event)) return Optional.empty();
@@ -183,7 +183,7 @@ public class DispatchAttemptRepository implements DispatchAttemptStore {
             var route = new SecondaryRoute(DeliveryIds.attemptId(event.deliveryId(), provider, 2, 1), provider,
                     Instant.parse(item.get(FAILURE_OBSERVED_AT).s()).plus(ttl));
             try {
-                dynamoDbClient.updateItem(UpdateItemRequest.builder().tableName(DELIVERY_STATE).key(key)
+                dynamoDbClient.updateItem(UpdateItemRequest.builder().tableName(STEP).key(key)
                         .conditionExpression("#status = :pending AND #version = :version AND attribute_not_exists(#secondary) AND attribute_not_exists(lifecycle_closed)")
                         .updateExpression("SET #secondary = :secondary, #provider = :provider, #deadline = :deadline")
                         .expressionAttributeNames(Map.of("#status", STATUS, "#version", VERSION, "#secondary", SECONDARY_ATTEMPT,
@@ -204,7 +204,7 @@ public class DispatchAttemptRepository implements DispatchAttemptStore {
         if (!now.isBefore(source.deadline())) return DispatchClaim.decisionPending();
         if (now.isBefore(command.notBefore())) return DispatchClaim.retryWait();
         try {
-            var result = dynamoDbClient.updateItem(r -> r.tableName(DELIVERY_STATE).key(key(source.deliveryId(), source.attemptId()))
+            var result = dynamoDbClient.updateItem(r -> r.tableName(STEP).key(key(source.deliveryId(), source.attemptId()))
                     .conditionExpression("#version = :version AND retry_count = :source AND (#status = :processing OR #status = :accepted OR #status = :review) "
                             + "AND deadline_at = :deadline AND deadline_at > :nowMs AND attribute_not_exists(lifecycle_closed)")
                     .updateExpression("SET #status = :processing, #version = #version + :one, retry_count = :target, "
@@ -223,7 +223,7 @@ public class DispatchAttemptRepository implements DispatchAttemptStore {
     @Override
     public void markAccepted(DispatchAttempt attempt, Instant providerProcessedAt, Instant now) {
         UpdateItemRequest request = UpdateItemRequest.builder()
-                .tableName(DELIVERY_STATE)
+                .tableName(STEP)
                 .key(key(attempt.deliveryId(), attempt.attemptId()))
                 .conditionExpression("#status = :processing AND #version = :version")
                 .updateExpression("SET #status = :accepted, #providerProcessedAt = :providerProcessedAt, "
@@ -269,7 +269,7 @@ public class DispatchAttemptRepository implements DispatchAttemptStore {
         } else {
             update += " REMOVE #lease, #next";
         }
-        dynamoDbClient.updateItem(UpdateItemRequest.builder().tableName(DELIVERY_STATE)
+        dynamoDbClient.updateItem(UpdateItemRequest.builder().tableName(STEP)
                 .key(key(attempt.deliveryId(), attempt.attemptId()))
                 .conditionExpression("#status = :processing AND #version = :version")
                 .updateExpression(update).expressionAttributeNames(names).expressionAttributeValues(values).build());
@@ -281,7 +281,7 @@ public class DispatchAttemptRepository implements DispatchAttemptStore {
         // Re-read once if the original worker persists its result while recovery is racing.
         for (int read = 0; read < 2; read++) {
             Map<String, AttributeValue> item = dynamoDbClient.getItem(GetItemRequest.builder()
-                            .tableName(DELIVERY_STATE)
+                            .tableName(STEP)
                             .key(key)
                             .consistentRead(true)
                             .build())
@@ -331,7 +331,7 @@ public class DispatchAttemptRepository implements DispatchAttemptStore {
         long deadline = Long.parseLong(item.get(deadlineAttribute).n());
         long version = Long.parseLong(item.get(VERSION).n());
         if (now.toEpochMilli() >= deadline) {
-            dynamoDbClient.updateItem(UpdateItemRequest.builder().tableName(DELIVERY_STATE).key(key)
+            dynamoDbClient.updateItem(UpdateItemRequest.builder().tableName(STEP).key(key)
                     .conditionExpression("#status = :scheduled AND #version = :version AND #deadline <= :nowMillis")
                     .updateExpression("SET #status = :pending, #reason = :expired, #observed = :at, "
                             + "#updated = :at, #version = #version + :one, lifecycle_due = :nowMillis REMOVE #next")
@@ -347,7 +347,7 @@ public class DispatchAttemptRepository implements DispatchAttemptStore {
         if (Long.parseLong(item.get(NEXT_ATTEMPT_AT).n()) > now.toEpochMilli()) {
             return DispatchClaim.retryWait();
         }
-        var result = dynamoDbClient.updateItem(UpdateItemRequest.builder().tableName(DELIVERY_STATE).key(key)
+        var result = dynamoDbClient.updateItem(UpdateItemRequest.builder().tableName(STEP).key(key)
                 .conditionExpression("#status = :scheduled AND #version = :version AND #next <= :nowMillis "
                         + "AND #deadline > :nowMillis AND #count < :max")
                 .updateExpression("SET #status = :processing, #version = #version + :one, #count = #count + :one, "
@@ -375,7 +375,7 @@ public class DispatchAttemptRepository implements DispatchAttemptStore {
 
     private void markReviewRequired(Map<String, AttributeValue> key, long version, Instant now) {
         dynamoDbClient.updateItem(UpdateItemRequest.builder()
-                .tableName(DELIVERY_STATE)
+                .tableName(STEP)
                 .key(key)
                 .conditionExpression("#status = :processing AND #version = :version AND #leaseUntil <= :nowEpochMillis")
                 .updateExpression("SET #status = :review, #reviewReason = :reason, #updatedAt = :now, #version = #version + :one")
@@ -398,7 +398,7 @@ public class DispatchAttemptRepository implements DispatchAttemptStore {
     }
 
     private boolean completionRecorded(DeliveryEvent event) {
-        var origin = dynamoDbClient.getItem(r -> r.tableName(DELIVERY_STATE).key(DeliveryCompletion.metaKey(event.requestKey()))
+        var origin = dynamoDbClient.getItem(r -> r.tableName(ORIGIN).key(DeliveryCompletion.metaKey(event.requestKey()))
                 .consistentRead(true)).item();
         return origin.isEmpty() || !event.deliveryId().equals(origin.get(DELIVERY_ID).s()) || origin.containsKey(DeliveryCompletion.FENCE);
     }

@@ -23,7 +23,7 @@ import java.time.Instant;
 import java.util.*;
 
 import static event.common.dynamodb.DynamoDbAttributeNames.*;
-import static event.common.dynamodb.DynamoDbTableNames.DELIVERY_STATE;
+import static event.common.dynamodb.DynamoDbTableNames.*;
 
 @Repository
 public class ReceiptResultRepository {
@@ -168,18 +168,18 @@ public class ReceiptResultRepository {
                     values.put(":closed", AttributeValue.fromBool(true));
                     expression = expression.replace(" REMOVE", ", result_event = :result, publish_state = :pending, lifecycle_closed = :closed REMOVE");
                     var writes = new ArrayList<TransactWriteItem>();
-                    writes.add(TransactWriteItem.builder().update(Update.builder().tableName(DELIVERY_STATE)
+                    writes.add(TransactWriteItem.builder().update(Update.builder().tableName(ORIGIN)
                             .key(DeliveryCompletion.metaKey(event.requestKey()))
                             .conditionExpression("delivery_id = :execution AND attribute_not_exists(completion_event_id)")
                             .updateExpression("SET completion_event_id = :event REMOVE lifecycle_bucket, lifecycle_due")
                             .expressionAttributeValues(Map.of(":execution", text(event.deliveryId()), ":event", text(result.eventId()))).build()).build());
-                    writes.add(TransactWriteItem.builder().update(Update.builder().tableName(DELIVERY_STATE).key(key)
+                    writes.add(TransactWriteItem.builder().update(Update.builder().tableName(STEP).key(key)
                             .conditionExpression("#state = :state AND #version = :version AND #deadline > :nowMs AND attribute_not_exists(lifecycle_closed)")
                             .updateExpression(expression).expressionAttributeNames(names).expressionAttributeValues(values).build()).build());
                     if (route == 2) {
                         String parentId = secondaryParent(receipt);
                         var parentKey = attemptKey(receipt.deliveryId(), parentId); var parent = read(parentKey);
-                        writes.add(TransactWriteItem.builder().update(Update.builder().tableName(DELIVERY_STATE).key(parentKey)
+                        writes.add(TransactWriteItem.builder().update(Update.builder().tableName(STEP).key(parentKey)
                                 .conditionExpression("#version = :version AND secondary_attempt_id = :child AND attribute_not_exists(lifecycle_closed)")
                                 .updateExpression("SET lifecycle_closed = :closed REMOVE lifecycle_bucket, lifecycle_due")
                                 .expressionAttributeNames(Map.of("#version", VERSION))
@@ -190,7 +190,7 @@ public class ReceiptResultRepository {
                     return new ReceiptApplication("delivered", false);
                 }
                 if (modern) {
-                    db.updateItem(UpdateItemRequest.builder().tableName(DELIVERY_STATE).key(key)
+                    db.updateItem(UpdateItemRequest.builder().tableName(STEP).key(key)
                             .conditionExpression("#state = :state AND #version = :version AND #deadline > :nowMs")
                             .updateExpression(expression).expressionAttributeNames(names).expressionAttributeValues(values).build());
                     cache.schedule(receipt.deliveryId(), failure == null || failure.state() == DispatchFailureDecision.State.DECISION_PENDING
@@ -198,9 +198,9 @@ public class ReceiptResultRepository {
                     return new ReceiptApplication(nextState.toLowerCase(Locale.ROOT), resume);
                 }
                 db.transactWriteItems(TransactWriteItemsRequest.builder().transactItems(
-                        TransactWriteItem.builder().put(Put.builder().tableName(DELIVERY_STATE).item(ledger)
+                        TransactWriteItem.builder().put(Put.builder().tableName(STEP).item(ledger)
                                 .conditionExpression("attribute_not_exists(pk)").build()).build(),
-                        TransactWriteItem.builder().update(Update.builder().tableName(DELIVERY_STATE).key(key)
+                        TransactWriteItem.builder().update(Update.builder().tableName(STEP).key(key)
                                 .conditionExpression("#state = :state AND #version = :version AND #deadline > :nowMs")
                                 .updateExpression(expression).expressionAttributeNames(names).expressionAttributeValues(values)
                                 .build()).build()).build());
@@ -217,7 +217,7 @@ public class ReceiptResultRepository {
     public Optional<DeliveryEvent> loadDelivery(String deliveryId) {
         var item = read(DeliveryCompletion.metaKey(deliveryId));
         if (item.isEmpty()) {
-            var page = db.query(r -> r.tableName(DELIVERY_STATE).consistentRead(true)
+            var page = db.query(r -> r.tableName(STEP).consistentRead(true)
                     .keyConditionExpression("pk = :pk")
                     .expressionAttributeValues(Map.of(":pk", text("DELIVERY#" + deliveryId))).limit(1));
             if (page.items().isEmpty() || !page.items().getFirst().containsKey("request_key")) return Optional.empty();
@@ -248,7 +248,7 @@ public class ReceiptResultRepository {
     }
 
     private Map<String, AttributeValue> read(Map<String, AttributeValue> key) {
-        return db.getItem(GetItemRequest.builder().tableName(DELIVERY_STATE).key(key).consistentRead(true).build()).item();
+        return db.getItem(GetItemRequest.builder().tableName(tableForKey(key)).key(key).consistentRead(true).build()).item();
     }
 
     public static Map<String, AttributeValue> attemptKey(String deliveryId, String attemptId) {

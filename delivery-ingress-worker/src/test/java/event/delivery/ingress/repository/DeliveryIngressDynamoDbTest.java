@@ -24,7 +24,7 @@ import java.util.UUID;
 import java.util.concurrent.*;
 
 import static event.common.dynamodb.DynamoDbAttributeNames.*;
-import static event.common.dynamodb.DynamoDbTableNames.DELIVERY_STATE;
+import static event.common.dynamodb.DynamoDbTableNames.*;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
@@ -67,7 +67,7 @@ class DeliveryIngressDynamoDbTest {
 
     @AfterEach
     void removeOwnRecord() {
-        client.deleteItem(request -> request.tableName(DELIVERY_STATE).key(key()));
+        client.deleteItem(request -> request.tableName(tableForKey(key())).key(key()));
     }
 
     @AfterAll
@@ -108,7 +108,7 @@ class DeliveryIngressDynamoDbTest {
             cache.complete(first.requestKey(), fingerprint, Instant.now());
             assertTrue(repo.saveOrLoad(first).completed());
             // Simulate the deletion boundary; SQL-before-cleanup is tested in the result worker.
-            client.deleteItem(r -> r.tableName(DELIVERY_STATE).key(key()));
+            client.deleteItem(r -> r.tableName(tableForKey(key())).key(key()));
             assertTrue(repo.saveOrLoad(first).completed());
             redis.delete("delivery:completed:" + first.requestKey());
             var next = repo.saveOrLoad(first).event(); assertNotEquals(active.deliveryId(), next.deliveryId());
@@ -197,7 +197,7 @@ class DeliveryIngressDynamoDbTest {
         var changed = DeliveryEvent.requested(first.deliveryId(), first.tenantId(), first.deliveryType(),
                 first.payload(), first.occurredAt(), true);
         assertThrows(IdempotencyConflictException.class, () -> repository.saveOrLoad(changed));
-        client.updateItem(request -> request.tableName(DELIVERY_STATE).key(key()).updateExpression("REMOVE fallback_allowed"));
+        client.updateItem(request -> request.tableName(tableForKey(key())).key(key()).updateExpression("REMOVE fallback_allowed"));
         assertFalse(repository.saveOrLoad(first).event().fallbackAllowed());
         assertThrows(IdempotencyConflictException.class, () -> repository.saveOrLoad(changed));
     }
@@ -220,7 +220,7 @@ class DeliveryIngressDynamoDbTest {
         completion.put(event.common.lifecycle.DeliveryCompletion.FINGERPRINT, AttributeValue.fromS(
                 event.common.lifecycle.DeliveryCompletion.fingerprint(first.deliveryId(), first.tenantId(), first.deliveryType(), false,
                         JsonMapper.builder().build().writeValueAsString(event.common.delivery.DeliveryPayloads.canonicalize(first.payload())))));
-        client.putItem(r -> r.tableName(DELIVERY_STATE).item(completion));
+        client.putItem(r -> r.tableName(tableForKey(completion)).item(completion));
         consumer.consume(retryAt(first.occurredAt().plusSeconds(86400)));
         assertTrue(repository.saveOrLoad(first).completed());
         var changed = DeliveryEvent.requested(first.deliveryId(), first.tenantId(), first.deliveryType(), Map.of("body", "changed"), first.occurredAt());
@@ -233,7 +233,7 @@ class DeliveryIngressDynamoDbTest {
 
     @Test void finalizedButNotCompactedRequestAlsoSkipsNewDispatch() {
         repository.saveOrLoad(first);
-        client.updateItem(r -> r.tableName(DELIVERY_STATE).key(key()).updateExpression("SET completion_event_id = :id")
+        client.updateItem(r -> r.tableName(tableForKey(key())).key(key()).updateExpression("SET completion_event_id = :id")
                 .expressionAttributeValues(Map.of(":id", AttributeValue.fromS(event.common.lifecycle.DeliveryFinalized.eventId(first.deliveryId())))));
         consumer.consume(retryAt(first.occurredAt().plusSeconds(30)));
         verifyNoInteractions(producer);
@@ -245,7 +245,7 @@ class DeliveryIngressDynamoDbTest {
     }
 
     private Map<String, AttributeValue> stored() {
-        return client.getItem(request -> request.tableName(DELIVERY_STATE).key(key()).consistentRead(true)).item();
+        return client.getItem(request -> request.tableName(tableForKey(key())).key(key()).consistentRead(true)).item();
     }
     private static event.common.metrics.DeliveryMetrics metrics() {
         return new event.common.metrics.DeliveryMetrics(new io.micrometer.core.instrument.simple.SimpleMeterRegistry());

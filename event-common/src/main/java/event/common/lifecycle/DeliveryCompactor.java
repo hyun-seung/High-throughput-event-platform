@@ -6,7 +6,7 @@ import tools.jackson.databind.json.JsonMapper;
 import java.time.Instant;
 import java.util.*;
 import static event.common.dynamodb.DynamoDbAttributeNames.*;
-import static event.common.dynamodb.DynamoDbTableNames.DELIVERY_STATE;
+import static event.common.dynamodb.DynamoDbTableNames.*;
 import static event.common.lifecycle.DeliveryCompletion.*;
 
 /** Caller must first obtain this exact result from committed SQL history + notification + cleanup reservation. */
@@ -41,7 +41,7 @@ public class DeliveryCompactor {
                 : "PUBLISHED".equals(value(finalItem, "publish_state")))
                 || !result.equals(mapper.readValue(value(finalItem, "result_event"), DeliveryFinalized.class)))
             throw new IllegalStateException("Durable final result does not match committed SQL result");
-        var page = db.query(r -> r.tableName(DELIVERY_STATE).consistentRead(true)
+        var page = db.query(r -> r.tableName(STEP).consistentRead(true)
                 .overrideConfiguration(c -> c.apiCallTimeout(java.time.Duration.ofSeconds(10)).apiCallAttemptTimeout(java.time.Duration.ofSeconds(5)))
                 .projectionExpression("pk, sk, attempt_id, #version, lifecycle_closed, receipt_tracking_version, receipt_marker_ids, receipt_event_id")
                 .expressionAttributeNames(Map.of("#version", VERSION))
@@ -49,12 +49,12 @@ public class DeliveryCompactor {
                 .limit(100));
         if (!page.lastEvaluatedKey().isEmpty()) throw new IllegalStateException("Unexpected delivery partition size; retain for review");
         var attempts = page.items().stream().filter(i -> value(i, SK).startsWith("ATTEMPT#")).toList();
-        if (page.items().size() != attempts.size() + (result.schemaVersion() < 2 ? 2 : 0) || attempts.size() != result.routeOrder()
+        if (page.items().size() != attempts.size() + (result.schemaVersion() < 2 ? 1 : 0) || attempts.size() != result.routeOrder()
                 || attempts.stream().noneMatch(i -> result.attemptId().equals(value(i, ATTEMPT_ID))))
             throw new IllegalStateException("Unexpected execution items; retain for review");
         var writes = new ArrayList<TransactWriteItem>();
         if (result.schemaVersion() >= 2) {
-            writes.add(TransactWriteItem.builder().delete(Delete.builder().tableName(DELIVERY_STATE).key(metaKey(result.requestKey()))
+            writes.add(TransactWriteItem.builder().delete(Delete.builder().tableName(ORIGIN).key(metaKey(result.requestKey()))
                     .conditionExpression("delivery_id = :execution AND completion_event_id = :event AND payload = :payload")
                     .expressionAttributeValues(Map.of(":execution", s(result.deliveryId()), ":event", s(result.eventId()), ":payload", meta.get(PAYLOAD)))
                     .build()).build());
@@ -70,11 +70,11 @@ public class DeliveryCompactor {
                     Boolean.TRUE.equals(meta.getOrDefault(FALLBACK_ALLOWED, AttributeValue.fromBool(false)).bool()), value(meta, PAYLOAD))));
             compact.put("result_hash", s(resultHash)); compact.put("final_outcome", s(result.outcome()));
             compact.put("finalized_at", s(result.finalizedAt().toString())); compact.put("compacted_at", s(Instant.now().toString()));
-            writes.add(TransactWriteItem.builder().put(Put.builder().tableName(DELIVERY_STATE).item(compact)
+            writes.add(TransactWriteItem.builder().put(Put.builder().tableName(ORIGIN).item(compact)
                     .conditionExpression("completion_event_id = :event AND payload = :payload")
                     .expressionAttributeValues(Map.of(":event", s(result.eventId()), ":payload", meta.get(PAYLOAD))).build()).build());
         }
-        if (result.schemaVersion() < 2) writes.add(TransactWriteItem.builder().delete(Delete.builder().tableName(DELIVERY_STATE).key(key(result.deliveryId(), "FINAL"))
+        if (result.schemaVersion() < 2) writes.add(TransactWriteItem.builder().delete(Delete.builder().tableName(STEP).key(key(result.deliveryId(), "FINAL"))
                 .conditionExpression("publish_state = :published AND result_event = :event")
                 .expressionAttributeValues(Map.of(":published", s("PUBLISHED"), ":event", finalItem.get("result_event"))).build()).build());
         var receiptIds = new HashSet<String>();
@@ -82,7 +82,7 @@ public class DeliveryCompactor {
             if (!Boolean.TRUE.equals(attempt.getOrDefault("lifecycle_closed", AttributeValue.fromBool(false)).bool())
                     || !"1".equals(attempt.getOrDefault(TRACKING_VERSION, AttributeValue.fromN("0")).n()))
                 throw new IllegalStateException("Unclosed or legacy untracked attempt; retain all data");
-            writes.add(TransactWriteItem.builder().delete(Delete.builder().tableName(DELIVERY_STATE).key(key(result.deliveryId(), value(attempt, SK)))
+            writes.add(TransactWriteItem.builder().delete(Delete.builder().tableName(STEP).key(key(result.deliveryId(), value(attempt, SK)))
                     .conditionExpression("#version = :version AND lifecycle_closed = :closed")
                     .expressionAttributeNames(Map.of("#version", VERSION))
                     .expressionAttributeValues(Map.of(":version", attempt.get(VERSION), ":closed", AttributeValue.fromBool(true))).build()).build());
@@ -91,7 +91,7 @@ public class DeliveryCompactor {
                 throw new IllegalStateException("Incomplete receipt marker manifest; retain all data");
         }
         for (String receipt : receiptIds) {
-            writes.add(TransactWriteItem.builder().delete(Delete.builder().tableName(DELIVERY_STATE)
+            writes.add(TransactWriteItem.builder().delete(Delete.builder().tableName(STEP)
                     .key(Map.of(PK, s("RECEIPT#" + receipt), SK, s("META")))
                     .conditionExpression("attribute_not_exists(pk) OR delivery_id = :delivery")
                     .expressionAttributeValues(Map.of(":delivery", s(result.deliveryId()))).build()).build());
@@ -108,7 +108,7 @@ public class DeliveryCompactor {
         return true;
     }
     private Map<String, AttributeValue> read(String delivery, String sk) {
-        return db.getItem(r -> r.tableName(DELIVERY_STATE).key(key(delivery, sk)).consistentRead(true)
+        return db.getItem(r -> r.tableName(tableForKey(key(delivery, sk))).key(key(delivery, sk)).consistentRead(true)
                 .overrideConfiguration(c -> c.apiCallTimeout(java.time.Duration.ofSeconds(10)).apiCallAttemptTimeout(java.time.Duration.ofSeconds(5)))).item();
     }
     private static Map<String, AttributeValue> key(String delivery, String sk) { return Map.of(PK, s("DELIVERY#" + delivery), SK, s(sk)); }
