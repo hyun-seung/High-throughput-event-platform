@@ -1,0 +1,53 @@
+{
+  "date": "2026-09-25",
+  "status": "PASS",
+  "baseCommit": "ba62dbf750328adfe388c4879042ed3133863eb6",
+  "runDirectory": ".poc-results/java-test-20260925141232-17311",
+  "javaIntegration": {
+    "suites": 37,
+    "executed": 310,
+    "skipped": 0,
+    "failures": 0,
+    "errors": 0
+  },
+  "cleanup": {
+    "containersStopped": true,
+    "volumesRetained": true
+  },
+  "tools": {
+    "applicationTests": "Java/JUnit, Maven Wrapper",
+    "environment": "Bash + Docker Compose, isolated project",
+    "cli": "packaged Java entry point via Bash, actual local Kafka"
+  },
+  "newTests": {
+    "classification": 8,
+    "realKafkaPageAndOffsetPreservation": 1
+  },
+  "packagedCli": {
+    "usageExitCode": 2,
+    "emptyPage": {
+      "beginningOffset": 0,
+      "snapshotEndOffset": 0,
+      "nextOffset": 0,
+      "reachedSnapshotEnd": true,
+      "records": []
+    },
+    "scope": "owned test Kafka restart and new empty topic; topic deleted and broker stopped afterwards"
+  },
+  "sourceSha256": {
+    "delivery-ingress-worker/src/main/java/event/delivery/ingress/dlt/DltInspector.java": "c29d59b659c92f41d117bd4992fe3642c302a89cc5f71cef14de5631cffc0e81",
+    "delivery-ingress-worker/src/main/java/event/delivery/ingress/dlt/DltInspection.java": "85b3f7abe14ecbb148c06a9b062aeacc8fd902499d09b747ed0cf1ecbbf8197e",
+    "delivery-ingress-worker/src/test/java/event/delivery/ingress/dlt/DltInspectorKafkaTest.java": "0a9091b637baabf738f4f26f3e454ba4099d1b3d6624ea6be5f41c11cf5385c3",
+    "delivery-ingress-worker/src/test/java/event/delivery/ingress/dlt/DltInspectionTest.java": "aadc5beb1e8b7f8995a7bf91888458b1a5816c662fd8936ae6259bea9fa8d14a",
+    "scripts/inspect-dlt.sh": "98cf6dc4f5298568abb4bd12628bcd3b03d2e9e55ad3075ef5ecb5562cdda272",
+    "scripts/testing/dlt-logback.xml": "4e7ad57df3c80a5a7bb00d0ecca0b14194349e5c502cfbb88c5c82d1104ff753"
+  },
+  "unitModeVerification": {
+    "runDirectory": ".poc-results/java-test-20260925141549-17831",
+    "suites": 37,
+    "executed": 156,
+    "skipped": 142,
+    "failures": 0,
+    "errors": 0
+  }
+}
