@@ -75,4 +75,6 @@ Grafana 대시보드는 배포에 사용되는 JSON 7개를 편집 원본으로 
 
 로컬 API→Kafka→업체 점검 도구를 `verification-tools`의 `local-smoke` 명령으로 옮겼다. 기존 `bash scripts/local.sh smoke [--metrics]`와 한글 실행 메뉴는 Java 도구를 호출한다. 인증·멱등성 키 재전송·ORIGIN/STEP ACCEPTED 상태·업체 처리 시각을 확인하고, 선택적으로 관리 포트 인증·단계/DB 지표·외부 업체의 실제 호출 1회를 대조한다. 로컬 HTTP fixture와 상태 fixture로 전체 판정 경로를 확인했다. 실제 실행 중인 Kafka·DynamoDB·앱을 대상으로 한 smoke는 이번 이관에서 실행하지 않았다. 남은 Python 파일은 **30개**다.
 
+수명주기 GSI 보정 도구도 `verification-tools`의 `lifecycle-index` 명령으로 옮겼다. `bash scripts/검증-실행.sh DDB-인덱스`는 기본값에서 ORIGIN·STEP의 인덱스만 조회하고, 명시적 `--apply`에서만 GSI 생성과 지정한 UUID의 조건부 보강을 수행한다. Java 테스트에서 로컬 URL 제한, 조회 전용 경로, 명시한 ID만 질의·보강하는 경로와 상태별 조건식을 확인했다. 실제 DynamoDB에 대한 `--apply`는 실행하지 않았다. 남은 Python 파일은 **29개**다.
+
 한글 경로에서 Python 시험 60개가 통과했고, DynamoDB 마이그레이션 시험 3개는 별도 환경이 없어 기존 조건대로 건너뛰었다. 모든 PoC 진입점의 `--help`를 확인했으며 고객 통지 중 SIGTERM 시험을 실제 Docker·JVM으로 재실행해 같은 묶음의 2회 수신과 최종 완료를 확인했다. [검증 기록](검증-결과/2026-09-26-한글-Python-실행경로-검증.json). 이 파일명 변경이 전체 성능 시험이나 모든 장애 시나리오의 재실행을 뜻하지는 않는다.

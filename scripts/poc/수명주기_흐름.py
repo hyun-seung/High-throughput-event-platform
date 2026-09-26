@@ -5,7 +5,6 @@ import json
 import os
 import signal
 import subprocess
-import sys
 import time
 import uuid
 from urllib.parse import urlparse
@@ -120,7 +119,7 @@ class LifecycleRun(Run):
         self.skip_input = True
         delivery, _ = self.send({'simulatorReceiptCodes': ['NONE']}, True, age=10)
         self.skip_input = False
-        subprocess.run([sys.executable, str(ROOT / 'scripts/dynamodb/수명주기_인덱스.py'), '--endpoint', self.args.dynamo,
+        subprocess.run(['bash', str(ROOT / 'scripts/검증-실행.sh'), 'DDB-인덱스', '--endpoint', self.args.dynamo,
                         '--apply', '--delivery-id', delivery], check=True, stdout=subprocess.DEVNULL)
         self.check_final('Attempt가 없는 원본의 명시적 보강 후 만료 복구', delivery, 'EXPIRED', 2, 0)
 

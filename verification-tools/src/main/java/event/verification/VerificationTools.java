@@ -59,7 +59,11 @@ public final class VerificationTools {
             LocalSmoke.run(java.util.Arrays.copyOfRange(args, 1, args.length));
             return;
         }
-        throw new IllegalArgumentException("Usage: java -jar verification-tools/target/verification-tools-1.0-SNAPSHOT.jar <stall directory|monitoring [root grafana-url prometheus-url]|demo [--rate N] [--seconds N] [--errors]|dashboards|local-smoke [--metrics]>");
+        if (args.length >= 1 && args[0].equals("lifecycle-index")) {
+            LifecycleIndexMigration.run(java.util.Arrays.copyOfRange(args, 1, args.length));
+            return;
+        }
+        throw new IllegalArgumentException("Usage: java -jar verification-tools/target/verification-tools-1.0-SNAPSHOT.jar <stall directory|monitoring [root grafana-url prometheus-url]|demo [--rate N] [--seconds N] [--errors]|dashboards|local-smoke [--metrics]|lifecycle-index [options]>");
     }
 
     static Map<String, Object> analyzeStall(Path directory) throws IOException {
