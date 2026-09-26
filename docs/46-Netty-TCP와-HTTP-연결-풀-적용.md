@@ -39,10 +39,12 @@ Redis의 Spring Data Redis/Lettuce, Kafka의 Spring Kafka/공식 client, Postgre
 | delivery.dynamodb.max-connections | 64 | DynamoDB client를 가진 JVM별 풀 상한 |
 | delivery.dynamodb.acquire-timeout / connect-timeout / socket-timeout | 2s / 2s / 5s | SDK 전송 계층별 제한 |
 | delivery.dynamodb.max-idle-time | 30s | SDK idle reaper 기준 |
+| delivery.dynamodb.api-call-timeout / api-call-attempt-timeout | 10s / 5s | 2026-09-26 후속 추가. 내부 재시도 포함 호출 전체 / 한 회차 예산 |
+| delivery.dynamodb.max-attempts | 3 | STANDARD 전략, 최초 포함 최대 시도 수. 업무 발송 재시도와 별개 |
 
 TCP/HTTP 환경변수는 dispatch-worker/application.yml의 EXTERNAL_TCP_*·EXTERNAL_API_*에 노출했다. DynamoDB는 공통 @ConfigurationProperties로 모든 worker에 적용하며 `--delivery.dynamodb.max-connections=...` 같은 Spring 설정으로 변경한다. 음수 용량·0 이하 timeout은 시작 시 거부한다.
 
-HTTP 읽기 제한과 DynamoDB socket timeout은 호출 전체 wall-clock 기한과 같지 않다. SDK 자체 재시도와 DNS·스케줄링도 별도로 고려해야 한다. DynamoDB API 전체/회차 timeout과 SDK 재시도 정책을 이번에 변경하지 않았다. 풀 상한 증가만으로 worker 동시성·DB 용량 부족이 해결되지는 않는다. 최적 값은 개발 완료 후 Pod별 실측으로 정한다.
+HTTP 읽기 제한과 DynamoDB socket timeout은 호출 전체 wall-clock 기한과 같지 않다. 최초 연결 풀 적용 당시에는 SDK 호출 예산을 바꾸지 않았으나, 2026-09-26 후속 작업에서 공통 Spring client의 API 전체/회차 timeout과 최대 시도 수를 명시했다. [적용 근거·범위·계측](09-저장소-장애-시-중단-범위와-복구-절차.md#dynamodb-sdk-호출-시간과-내부-재시도)을 따른다. 풀 크기·worker 동시성 확대와 Virtual Thread 적용은 별도 성능 비교 후 결정한다.
 
 ## 4. 검증
 
