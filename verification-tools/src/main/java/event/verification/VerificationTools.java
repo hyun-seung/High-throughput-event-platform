@@ -47,7 +47,11 @@ public final class VerificationTools {
             MonitoringVerification.run(Path.of(args[1]), args[2], args[3]);
             return;
         }
-        throw new IllegalArgumentException("Usage: java -jar verification-tools/target/verification-tools-1.0-SNAPSHOT.jar <stall directory|monitoring [root grafana-url prometheus-url]>");
+        if (args.length >= 1 && args[0].equals("demo")) {
+            MonitoringDemo.run(java.util.Arrays.copyOfRange(args, 1, args.length));
+            return;
+        }
+        throw new IllegalArgumentException("Usage: java -jar verification-tools/target/verification-tools-1.0-SNAPSHOT.jar <stall directory|monitoring [root grafana-url prometheus-url]|demo [--rate N] [--seconds N] [--errors]>");
     }
 
     static Map<String, Object> analyzeStall(Path directory) throws IOException {
