@@ -34,7 +34,7 @@ case "$scenario" in
   준비) exec "${JAVA_HOME:+$JAVA_HOME/bin/}java" scripts/testing/PocSetup.java "$@" ;;
   Java-단위) exec bash scripts/test-java.sh unit "$@" ;;
   Java-통합) exec bash scripts/test-java.sh integration "$@" ;;
-  정체-분석|모니터링-검증|모니터링-데모|대시보드-검증|로컬-점검|DDB-인덱스)
+  정체-분석|모니터링-검증|모니터링-데모|대시보드-검증|로컬-점검|DDB-인덱스|DDB-분리)
     ./mvnw -q -pl verification-tools -am -DskipTests package
     java_bin=java
     [[ -z "${JAVA_HOME:-}" ]] || java_bin="$JAVA_HOME/bin/java"
@@ -44,6 +44,7 @@ case "$scenario" in
     [[ "$scenario" != 대시보드-검증 ]] || command=dashboards
     [[ "$scenario" != 로컬-점검 ]] || command=local-smoke
     [[ "$scenario" != DDB-인덱스 ]] || command=lifecycle-index
+    [[ "$scenario" != DDB-분리 ]] || command=split-table
     exec "$java_bin" -jar verification-tools/target/verification-tools-1.0-SNAPSHOT.jar "$command" "$@" ;;
 esac
 
@@ -55,7 +56,7 @@ case "$scenario" in
     "$python_bin" -m unittest discover -s scripts/poc -p 'test_*.py' "$@"
     java scripts/testing/LogHealth.java self-test
     "$python_bin" -m unittest discover -s monitoring/collector -p 'test_*.py' "$@"
-    exec "$python_bin" -m unittest discover -s scripts/dynamodb -p 'test_*.py' "$@" ;;
+    exec ./mvnw -q -pl verification-tools -am -Dtest=SplitTableMigrationTest,SplitTableMigrationIntegrationTest -Dsurefire.failIfNoSpecifiedTests=false test ;;
   강제종료) script=scripts/poc/프로세스_복구.py ;;
   정상종료) script=scripts/poc/정상종료_복구.py ;;
   1차-호출중-종료) script=scripts/poc/업체_호출중_정상종료_복구.py ;;
@@ -71,7 +72,6 @@ case "$scenario" in
   포스트그레스) script=scripts/poc/포스트그레스_복구.py ;;
   다이나모DB) script=scripts/poc/다이나모DB_복구.py ;;
   성능-PoC) script=scripts/poc/실행.py ;;
-  DDB-분리) script=scripts/dynamodb/원본_단계_분리.py ;;
   모니터링-측정) script=scripts/monitoring/성능_측정.py ;;
   실행파일-보관) exec java scripts/testing/MonitorArtifacts.java snapshot ;;
   *) usage >&2; exit 2 ;;

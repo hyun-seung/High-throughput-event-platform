@@ -63,7 +63,11 @@ public final class VerificationTools {
             LifecycleIndexMigration.run(java.util.Arrays.copyOfRange(args, 1, args.length));
             return;
         }
-        throw new IllegalArgumentException("Usage: java -jar verification-tools/target/verification-tools-1.0-SNAPSHOT.jar <stall directory|monitoring [root grafana-url prometheus-url]|demo [--rate N] [--seconds N] [--errors]|dashboards|local-smoke [--metrics]|lifecycle-index [options]>");
+        if (args.length >= 1 && args[0].equals("split-table")) {
+            SplitTableMigration.run(java.util.Arrays.copyOfRange(args, 1, args.length));
+            return;
+        }
+        throw new IllegalArgumentException("Usage: java -jar verification-tools/target/verification-tools-1.0-SNAPSHOT.jar <stall directory|monitoring [root grafana-url prometheus-url]|demo [--rate N] [--seconds N] [--errors]|dashboards|local-smoke [--metrics]|lifecycle-index [options]|split-table [options]>");
     }
 
     static Map<String, Object> analyzeStall(Path directory) throws IOException {
