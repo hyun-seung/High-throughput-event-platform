@@ -8,7 +8,7 @@ import software.amazon.awssdk.core.interceptor.ExecutionAttributes;
 import software.amazon.awssdk.core.interceptor.ExecutionInterceptor;
 import software.amazon.awssdk.services.dynamodb.model.ConditionalCheckFailedException;
 
-/** One measurement per logical SDK call, including SDK retries. Not consumed capacity or wire attempts. */
+/** Duration counts logical calls; the separate transport counter includes SDK attempts, not consumed capacity. */
 public final class DynamoDbMetricsInterceptor implements ExecutionInterceptor {
     private static final ExecutionAttribute<Timer.Sample> SAMPLE = new ExecutionAttribute<>("delivery.db.sample");
     private final MeterRegistry registry;
@@ -18,6 +18,11 @@ public final class DynamoDbMetricsInterceptor implements ExecutionInterceptor {
     @Override
     public void beforeExecution(Context.BeforeExecution context, ExecutionAttributes attributes) {
         attributes.putAttribute(SAMPLE, Timer.start(registry));
+    }
+
+    @Override
+    public void beforeTransmission(Context.BeforeTransmission context, ExecutionAttributes attributes) {
+        registry.counter("delivery.dynamodb.transport.attempts", "operation", operation(context.request().getClass().getSimpleName())).increment();
     }
 
     @Override
@@ -32,7 +37,13 @@ public final class DynamoDbMetricsInterceptor implements ExecutionInterceptor {
     }
 
     private void finish(String request, String result, ExecutionAttributes attributes) {
-        String operation = switch (request) {
+        Timer.Sample sample = attributes.getAttribute(SAMPLE);
+        if (sample != null) sample.stop(Timer.builder("delivery.dynamodb.duration")
+                .tags("operation", operation(request), "result", result).register(registry));
+    }
+
+    private static String operation(String request) {
+        return switch (request) {
             case "QueryRequest" -> "query";
             case "GetItemRequest" -> "get_item";
             case "PutItemRequest" -> "put_item";
@@ -42,8 +53,5 @@ public final class DynamoDbMetricsInterceptor implements ExecutionInterceptor {
             case "CreateTableRequest" -> "create_table";
             default -> "other";
         };
-        Timer.Sample sample = attributes.getAttribute(SAMPLE);
-        if (sample != null) sample.stop(Timer.builder("delivery.dynamodb.duration")
-                .tags("operation", operation, "result", result).register(registry));
     }
 }
