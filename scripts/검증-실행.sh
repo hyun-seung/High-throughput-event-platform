@@ -34,7 +34,7 @@ case "$scenario" in
   준비) exec "${JAVA_HOME:+$JAVA_HOME/bin/}java" scripts/testing/PocSetup.java "$@" ;;
   Java-단위) exec bash scripts/test-java.sh unit "$@" ;;
   Java-통합) exec bash scripts/test-java.sh integration "$@" ;;
-  정체-분석|모니터링-검증|모니터링-데모|대시보드-검증)
+  정체-분석|모니터링-검증|모니터링-데모|대시보드-검증|로컬-점검)
     ./mvnw -q -pl verification-tools -am -DskipTests package
     java_bin=java
     [[ -z "${JAVA_HOME:-}" ]] || java_bin="$JAVA_HOME/bin/java"
@@ -42,6 +42,7 @@ case "$scenario" in
     [[ "$scenario" != 모니터링-검증 ]] || command=monitoring
     [[ "$scenario" != 모니터링-데모 ]] || command=demo
     [[ "$scenario" != 대시보드-검증 ]] || command=dashboards
+    [[ "$scenario" != 로컬-점검 ]] || command=local-smoke
     exec "$java_bin" -jar verification-tools/target/verification-tools-1.0-SNAPSHOT.jar "$command" "$@" ;;
 esac
 
@@ -69,7 +70,6 @@ case "$scenario" in
   포스트그레스) script=scripts/poc/포스트그레스_복구.py ;;
   다이나모DB) script=scripts/poc/다이나모DB_복구.py ;;
   성능-PoC) script=scripts/poc/실행.py ;;
-  로컬-점검) script=scripts/로컬_점검.py ;;
   DDB-인덱스) script=scripts/dynamodb/수명주기_인덱스.py ;;
   DDB-분리) script=scripts/dynamodb/원본_단계_분리.py ;;
   모니터링-측정) script=scripts/monitoring/성능_측정.py ;;

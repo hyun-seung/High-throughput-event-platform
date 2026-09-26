@@ -27,7 +27,7 @@ case "${1:-help}" in
     ;;
   smoke)
     shift
-    exec python3 scripts/로컬_점검.py "$@"
+    exec bash scripts/검증-실행.sh 로컬-점검 "$@"
     ;;
   build)
     "${MAVEN_BIN:-./mvnw}" clean package
