@@ -100,6 +100,7 @@ public final class DltInspector {
         config.put("max.partition.fetch.bytes", 1024 * 1024);
         config.put("fetch.max.bytes", 2 * 1024 * 1024);
         config.put("client.id", "delivery-dlt-inspector");
+        DltKafkaClientSettings.apply(config);
         return new KafkaConsumer<>(config, new ByteArrayDeserializer(), new ByteArrayDeserializer());
     }
 

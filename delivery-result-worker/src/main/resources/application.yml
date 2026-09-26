@@ -29,6 +29,13 @@ spring:
     clean-disabled: true
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    properties:
+      "[reconnect.backoff.ms]": ${KAFKA_RECONNECT_BACKOFF_MS:500}
+      "[reconnect.backoff.max.ms]": ${KAFKA_RECONNECT_BACKOFF_MAX_MS:10000}
+      "[retry.backoff.ms]": ${KAFKA_RETRY_BACKOFF_MS:500}
+      "[retry.backoff.max.ms]": ${KAFKA_RETRY_BACKOFF_MAX_MS:10000}
+      "[socket.connection.setup.timeout.ms]": ${KAFKA_SOCKET_SETUP_TIMEOUT_MS:5000}
+      "[socket.connection.setup.timeout.max.ms]": ${KAFKA_SOCKET_SETUP_TIMEOUT_MAX_MS:10000}
     consumer:
       group-id: ${RESULT_CONSUMER_GROUP:delivery-result-worker-v1}
       auto-offset-reset: earliest
