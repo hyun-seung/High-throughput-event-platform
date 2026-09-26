@@ -16,7 +16,7 @@ usage() {
              모니터링-검증(Java), 대시보드-생성, 정체-분석(Java), 실행파일-보관(Java)
 
 실제 JVM 시험은 Docker와 JDK 21이 필요합니다. 처음 실행할 때 '준비'를 실행하세요.
-추가 옵션은 해당 Python 도구에 그대로 전달합니다.
+추가 옵션은 해당 도구에 그대로 전달합니다.
 EOF
 }
 
@@ -34,12 +34,13 @@ case "$scenario" in
   준비) exec python3 scripts/poc/환경_준비.py "$@" ;;
   Java-단위) exec bash scripts/test-java.sh unit "$@" ;;
   Java-통합) exec bash scripts/test-java.sh integration "$@" ;;
-  정체-분석|모니터링-검증)
+  정체-분석|모니터링-검증|모니터링-데모)
     ./mvnw -q -pl verification-tools -am -DskipTests package
     java_bin=java
     [[ -z "${JAVA_HOME:-}" ]] || java_bin="$JAVA_HOME/bin/java"
     command=stall
     [[ "$scenario" != 모니터링-검증 ]] || command=monitoring
+    [[ "$scenario" != 모니터링-데모 ]] || command=demo
     exec "$java_bin" -jar verification-tools/target/verification-tools-1.0-SNAPSHOT.jar "$command" "$@" ;;
 esac
 
@@ -70,7 +71,6 @@ case "$scenario" in
   로컬-점검) script=scripts/로컬_점검.py ;;
   DDB-인덱스) script=scripts/dynamodb/수명주기_인덱스.py ;;
   DDB-분리) script=scripts/dynamodb/원본_단계_분리.py ;;
-  모니터링-데모) script=scripts/monitoring/데모.py ;;
   모니터링-측정) script=scripts/monitoring/성능_측정.py ;;
   대시보드-생성) script=scripts/monitoring/대시보드_생성.py ;;
   실행파일-보관) exec java scripts/testing/MonitorArtifacts.java snapshot ;;

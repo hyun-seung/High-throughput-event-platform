@@ -67,4 +67,6 @@ k6 inspect로 목표 rate 10,000의 초기/최대 VU 설정이 유효한지 확�
 
 Grafana·Prometheus·Loki 읽기 검증도 `verification-tools`의 `monitoring` 명령으로 옮겼다. `bash scripts/monitoring.sh verify`와 한글 실행 메뉴가 이를 호출한다. 같은 로컬 HTTP fixture를 Python·Java에 제공했을 때 정상 결과(질의 2건·오류 0건)와 대시보드 불일치·민감 로그 결과(오류 2건)가 일치했고 표준 Java 단위 검증 191개도 통과했다. 실제 Grafana는 중지돼 있어 이번 이관 검증에서 운영 스택 전체를 조회하지 않았다. [이관 검증 기록](검증-결과/2026-09-26-Java-모니터링-검증-이관.json). 남은 Python 파일은 **34개**다.
 
+모니터링 데모 요청 생성기도 `verification-tools`의 `demo` 명령으로 옮겼다. `bash scripts/monitoring.sh demo --rate 20 --seconds 30` 또는 `bash scripts/검증-실행.sh 모니터링-데모`로 실행한다. Java 도구는 기존의 단독 실행 잠금, 초당 요청 간격, 10번째 요청의 멱등성 키 재사용, 선택적 강제 실패 1건과 JSON 요약을 유지한다. 로컬 HTTP fixture로 요청 10건·고유 ID 9개·강제 실패 1건과 잠금 충돌을 검증했다. 실제 모니터링 스택에 트래픽을 보내는 시험은 수행하지 않았다. 남은 Python 파일은 **33개**다.
+
 한글 경로에서 Python 시험 60개가 통과했고, DynamoDB 마이그레이션 시험 3개는 별도 환경이 없어 기존 조건대로 건너뛰었다. 모든 PoC 진입점의 `--help`를 확인했으며 고객 통지 중 SIGTERM 시험을 실제 Docker·JVM으로 재실행해 같은 묶음의 2회 수신과 최종 완료를 확인했다. [검증 기록](검증-결과/2026-09-26-한글-Python-실행경로-검증.json). 이 파일명 변경이 전체 성능 시험이나 모든 장애 시나리오의 재실행을 뜻하지는 않는다.
