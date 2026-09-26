@@ -13,6 +13,8 @@ import event.delivery.dispatch.port.DeliveryProviderClient;
 import event.delivery.dispatch.port.DispatchAttemptStore;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.event.ContextClosedEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
 import java.time.Clock;
@@ -32,6 +34,10 @@ public class DispatchService {
     private final Clock dispatchClock;
     private final DeliveryMetrics metrics;
     private final SecondaryDispatchService secondaryDispatch;
+    private volatile boolean shuttingDown;
+
+    @EventListener(ContextClosedEvent.class)
+    public void onContextClosed() { shuttingDown = true; }
 
     private event.delivery.dispatch.retry.RetryPublisher retries;
     @org.springframework.beans.factory.annotation.Autowired
@@ -104,6 +110,13 @@ public class DispatchService {
                 return received;
             });
         } catch (ProviderFailureException failure) {
+            if (shuttingDown && failure.kind() == ProviderFailureException.Kind.NO_RESPONSE) {
+                // The provider may have acted before the response was lost. Keep the claimed STEP and its
+                // original deadline; a shutdown-time timeout must not enqueue another external call.
+                log.warn("Dispatch response unknown during shutdown; retaining STEP. deliveryId={}, attemptId={}",
+                        event.deliveryId(), attemptId);
+                return;
+            }
             persistFailure(event, claim, attemptId,
                     DispatchRetryPolicy.decide(claim.attempt(), failure.kind(), dispatchClock.instant(), dispatchProperties));
             return;

@@ -173,6 +173,21 @@ class DispatchServiceTest {
     }
 
     @Test
+    void shutdownTimeNoResponseKeepsClaimWithoutSchedulingAnotherProviderCall() {
+        attemptStore.nextClaim = DispatchClaim.claimed(new DispatchAttempt(
+                event.deliveryId(), attemptId, PROVIDER, 1, 0, NOW.plusSeconds(10800)));
+        providerClient.failure = new ProviderFailureException(ProviderFailureException.Kind.NO_RESPONSE);
+        dispatchService.onContextClosed();
+
+        dispatchService.dispatch(event);
+
+        assertEquals(1, providerClient.callCount);
+        assertFalse(attemptStore.acceptedRecorded);
+        org.junit.jupiter.api.Assertions.assertNull(attemptStore.failureDecision);
+        assertEquals(0, outcome("dispatch_retry_scheduled"));
+    }
+
+    @Test
     void waitingReservationDoesNotCallProvider() {
         attemptStore.nextClaim = DispatchClaim.retryWait();
         assertThrows(DispatchRetryPendingException.class, () -> dispatchService.dispatch(event));

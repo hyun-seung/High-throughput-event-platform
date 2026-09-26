@@ -1,0 +1,49 @@
+{
+  "date": "2026-09-26",
+  "status": "PASS",
+  "javaIntegration": {
+    "runDirectory": ".poc-results/java-test-20260926084936-56487",
+    "suites": 46,
+    "executed": 426,
+    "skipped": 0,
+    "failures": 0,
+    "errors": 0,
+    "containersRemoved": true,
+    "networkRemoved": true,
+    "volumesRetained": true
+  },
+  "inflightSigterm": {
+    "runDirectory": ".poc-results/full-flow-5d9a361ce191",
+    "passedCases": 1,
+    "dispatchExitCode": 143,
+    "gracefulShutdownLogged": true,
+    "restartUsesNewPid": true,
+    "dispatchLagAtStop": 1,
+    "stepVersionRetryLeaseAndDeadlinePreservedAfterRestart": true,
+    "providerCalls": 1,
+    "providerEffects": 1,
+    "providerDeduplicationEnabled": false,
+    "result": "EXPIRED",
+    "resultAtOriginalDeadline": true,
+    "customerNotificationAndCleanupCompleted": true,
+    "containersRemovedAfterRun": true,
+    "networkRemovedAfterRun": true,
+    "volumesRetained": true
+  },
+  "regressionFound": "With a pending provider HTTP response, SIGTERM could wait for the HTTP timeout, classify it as NO_RESPONSE and publish a new retry command. In full-flow-d4a1a4cda129 the STEP version and retry count increased after restart; the changed dispatch service now retains the claimed STEP when that uncertain response returns after context closure.",
+  "integrationRunHistory": [
+    {
+      "runDirectory": ".poc-results/java-test-20260926062003-55211",
+      "result": "One unrelated cleanup lookup test crossed its 10-minute future-time fixture and classified BACKOFF as DUE; the test fixture now uses a one-day separation."
+    },
+    {
+      "runDirectory": ".poc-results/java-test-20260926071030-55836",
+      "result": "A result-worker Kafka producer timed out after approximately 925 seconds in the local test environment; a fresh complete run passed without an application change for this error."
+    }
+  ],
+  "limits": [
+    "One local dispatch JVM and primary HTTP provider call, not secondary TCP or other in-flight worker stages",
+    "No Kubernetes eviction, multiple Pods, or throughput measurement",
+    "Ordinary running-state NO_RESPONSE retry behavior is unchanged; the suppression is limited to context shutdown"
+  ]
+}
