@@ -77,4 +77,6 @@ Grafana 대시보드는 배포에 사용되는 JSON 7개를 편집 원본으로 
 
 수명주기 GSI 보정 도구도 `verification-tools`의 `lifecycle-index` 명령으로 옮겼다. `bash scripts/검증-실행.sh DDB-인덱스`는 기본값에서 ORIGIN·STEP의 인덱스만 조회하고, 명시적 `--apply`에서만 GSI 생성과 지정한 UUID의 조건부 보강을 수행한다. Java 테스트에서 로컬 URL 제한, 조회 전용 경로, 명시한 ID만 질의·보강하는 경로와 상태별 조건식을 확인했다. 실제 DynamoDB에 대한 `--apply`는 실행하지 않았다. 남은 Python 파일은 **29개**다.
 
+원본·단계 테이블 분리 도구도 `verification-tools`의 `split-table` 명령으로 옮겼다. `bash scripts/검증-실행.sh DDB-분리`는 기본값에서 원본을 읽고 대상의 누락·충돌을 확인하며, `--apply --writers-stopped`가 함께 있을 때만 조건부 복사와 사후 대조를 수행한다. Python 통합 시험 3개는 Java 통합 시험으로 옮겼다. 모의 DB 시험과 로컬 DynamoDB의 고유 임시 원본·테스트 키를 사용한 통합 시험 3개에서 dry-run·반복·충돌·응답 유실 재개를 확인했다. 기존 `delivery_state` 데이터는 복사하지 않았다. Python 이관 파일과 전용 시험 파일을 제거해 남은 Python 파일은 **27개**다.
+
 한글 경로에서 Python 시험 60개가 통과했고, DynamoDB 마이그레이션 시험 3개는 별도 환경이 없어 기존 조건대로 건너뛰었다. 모든 PoC 진입점의 `--help`를 확인했으며 고객 통지 중 SIGTERM 시험을 실제 Docker·JVM으로 재실행해 같은 묶음의 2회 수신과 최종 완료를 확인했다. [검증 기록](검증-결과/2026-09-26-한글-Python-실행경로-검증.json). 이 파일명 변경이 전체 성능 시험이나 모든 장애 시나리오의 재실행을 뜻하지는 않는다.
