@@ -57,8 +57,9 @@ public final class DltRecoveryCli {
                 if (!resume && !intake && (!plan.eligible() || !plan.preview().dlt().valueSha256().equals(args[4]))) {
                     System.out.println(mapper.writeValueAsString(plan.preview())); return 3;
                 }
-                var config = Map.<String, Object>of("bootstrap.servers", bootstrap, "acks", "all", "enable.idempotence", true,
-                        "max.block.ms", 5000, "request.timeout.ms", 5000, "delivery.timeout.ms", 10000);
+                var config = new HashMap<String, Object>(Map.of("bootstrap.servers", bootstrap, "acks", "all", "enable.idempotence", true,
+                        "max.block.ms", 5000, "request.timeout.ms", 5000, "delivery.timeout.ms", 10000));
+                DltKafkaClientSettings.apply(config);
                 try (var producer = new KafkaProducer<>(config, new StringSerializer(), new ByteArraySerializer())) {
                     DltRecoveryStore.Publisher publisher = command -> {
                         var ack = producer.send(new ProducerRecord<>(DeliveryTopics.DISPATCH_REQUESTED, command.deliveryId(),
