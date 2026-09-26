@@ -13,7 +13,7 @@ usage() {
 저장소 장애: 카프카, 카프카-복제, 레디스, 포스트그레스, 다이나모DB
 성능 PoC: 성능-PoC
 그 밖의 도구: 로컬-점검, DDB-인덱스, DDB-분리, 모니터링-데모, 모니터링-측정,
-             모니터링-검증, 대시보드-생성, 정체-분석, 실행파일-보관
+             모니터링-검증, 대시보드-생성, 정체-분석, 실행파일-보관(Java)
 
 실제 JVM 시험은 Docker와 JDK 21이 필요합니다. 처음 실행할 때 '준비'를 실행하세요.
 추가 옵션은 해당 Python 도구에 그대로 전달합니다.
@@ -68,7 +68,7 @@ case "$scenario" in
   모니터링-검증) script=scripts/monitoring/검증.py ;;
   대시보드-생성) script=scripts/monitoring/대시보드_생성.py ;;
   정체-분석) script=scripts/monitoring/정체_분석.py ;;
-  실행파일-보관) script=scripts/monitoring/실행파일_보관.py ;;
+  실행파일-보관) exec java scripts/testing/MonitorArtifacts.java snapshot ;;
   *) usage >&2; exit 2 ;;
 esac
 

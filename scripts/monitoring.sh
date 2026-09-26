@@ -17,9 +17,9 @@ case "${1:-help}" in
     done
     mkdir -p .monitoring
     if [[ ! -f .monitoring/grafana-admin ]]; then
-      (umask 077; python3 -c 'import secrets; print(secrets.token_urlsafe(32))' > .monitoring/grafana-admin)
+      (umask 077; java scripts/testing/MonitorArtifacts.java token > .monitoring/grafana-admin)
     fi
-    python3 scripts/monitoring/실행파일_보관.py
+    java scripts/testing/MonitorArtifacts.java snapshot
     set -a
     source .monitoring/jars.env
     set +a

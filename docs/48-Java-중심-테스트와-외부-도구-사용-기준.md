@@ -59,4 +59,6 @@ k6 inspect로 목표 rate 10,000의 초기/최대 VU 설정이 유효한지 확�
 
 저장소의 Python 파일 39개는 역할을 알 수 있는 한글 파일명으로 변경했다. `unittest discover`가 시험 파일을 찾도록 시험 파일에만 `test_` 접두어를 유지했다. 내부 import, Docker 수집기 이미지, Bash 명령과 문서의 실행 경로도 함께 변경했다. 주요 시나리오는 `bash scripts/검증-실행.sh 목록`으로 확인하고, `bash scripts/검증-실행.sh 준비`로 의존성을 설치한 뒤 `bash scripts/검증-실행.sh 고객-통지중-종료`처럼 실행한다.
 
+다음 묶음에서 모니터링 JAR 복사 도구를 `scripts/testing/MonitorArtifacts.java`로 옮기고 Python 파일을 제거했다. Java 표준 라이브러리만으로 소스 JAR의 SHA-256을 계산해 해시별 경로에 보관하고 복사본을 다시 검사한다. Grafana 관리자 토큰도 같은 도구의 32바이트 `SecureRandom` 값으로 생성한다. 네 개의 임시 JAR로 보관·재실행·환경 파일·토큰 길이를 검증했다. 따라서 현재 남은 Python 파일은 38개다.
+
 한글 경로에서 Python 시험 60개가 통과했고, DynamoDB 마이그레이션 시험 3개는 별도 환경이 없어 기존 조건대로 건너뛰었다. 모든 PoC 진입점의 `--help`를 확인했으며 고객 통지 중 SIGTERM 시험을 실제 Docker·JVM으로 재실행해 같은 묶음의 2회 수신과 최종 완료를 확인했다. [검증 기록](검증-결과/2026-09-26-한글-Python-실행경로-검증.json). 이 파일명 변경이 전체 성능 시험이나 모든 장애 시나리오의 재실행을 뜻하지는 않는다.
