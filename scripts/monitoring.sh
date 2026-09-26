@@ -35,6 +35,6 @@ case "${1:-help}" in
     [[ -x .poc-tools/venv/bin/python ]] || { echo 'Run python3 scripts/poc/환경_준비.py first.' >&2; exit 1; }
     exec .poc-tools/venv/bin/python scripts/monitoring/성능_측정.py "$@"
     ;;
-  verify) exec python3 scripts/monitoring/검증.py ;;
+  verify) exec bash scripts/검증-실행.sh 모니터링-검증 ;;
   *) echo 'Usage: bash scripts/monitoring.sh <up|status|stop|logs SERVICE|demo|benchmark|verify>' ;;
 esac
