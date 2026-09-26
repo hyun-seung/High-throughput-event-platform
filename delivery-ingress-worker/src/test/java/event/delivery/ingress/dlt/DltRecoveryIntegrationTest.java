@@ -411,6 +411,93 @@ class DltRecoveryIntegrationTest {
                 this::publish, DltRecoveryCheckpoint.capture(plan, record));
     }
 
+    @Test void sqlConnectionOutageDefersRepeatedScansAndResumesStoredCommand() throws Exception {
+        var plan = planner(NOW).plan(record); var pending = submitPending(plan); agePending(pending.operationId());
+        var down = new java.util.concurrent.atomic.AtomicBoolean(true); var connections = new AtomicInteger();
+        var flaky = new DltRecoveryStore(() -> {
+            connections.incrementAndGet();
+            if (down.get()) throw new SQLException("unavailable", "08006");
+            return connect();
+        }, schema);
+        var nanos = new java.util.concurrent.atomic.AtomicLong();
+        var gate = new event.common.recovery.FailureBackoff(Duration.ofSeconds(1), Duration.ofSeconds(30), nanos::get, () -> 1.0);
+        var resumer = new DltRecoveryResumer(flaky, planner(NOW.plus(Duration.ofHours(8))), topic, topic, "source", this::publish, gate);
+        assertThrows(IllegalStateException.class, () -> resumer.runOnce(10, Duration.ofSeconds(30)));
+        for (int i = 0; i < 100; i++) assertEquals("BACKOFF", resumer.runOnce(10, Duration.ofSeconds(30)).status());
+        assertEquals(1, connections.get()); assertEquals(0, records());
+        down.set(false); nanos.addAndGet(Duration.ofSeconds(1).toNanos());
+        var recovered = resumer.runOnce(10, Duration.ofSeconds(30));
+        assertEquals("SCANNED", recovered.status()); assertEquals(1, recovered.selected());
+        assertEquals("ACKNOWLEDGED", recovered.results().getFirst().status());
+        assertEquals(plan.command(), MAPPER.readValue(DltInspector.fetchExact(bootstrap, topic, 0, 0).value(), DeliveryEvent.class));
+        assertEquals(1, count("dlt_recovery_operation WHERE cluster_alias='" + topic + "'"));
+    }
+
+    @Test void returnedBackendFailureStopsBatchAndProbeSelectsOnlyOnePendingOperation() throws Exception {
+        var first = submitPending(planner(NOW).plan(record));
+        var other = new ConsumerRecord<>("dlt", 0, 6, record.key(), record.value());
+        record.headers().forEach(h -> other.headers().add(h));
+        other.headers().remove(org.springframework.kafka.support.KafkaHeaders.DLT_ORIGINAL_OFFSET);
+        other.headers().add(org.springframework.kafka.support.KafkaHeaders.DLT_ORIGINAL_OFFSET, java.nio.ByteBuffer.allocate(8).putLong(43).array());
+        var plan = planner(NOW).plan(other);
+        var second = store.apply(topic, topic, plan, "tester", "submit second recovery", () -> { throw new IllegalStateException(); },
+                this::publish, DltRecoveryCheckpoint.capture(plan, other));
+        agePending(first.operationId()); agePending(second.operationId());
+        var down = new java.util.concurrent.atomic.AtomicBoolean(true); var calls = new AtomicInteger();
+        var nanos = new java.util.concurrent.atomic.AtomicLong();
+        var gate = new event.common.recovery.FailureBackoff(Duration.ofSeconds(1), Duration.ofSeconds(30), nanos::get, () -> 1.0);
+        var resumer = new DltRecoveryResumer(store, planner(NOW), topic, topic, "source", command -> {
+            calls.incrementAndGet(); if (down.get()) throw new TimeoutException("Kafka acknowledgement unavailable");
+            return publish(command);
+        }, gate);
+        var failed = resumer.runOnce(10, Duration.ofSeconds(30));
+        assertEquals("BACKEND_UNAVAILABLE", failed.status()); assertEquals(2, failed.selected()); assertEquals(1, failed.results().size());
+        assertTrue(failed.results().getFirst().backendUnavailable()); assertEquals(1, calls.get());
+        long attempts = count("dlt_recovery_attempt WHERE operation_id IN ('" + first.operationId() + "','" + second.operationId() + "')");
+        for (int i = 0; i < 100; i++) assertEquals("BACKOFF", resumer.runOnce(10, Duration.ofSeconds(30)).status());
+        assertEquals(attempts, count("dlt_recovery_attempt WHERE operation_id IN ('" + first.operationId() + "','" + second.operationId() + "')"));
+        down.set(false); agePending(first.operationId()); agePending(second.operationId()); nanos.addAndGet(Duration.ofSeconds(1).toNanos());
+        var probe = resumer.runOnce(10, Duration.ofSeconds(30));
+        assertEquals(1, probe.selected()); assertEquals("ACKNOWLEDGED", probe.results().getFirst().status());
+        assertEquals("ACKNOWLEDGED", resumer.runOnce(10, Duration.ofSeconds(30)).results().getFirst().status());
+        assertEquals(2, records());
+        assertArrayEquals(DltInspector.fetchExact(bootstrap, topic, 0, 0).value(), DltInspector.fetchExact(bootstrap, topic, 0, 1).value());
+    }
+
+    @Test void intakeBackoffRetainsRawArchiveAndCursorThenResumesBothRecords() throws Exception {
+        createInput(); input(record);
+        var other = new ConsumerRecord<>("dlt", 0, 6, record.key(), record.value());
+        record.headers().forEach(h -> other.headers().add(h));
+        other.headers().remove(org.springframework.kafka.support.KafkaHeaders.DLT_ORIGINAL_OFFSET);
+        other.headers().add(org.springframework.kafka.support.KafkaHeaders.DLT_ORIGINAL_OFFSET, java.nio.ByteBuffer.allocate(8).putLong(43).array());
+        input(other);
+        var down = new java.util.concurrent.atomic.AtomicBoolean(true); var reads = new AtomicInteger();
+        var nanos = new java.util.concurrent.atomic.AtomicLong();
+        var gate = new event.common.recovery.FailureBackoff(Duration.ofSeconds(1), Duration.ofSeconds(30), nanos::get, () -> 1.0);
+        var worker = new DltIntakeWorker(intakeStore(), store, planner(NOW), intakeScope(), (offset, limit) -> {
+            reads.incrementAndGet(); return DltInspector.readRaw(bootstrap, inputTopic, 0, offset, limit);
+        }, command -> { if (down.get()) throw new TimeoutException("Kafka acknowledgement unavailable"); return publish(command); }, gate);
+        var failed = worker.runOnce(0, 10);
+        assertEquals("BACKEND_UNAVAILABLE", failed.status()); assertEquals(2, failed.archived()); assertEquals(2, failed.nextOffset());
+        assertEquals(1, failed.outcomes().size()); assertTrue(failed.outcomes().getFirst().backendUnavailable()); assertNull(failed.backlog());
+        var operation = failed.outcomes().getFirst().operationId(); assertNotNull(operation);
+        for (int i = 0; i < 100; i++) {
+            var skipped = worker.runOnce(0, 10); assertEquals("BACKOFF", skipped.status());
+            assertEquals(-1, skipped.nextOffset()); assertNull(skipped.backlog());
+        }
+        assertEquals(1, reads.get()); assertEquals(2, intakeStore().cursor(intakeScope(), 0));
+        assertEquals(2, count("dlt_intake_record WHERE cluster_alias='" + topic + "'"));
+        assertEquals(1, count("dlt_recovery_attempt WHERE operation_id='" + operation + "'"));
+        down.set(false); nanos.addAndGet(Duration.ofSeconds(1).toNanos());
+        var recovered = worker.runOnce(999, 10);
+        assertEquals("SCANNED", recovered.status()); assertEquals(2, recovered.nextOffset());
+        assertEquals("ACKNOWLEDGED", recovered.outcomes().getFirst().decision()); assertEquals(1, records());
+        agePending(operation);
+        assertEquals("ACKNOWLEDGED", resumer(NOW.plus(Duration.ofHours(8))).runOnce(10, Duration.ofSeconds(30)).results().getFirst().status());
+        assertEquals(2, records());
+        assertEquals(execution.toDispatchRequested(), MAPPER.readValue(DltInspector.fetchExact(bootstrap, topic, 0, 1).value(), DeliveryEvent.class));
+    }
+
     @Test void autoResumeRecoversPersistedStartedWithoutReadingKafkaSource() throws Exception {
         removeOrigin(); enableRestore(NOW.minusSeconds(1));
         var plan = planner(NOW).plan(record);

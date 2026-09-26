@@ -33,7 +33,9 @@ public final class DltIntakeStore {
             return record;
         }
     }
-    public record Outcome(String state, String decision, UUID operationId) { }
+    public record Outcome(String state, String decision, UUID operationId, boolean backendUnavailable) {
+        public Outcome(String state, String decision, UUID operationId) { this(state, decision, operationId, false); }
+    }
     public record Backlog(long unprocessed, long held, Instant oldestHeldAt) { }
     private final DltRecoveryStore.Connections connections;
     private final String schema;
@@ -126,7 +128,7 @@ public final class DltIntakeStore {
                 }
                 Outcome outcome;
                 try { outcome = action.apply(mapper.readValue(json, Raw.class).record()); }
-                catch (RuntimeException failure) { outcome = new Outcome("NEW", "UNCONFIRMED", null); }
+                catch (RuntimeException failure) { outcome = new Outcome("NEW", "UNCONFIRMED", null, DltBackoff.unavailable(failure)); }
                 if (!Set.of("NEW", "REGISTERED", "HELD").contains(outcome.state())) throw new IllegalArgumentException("Invalid intake outcome");
                 try (var update = connection.prepareStatement("UPDATE " + schema
                         + ".dlt_intake_record SET state=?,decision=?,operation_id=?,updated_at=clock_timestamp() WHERE intake_id=?")) {
