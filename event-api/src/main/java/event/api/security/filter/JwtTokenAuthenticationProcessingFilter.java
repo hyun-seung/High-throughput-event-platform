@@ -38,6 +38,11 @@ public class JwtTokenAuthenticationProcessingFilter extends OncePerRequestFilter
     private final JwtAuthenticationEntryPoint authenticationEntryPoint;
 
     @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        return "/livez".equals(request.getServletPath()) || "/readyz".equals(request.getServletPath());
+    }
+
+    @Override
     protected boolean shouldNotFilterAsyncDispatch() {
         // CompletableFuture responses resume on a thread with a fresh security context.
         return false;

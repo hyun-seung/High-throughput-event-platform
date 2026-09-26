@@ -1,4 +1,6 @@
 spring:
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
   data:
     redis:
       host: ${REDIS_HOST:localhost}
@@ -55,6 +57,11 @@ delivery:
     initialize-tables: ${DYNAMODB_INITIALIZE_TABLES:true}
 
 management:
+  endpoint:
+    health:
+      probes:
+        enabled: true
+        add-additional-paths: true
   server:
     address: 127.0.0.1
     port: ${INGRESS_METRICS_PORT:19081}
@@ -77,3 +84,4 @@ management:
 server:
   address: 127.0.0.1
   port: ${SERVER_PORT:8091}
+  shutdown: graceful

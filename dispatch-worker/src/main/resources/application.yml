@@ -1,4 +1,6 @@
 spring:
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
   data:
     redis:
       host: ${REDIS_HOST:localhost}
@@ -77,6 +79,11 @@ delivery:
     initialize-tables: false
 
 management:
+  endpoint:
+    health:
+      probes:
+        enabled: true
+        add-additional-paths: true
   server:
     address: 127.0.0.1
     port: ${DISPATCH_METRICS_PORT:19082}
@@ -99,3 +106,4 @@ management:
 server:
   address: 127.0.0.1
   port: ${SERVER_PORT:8092}
+  shutdown: graceful

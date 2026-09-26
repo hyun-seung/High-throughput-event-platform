@@ -41,7 +41,7 @@ public class ReceiptConfiguration {
                 .exceptionHandling(e -> e.authenticationEntryPoint((request, response, error) -> response.setStatus(401)))
                 .authorizeHttpRequests(a -> a
                         .dispatcherTypeMatchers(jakarta.servlet.DispatcherType.ERROR).permitAll()
-                        .requestMatchers("/actuator/health", "/actuator/prometheus").permitAll()
+                        .requestMatchers("/actuator/health", "/actuator/prometheus", "/livez", "/readyz").permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.POST, "/api/v1/receipts/*").authenticated()
                         .anyRequest().denyAll())
                 .addFilterBefore(new ProviderAuthenticationFilter(properties), UsernamePasswordAuthenticationFilter.class)
