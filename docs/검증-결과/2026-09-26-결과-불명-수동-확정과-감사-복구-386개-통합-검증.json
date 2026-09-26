@@ -1,0 +1,77 @@
+{
+  "date": "2026-09-26",
+  "status": "PASS",
+  "baseCommit": "4c507f22f012409023e87e28a75623199ec520cf",
+  "runDirectory": ".poc-results/java-test-20260926015023-33415",
+  "javaIntegration": {
+    "suites": 38,
+    "executed": 386,
+    "skipped": 0,
+    "failures": 0,
+    "errors": 0
+  },
+  "newTests": {
+    "manualResolutionLifecycleIntegration": 5,
+    "manualResolutionSqlDynamoIntegration": 9,
+    "totalLifecycleIntegration": 34,
+    "totalCleanupAndOperationsIntegration": 36
+  },
+  "tools": {
+    "applicationTests": "Java 21/JUnit, Maven Wrapper clean verify -Pintegration-tests",
+    "environment": "Bash + Docker Compose, fresh isolated project",
+    "performance": "Not run; k6 reserved for performance phase"
+  },
+  "infrastructure": {
+    "kafka": "apache/kafka:4.0.2",
+    "postgresql": "postgres:17-alpine",
+    "dynamodb": "amazon/dynamodb-local:2.6.1",
+    "redis": "redis:7.4-alpine"
+  },
+  "cleanup": {
+    "containersStopped": true,
+    "containersRemoved": true,
+    "networkRemoved": true,
+    "volumesRetained": true
+  },
+  "packagedCli": {
+    "usageExitCode": 2,
+    "scope": "Packaged resolution CLI usage and Bash syntax; business and persistence behavior tested by Java integration rather than a separate CLI process"
+  },
+  "verified": [
+    "Manual success enters the existing lifecycle finalization without a new provider call and fences old provider response / later receipt",
+    "Manual primary failure enables only originally configured fallback; secondary deadline uses operator decision time",
+    "Manual secondary failure completes without resetting deadline or introducing another route",
+    "Actual receipt and expiry repository mutations injected before operator commit defeat stale conditional resolution",
+    "Independent SQL connection observes committed intent before actual DynamoDB transaction",
+    "Identical action replay after deadline is idempotent; changed intent conflicts",
+    "Actual DynamoDB commit followed by injected SDK response-loss exception leaves SQL PENDING and is reconciled from the durable STEP action marker",
+    "SQL audit update failure preserves PENDING, blocks cleanup but permits final history/notification reservation, and resumes after marker reconciliation",
+    "Initial SQL audit failure prevents DynamoDB mutation",
+    "Live lease, expired deadline, accepted state, stale version, other tenant, changed execution and DLT hold cannot receive a new manual decision",
+    "An uncertain delayed request is not declared rejected while the expected STEP version is unchanged; delayed commit then reconciles to APPLIED",
+    "Pending list uses tenant-scoped bounded keyset pagination and saved intent can resume after pre-write failure",
+    "Concurrent competing actions on one observed version have one applied winner; pending conflicts can be resumed",
+    "Normal successful DynamoDB write budget remains five calls and seven item mutations; existing cleanup SELECT adds pending-audit predicate without another SQL round trip"
+  ],
+  "notVerifiedOrImplemented": [
+    "Real network disconnect or process kill at each operator commit boundary; response loss / delayed commit modeled with Java hooks around real storage operations",
+    "One process-level end-to-end CLI to provider to customer run for manual resolution; actual lifecycle and SQL handoff tested in separate layers, with a constructed finalized event for cleanup-recovery scenario",
+    "Production identity/roles, remote endpoint support, automated audit resumption and dedicated audit backlog alerts",
+    "Immediate Redis wake-up after operator decision (durable lifecycle index is the recovery path)",
+    "New manual decisions for legacy v1, accepted-result waiting or already terminal attempts",
+    "Exhausted notification additional-send authorization, k6 capacity, multi-AZ failure and data-loss proof"
+  ],
+  "sourceSha256": {
+    "event-common/src/main/java/event/common/lifecycle/ManualResolution.java": "83f53a12bf001479835f9d57e9cf94d560f2b363626f411708cee803532bffc4",
+    "delivery-result-worker/src/main/java/event/delivery/result/operations/ResolutionOperations.java": "6396c94ec94c2c5becc8b502b08563b0c178551809fcc5d6a10e2447e0d5a05b",
+    "delivery-result-worker/src/main/java/event/delivery/result/operations/ResolutionOperationsCli.java": "c89f11bf710fb3841bc786bff19bbb7f42c25c2b577e8f5c17073ad846ada6a1",
+    "delivery-result-worker/src/main/java/event/delivery/result/operations/DeliveryOperations.java": "35760db610a3d49c892e1a99187915833fab201e2fe707afba98f7ad8e0bb8cc",
+    "delivery-result-worker/src/main/java/event/delivery/result/operations/DeliveryOperationsCli.java": "093069c35a3945625aa2aa58003e19d7740eb1d0e109a11f04ee86ca0566f09c",
+    "delivery-result-worker/src/main/java/event/delivery/result/cleanup/CleanupRepository.java": "a6694d3e1de99a0b45f0047e8e90ee4ef430701f6f6cd800c0965649e80ee6c6",
+    "delivery-result-worker/src/main/resources/db/migration/V11__manual_result_resolution.sql": "3600ea3eb9ee2428722d02434d2674d466cd2be42270981b96bf256908b50e35",
+    "delivery-result-worker/src/test/java/event/delivery/result/CleanupPostgresDynamoDbTest.java": "67f32f2e17c6a4c94d3c4874322b6adb81c8e0cedffa766b981eff699dbba537",
+    "dispatch-worker/src/test/java/event/delivery/dispatch/lifecycle/LifecycleDynamoDbTest.java": "375550fa555b532664570dd37512a262a7875f9be70cda72f28e9ed5a98ecebc",
+    "scripts/resolve-delivery.sh": "3dfe4caff240b90cffc7c81a5aac4b378b1178548719f08b4418968412ca6ae8"
+  },
+  "postRunChanges": "Documentation and evidence only; no behavior changes after final integration"
+}

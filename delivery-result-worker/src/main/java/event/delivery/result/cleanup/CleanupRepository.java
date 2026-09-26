@@ -23,6 +23,7 @@ public class CleanupRepository {
                     JOIN customer_notification_outbox n ON n.result_event_id = c.result_event_id
                     WHERE c.status = 'PENDING' AND c.next_attempt_at <= clock_timestamp()
                       AND (c.lease_until IS NULL OR c.lease_until <= clock_timestamp())
+                      AND NOT EXISTS (SELECT 1 FROM delivery_resolution_action a WHERE a.delivery_id=h.delivery_id AND a.tenant_id=h.tenant_id AND a.status='PENDING')
                     ORDER BY c.next_attempt_at, c.result_event_id LIMIT 1 FOR UPDATE OF c SKIP LOCKED
                     """);
             if (rows.isEmpty()) return Optional.empty();
