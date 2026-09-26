@@ -10,7 +10,7 @@ from receipt_flow import wait_until
 
 class GracefulInflightRecovery(ProcessRecovery):
     def kill_owned(self, name):
-        assert name == 'dispatch' and name in self.apps
+        assert name in self.apps
         process = self.apps[name]
         assert process.poll() is None
         self.stopped_commands[name] = process.args
