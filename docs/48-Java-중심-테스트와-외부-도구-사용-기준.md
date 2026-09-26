@@ -71,4 +71,6 @@ Grafana·Prometheus·Loki 읽기 검증도 `verification-tools`의 `monitoring` 
 
 PoC 환경 준비는 `scripts/testing/PocSetup.java`로 옮겼다. `bash scripts/검증-실행.sh 준비`가 Python 가상환경과 고정 버전 의존성을 준비하고, k6 체크섬 목록과 압축 파일의 SHA-256을 확인한 뒤 실행 파일만 설치한다. `bash scripts/검증-실행.sh 준비 self-test`로 임시 ZIP/TAR 추출과 체크섬 불일치 거부를 검증했다. 실제 다운로드와 의존성 재설치는 이번 이관 검증에서 실행하지 않았다. 환경 준비 단계가 Python 스크립트를 필요로 하지는 않지만, 남은 PoC 시험 실행에는 Python 가상환경이 필요하다. 기존 Python 준비 파일을 제거해 남은 Python 파일은 **32개**다.
 
+Grafana 대시보드는 배포에 사용되는 JSON 7개를 편집 원본으로 삼는다. 이전 Python 생성기를 다시 실행해도 커밋된 JSON에 변경이 없음을 확인한 뒤 생성기를 제거했다. `bash scripts/검증-실행.sh 대시보드-검증`은 Java에서 파일 목록, UID, 패널 ID·격자, 데이터소스·질의·링크를 검사한다. 현재 JSON 7개와 잘못된 fixture에 대한 Java 검증을 통과했다. 남은 Python 파일은 **31개**다.
+
 한글 경로에서 Python 시험 60개가 통과했고, DynamoDB 마이그레이션 시험 3개는 별도 환경이 없어 기존 조건대로 건너뛰었다. 모든 PoC 진입점의 `--help`를 확인했으며 고객 통지 중 SIGTERM 시험을 실제 Docker·JVM으로 재실행해 같은 묶음의 2회 수신과 최종 완료를 확인했다. [검증 기록](검증-결과/2026-09-26-한글-Python-실행경로-검증.json). 이 파일명 변경이 전체 성능 시험이나 모든 장애 시나리오의 재실행을 뜻하지는 않는다.
