@@ -9,7 +9,7 @@
 ## 재현 방법과 시간 기준
 
 ```bash
-python3 scripts/monitoring/정체_분석.py \
+bash scripts/검증-실행.sh 정체-분석 \
   .poc-results/20260924T121505Z-075d4b00/monitored-100 \
   > /tmp/platform-stall-analysis.json
 ```
