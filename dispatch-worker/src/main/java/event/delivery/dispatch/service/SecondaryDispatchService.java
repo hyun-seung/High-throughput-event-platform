@@ -13,12 +13,16 @@ import event.delivery.dispatch.external.dto.ProviderDispatchResponse;
 import event.delivery.dispatch.port.DispatchAttemptStore;
 import event.delivery.dispatch.port.SecondaryProviderClient;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.event.ContextClosedEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
 import java.time.Clock;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class SecondaryDispatchService {
     private final DispatchAttemptStore store;
     private final SecondaryProviderClient client;
@@ -26,6 +30,10 @@ public class SecondaryDispatchService {
     private final DispatchProperties dispatchProperties;
     private final Clock dispatchClock;
     private final DeliveryMetrics metrics;
+    private volatile boolean shuttingDown;
+
+    @EventListener(ContextClosedEvent.class)
+    public void onContextClosed() { shuttingDown = true; }
 
     private event.delivery.dispatch.retry.RetryPublisher retries;
     @org.springframework.beans.factory.annotation.Autowired
@@ -73,6 +81,13 @@ public class SecondaryDispatchService {
             response = metrics.measure(DeliveryMetrics.Stage.DISPATCH_TCP, () -> client.send(event, attempt.attemptId(), attempt.retryCount() + 1));
             if (!Boolean.TRUE.equals(response.accepted())) throw new ProviderFailureException(ProviderFailureException.Kind.INVALID_RESPONSE);
         } catch (ProviderFailureException failure) {
+            if (shuttingDown && failure.kind() == ProviderFailureException.Kind.NO_RESPONSE) {
+                // The TCP peer may have acted before its reply was lost. Preserve the claimed STEP and
+                // original deadline instead of scheduling another external call during shutdown.
+                log.warn("Secondary response unknown during shutdown; retaining STEP. deliveryId={}, attemptId={}",
+                        event.deliveryId(), attempt.attemptId());
+                return;
+            }
             persistFailure(event, attempt, DispatchRetryPolicy.decide(attempt, failure.kind(), dispatchClock.instant(), dispatchProperties));
             return;
         }
