@@ -17,9 +17,9 @@ import subprocess
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'poc'))
-from run import Runner, ROOT, RESULTS, TOOLS, request, write_json
-from evidence import KafkaProbe
-from log_health import inspect_log
+from 실행 import Runner, ROOT, RESULTS, TOOLS, request, write_json
+from 검증_근거 import KafkaProbe
+from 로그_상태 import inspect_log
 
 
 # Runs inside the already available Python collector. Management ports stay private.
@@ -28,7 +28,7 @@ READ_INSIDE = '''
 import json, sys
 from concurrent.futures import ThreadPoolExecutor
 from urllib.error import HTTPError
-from collector import get
+from 수집기 import get
 data=json.load(sys.stdin)
 def read(url,headers=None):return get(url,headers).decode()
 if data['mode']=='metrics':
@@ -39,7 +39,7 @@ if data['mode']=='metrics':
         return app,read(urls[app]+'/actuator/prometheus',headers)
     with ThreadPoolExecutor(max_workers=4) as pool:result=dict(pool.map(scrape,urls))
 elif data['mode']=='counts':
-    from evidence import attempt_id
+    from 검증_근거 import attempt_id
     def count(delivery):
         attempt=attempt_id(delivery)
         try:value=json.loads(read('http://simulator:19090/actuator/simulator/'+attempt))
@@ -159,7 +159,7 @@ class MonitoringRunner(Runner):
         ingress = next(x for x in containers if x['name'] == '/platform-monitoring-ingress-1')
         if ingress['settings'].get('INGRESS_KAFKA_LINGER_MS') != '5':
             raise RuntimeError('Benchmark expects ingress linger 5ms')
-        sources = [Path(__file__), Path(__file__).with_name('log_health.py'),
+        sources = [Path(__file__), Path(__file__).with_name('로그_상태.py'),
                    *sorted((ROOT / 'scripts/poc').glob('*.py')), ROOT / 'scripts/poc/load.js']
         write_json(self.directory / 'environment.json', {
             'runId': self.run_id, 'suite': self.args.suite, 'composeProject': 'platform-monitoring',

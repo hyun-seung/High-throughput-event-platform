@@ -2,7 +2,7 @@ import copy
 import json
 import unittest
 
-from postgres_recovery import verify_outage, verify_owned_postgres
+from 포스트그레스_복구 import verify_outage, verify_owned_postgres
 
 
 class PostgresOutageEvidenceTest(unittest.TestCase):

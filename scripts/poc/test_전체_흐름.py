@@ -7,7 +7,7 @@ import subprocess
 import threading
 import unittest
 from unittest.mock import patch
-from full_flow import FullFlow, verify_delivery
+from 전체_흐름 import FullFlow, verify_delivery
 
 
 class FullFlowEvidenceTest(unittest.TestCase):
@@ -69,7 +69,7 @@ class InfrastructureStartupTest(unittest.TestCase):
                 order.append(command)
                 if command[1] == 'wait': return '0\n'
                 return json.dumps([{'State': {'Running': True, 'Health': {'Status': 'healthy'}}} for _ in range(4)])
-            with patch('full_flow.subprocess.run', side_effect=run), patch('full_flow.subprocess.check_output', side_effect=output):
+            with patch('전체_흐름.subprocess.run', side_effect=run), patch('전체_흐름.subprocess.check_output', side_effect=output):
                 runner.start_infrastructure()
             self.assertEqual(order[0], runner.compose + ['create'])
             self.assertEqual(order[1:3], [['docker', 'start', 'full-flow-test-dynamodb-data-init-1'],
@@ -82,7 +82,7 @@ class InfrastructureStartupTest(unittest.TestCase):
     def test_failed_init_does_not_start_services(self):
         with tempfile.TemporaryDirectory() as directory:
             runner = self.runner(directory)
-            with patch('full_flow.subprocess.run') as run, patch('full_flow.subprocess.check_output', return_value='1\n'):
+            with patch('전체_흐름.subprocess.run') as run, patch('전체_흐름.subprocess.check_output', return_value='1\n'):
                 with self.assertRaisesRegex(RuntimeError, 'initialization failed'): runner.start_infrastructure()
             self.assertEqual(run.call_count, 2)
             self.assertFalse((Path(directory) / 'infra-health.json').exists())
@@ -91,7 +91,7 @@ class InfrastructureStartupTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             runner = self.runner(directory)
             states = json.dumps([{'Name': 'kafka', 'State': {'Running': False}}])
-            with patch('full_flow.subprocess.run'), patch('full_flow.subprocess.check_output', side_effect=['0\n', states]):
+            with patch('전체_흐름.subprocess.run'), patch('전체_흐름.subprocess.check_output', side_effect=['0\n', states]):
                 with self.assertRaisesRegex(RuntimeError, 'stopped during'): runner.start_infrastructure()
             self.assertFalse((Path(directory) / 'infra-health.json').exists())
 
@@ -100,8 +100,8 @@ class InfrastructureStartupTest(unittest.TestCase):
             runner = self.runner(directory)
             state = json.dumps({'Running': False, 'Status': 'created'})
             timeout = subprocess.TimeoutExpired(['docker', 'start'], 10)
-            with patch('full_flow.subprocess.run', side_effect=[timeout, None]) as run, \
-                    patch('full_flow.subprocess.check_output', return_value=state):
+            with patch('전체_흐름.subprocess.run', side_effect=[timeout, None]) as run, \
+                    patch('전체_흐름.subprocess.check_output', return_value=state):
                 runner.start_container('owned-container', None)
             self.assertEqual(run.call_count, 2)
             attempts = json.loads((Path(directory) / 'owned-container-start.json').read_text())
@@ -110,16 +110,16 @@ class InfrastructureStartupTest(unittest.TestCase):
     def test_timeout_with_running_container_does_not_start_it_again(self):
         with tempfile.TemporaryDirectory() as directory:
             runner = self.runner(directory)
-            with patch('full_flow.subprocess.run', side_effect=subprocess.TimeoutExpired([], 10)) as run, \
-                    patch('full_flow.subprocess.check_output', return_value='{"Running":true}'):
+            with patch('전체_흐름.subprocess.run', side_effect=subprocess.TimeoutExpired([], 10)) as run, \
+                    patch('전체_흐름.subprocess.check_output', return_value='{"Running":true}'):
                 runner.start_container('owned-container', None)
             self.assertEqual(run.call_count, 1)
 
     def test_second_start_timeout_stops_retrying(self):
         with tempfile.TemporaryDirectory() as directory:
             runner = self.runner(directory)
-            with patch('full_flow.subprocess.run', side_effect=subprocess.TimeoutExpired([], 10)) as run, \
-                    patch('full_flow.subprocess.check_output', return_value='{"Running":false,"Status":"created"}'):
+            with patch('전체_흐름.subprocess.run', side_effect=subprocess.TimeoutExpired([], 10)) as run, \
+                    patch('전체_흐름.subprocess.check_output', return_value='{"Running":false,"Status":"created"}'):
                 with self.assertRaises(subprocess.TimeoutExpired): runner.start_container('owned-container', None)
             self.assertEqual(run.call_count, 2)
 
@@ -128,7 +128,7 @@ class InfrastructureStartupTest(unittest.TestCase):
             runner = self.runner(directory)
             runner.apps = {}; runner.probe = None; runner.server = None; runner.logs = []
             runner.lock = threading.Lock(); runner.callback_records = []; runner.infra_started = True
-            with patch('full_flow.subprocess.run') as run:
+            with patch('전체_흐름.subprocess.run') as run:
                 runner.close()
             command = run.call_args.args[0]
             self.assertEqual(command, runner.compose + ['down', '--timeout', '20'])

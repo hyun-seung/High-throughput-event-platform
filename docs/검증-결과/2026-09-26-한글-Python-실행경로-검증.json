@@ -1,0 +1,35 @@
+{
+  "date": "2026-09-26",
+  "status": "PASS",
+  "renamedPythonFiles": 39,
+  "pythonUnitTests": {
+    "pocPassed": 52,
+    "monitoringPassed": 4,
+    "collectorPassed": 4,
+    "dynamodbSkippedWithoutEnvironment": 3
+  },
+  "checks": {
+    "allPythonFilesCompiled": true,
+    "pocEntryPointHelpPassed": 15,
+    "koreanLauncherSyntaxPassed": true,
+    "dockerCollectorImportsPassed": true,
+    "gitDiffCheckPassed": true
+  },
+  "customerNotificationSigtermRerun": {
+    "runDirectory": ".poc-results/full-flow-96cab9fde791",
+    "passedCases": 1,
+    "sigtermExitCode": 143,
+    "batchReplayIdentical": true,
+    "customerReceipts": 2,
+    "finalAttemptCount": 2,
+    "result": "DELIVERED",
+    "ownedProcessesStopped": true,
+    "containersRemovedAfterRun": true,
+    "networkRemovedAfterRun": true
+  },
+  "limits": [
+    "Python remains the external process, Docker, monitoring, and k6 orchestration language; this change does not port those tools to Java",
+    "Only the customer notification SIGTERM scenario was rerun end-to-end after renaming",
+    "DynamoDB migration tests require their separate environment and were skipped"
+  ]
+}

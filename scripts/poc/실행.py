@@ -21,7 +21,7 @@ import urllib.error
 import urllib.request
 import uuid
 
-from evidence import KafkaProbe, attempt_id, complete_input, delivery_id, read_items, read_manifest, reconcile
+from 검증_근거 import KafkaProbe, attempt_id, complete_input, delivery_id, read_items, read_manifest, reconcile
 
 ROOT = Path(__file__).resolve().parents[2]
 TOOLS = ROOT / '.poc-tools'
@@ -97,7 +97,7 @@ class Runner:
             self.awake = subprocess.Popen(['caffeinate', '-i', '-w', str(os.getpid())])
         if shutil.disk_usage(ROOT).free < 2 * 1024**3: raise RuntimeError('Less than 2 GiB free disk')
         version = subprocess.check_output([str(TOOLS / 'k6'), 'version'], text=True).strip()
-        if not version.startswith('k6 v1.8.1 '): raise RuntimeError('Run setup.py to install pinned k6 v1.8.1')
+        if not version.startswith('k6 v1.8.1 '): raise RuntimeError('Run 환경_준비.py to install pinned k6 v1.8.1')
         java_home = os.environ.get('JAVA_HOME', '')
         self.java = str(Path(java_home) / 'bin/java') if java_home else 'java'
         java_version = subprocess.check_output([self.java, '-XshowSettings:properties', '-version'], stderr=subprocess.STDOUT, text=True)

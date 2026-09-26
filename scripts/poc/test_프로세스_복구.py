@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from unittest.mock import Mock
 
-from process_recovery import ProcessRecovery, verify_ack_loss, verify_uncertain_step
+from 프로세스_복구 import ProcessRecovery, verify_ack_loss, verify_uncertain_step
 
 
 class CrashEvidenceTest(unittest.TestCase):

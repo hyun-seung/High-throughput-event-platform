@@ -4,7 +4,7 @@
 
 ## 1. 시험 범위
 
-도구는 `scripts/poc/redis_recovery.py`다. 실행별 Compose·포트·볼륨을 만들고 project/service label로 소유권을 확인한 Redis 컨테이너만 stop/start한다. 앱 여섯 개는 재시작하지 않고 같은 PID를 유지한다. Kafka·DynamoDB·PostgreSQL은 실행 상태를 유지한다.
+도구는 `scripts/poc/레디스_복구.py`다. 실행별 Compose·포트·볼륨을 만들고 project/service label로 소유권을 확인한 Redis 컨테이너만 stop/start한다. 앱 여섯 개는 재시작하지 않고 같은 PID를 유지한다. Kafka·DynamoDB·PostgreSQL은 실행 상태를 유지한다.
 
 | 구간 | 확인할 동작 |
 |---|---|
@@ -36,10 +36,10 @@ TPS 시험은 빈 버킷과 초당 0.001개 보충·용량 1개를 사용해 소
 - 최종 SQL 고유 이력 3건과 접수 ID 집합을 대조한다. 요청·발송·업체 웹훅·최종 결과 토픽 모든 파티션 lag가 0이어야 한다. offset 조회 도구는 subscribe/commit하지 않는다.
 
 ```sh
-# JDK 21, Docker, scripts/poc/setup.py 도구 준비 후
+# JDK 21, Docker, scripts/poc/환경_준비.py 도구 준비 후
 ./mvnw -DskipTests package
 .poc-tools/venv/bin/python -m unittest discover -s scripts/poc -p 'test_*.py'
-.poc-tools/venv/bin/python scripts/poc/redis_recovery.py
+.poc-tools/venv/bin/python scripts/poc/레디스_복구.py
 ```
 
 환경·도구/JAR 해시, Redis 상태, 제한 거절 응답, 장애 중 계측 원문, 활성 중복의 원장, SQL·고객 결과, 복구 후 완료 TTL 부재를 실행별 `.poc-results/`에 보존한다. 종료 시 소유 앱·컨테이너만 정지하고 볼륨은 유지한다.

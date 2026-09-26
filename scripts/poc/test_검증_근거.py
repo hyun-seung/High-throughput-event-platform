@@ -3,7 +3,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from evidence import REQUESTED, DISPATCH, DLT, attempt_id, complete_input, delivery_id, read_manifest, reconcile
+from 검증_근거 import REQUESTED, DISPATCH, DLT, attempt_id, complete_input, delivery_id, read_manifest, reconcile
 
 
 class ReconciliationTest(unittest.TestCase):

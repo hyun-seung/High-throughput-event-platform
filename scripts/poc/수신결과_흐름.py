@@ -19,7 +19,7 @@ import uuid
 import boto3
 from confluent_kafka import Consumer, Producer, TopicPartition
 from confluent_kafka.admin import AdminClient, NewTopic
-from evidence import java_id
+from 검증_근거 import java_id
 
 ROOT = Path(__file__).resolve().parents[2]
 HTTP = urllib.request.build_opener(urllib.request.ProxyHandler({}))

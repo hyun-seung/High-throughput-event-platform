@@ -4,8 +4,8 @@ import argparse
 from datetime import datetime, timezone
 import time
 
-from process_recovery import ProcessRecovery, verify_uncertain_step
-from receipt_flow import wait_until
+from 프로세스_복구 import ProcessRecovery, verify_uncertain_step
+from 수신결과_흐름 import wait_until
 
 
 class GracefulInflightRecovery(ProcessRecovery):

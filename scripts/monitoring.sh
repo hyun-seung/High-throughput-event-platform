@@ -19,7 +19,7 @@ case "${1:-help}" in
     if [[ ! -f .monitoring/grafana-admin ]]; then
       (umask 077; python3 -c 'import secrets; print(secrets.token_urlsafe(32))' > .monitoring/grafana-admin)
     fi
-    python3 scripts/monitoring/snapshot_jars.py
+    python3 scripts/monitoring/실행파일_보관.py
     set -a
     source .monitoring/jars.env
     set +a
@@ -29,12 +29,12 @@ case "${1:-help}" in
   status) "${compose[@]}" ps ;;
   stop) "${compose[@]}" stop ;;
   logs) "${compose[@]}" logs --tail=80 "${2:-grafana}" ;;
-  demo) shift; exec python3 scripts/monitoring/demo.py "$@" ;;
+  demo) shift; exec python3 scripts/monitoring/데모.py "$@" ;;
   benchmark)
     shift
-    [[ -x .poc-tools/venv/bin/python ]] || { echo 'Run python3 scripts/poc/setup.py first.' >&2; exit 1; }
-    exec .poc-tools/venv/bin/python scripts/monitoring/benchmark.py "$@"
+    [[ -x .poc-tools/venv/bin/python ]] || { echo 'Run python3 scripts/poc/환경_준비.py first.' >&2; exit 1; }
+    exec .poc-tools/venv/bin/python scripts/monitoring/성능_측정.py "$@"
     ;;
-  verify) exec python3 scripts/monitoring/verify.py ;;
+  verify) exec python3 scripts/monitoring/검증.py ;;
   *) echo 'Usage: bash scripts/monitoring.sh <up|status|stop|logs SERVICE|demo|benchmark|verify>' ;;
 esac

@@ -56,10 +56,10 @@
 신규 테이블 초기화는 GSI를 함께 생성한다. 기존 테이블 초기화는 자동으로 스키마를 바꾸지 않는다. 로컬용 이관 도구는 기본 read-only이며 `--apply`가 있을 때만 색인을 만들거나 전달받은 정확한 ID를 보강한다.
 
 ```bash
-.poc-tools/venv/bin/python scripts/dynamodb/lifecycle_index.py --endpoint http://localhost:18000
-.poc-tools/venv/bin/python scripts/dynamodb/lifecycle_index.py --endpoint http://localhost:18000 --apply
+.poc-tools/venv/bin/python scripts/dynamodb/수명주기_인덱스.py --endpoint http://localhost:18000
+.poc-tools/venv/bin/python scripts/dynamodb/수명주기_인덱스.py --endpoint http://localhost:18000 --apply
 # 기존 미완료 원본 목록에서 확인한 ID만 지정한다. 여러 번 지정 가능.
-.poc-tools/venv/bin/python scripts/dynamodb/lifecycle_index.py --endpoint http://localhost:18000 \
+.poc-tools/venv/bin/python scripts/dynamodb/수명주기_인덱스.py --endpoint http://localhost:18000 \
   --apply --delivery-id 00000000-0000-0000-0000-000000000001
 ```
 
@@ -76,7 +76,7 @@ DYNAMODB_TEST_ENDPOINT=http://localhost:18000 \
 KAFKA_TEST_BOOTSTRAP_SERVERS=localhost:39092 \
 JAVA_HOME=/path/to/jdk-21 ./mvnw -q package
 
-JAVA_HOME=/path/to/jdk-21 .poc-tools/venv/bin/python scripts/poc/lifecycle_flow.py \
+JAVA_HOME=/path/to/jdk-21 .poc-tools/venv/bin/python scripts/poc/수명주기_흐름.py \
   --kafka localhost:39092 --dynamo http://localhost:18000
 ```
 

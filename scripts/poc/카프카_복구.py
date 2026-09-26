@@ -8,11 +8,11 @@ from pathlib import Path
 import subprocess
 import urllib.error
 
-from full_flow import FullFlow, HTTP, http
-from process_recovery import ProcessRecovery
-from postgres_recovery import GROUPS
-from receipt_flow import Run, java_id, wait_until
-from run import metric
+from 전체_흐름 import FullFlow, HTTP, http
+from 프로세스_복구 import ProcessRecovery
+from 포스트그레스_복구 import GROUPS
+from 수신결과_흐름 import Run, java_id, wait_until
+from 실행 import metric
 
 
 def verify_owned_kafka(item, project):

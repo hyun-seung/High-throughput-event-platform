@@ -58,7 +58,7 @@ def main():
         (TOOLS / 'k6').write_bytes(data)
         (TOOLS / 'k6').chmod(0o755)
     subprocess.run([str(TOOLS / 'k6'), 'version'], check=True)
-    print('Ready: .poc-tools/venv/bin/python scripts/poc/run.py --suite smoke', flush=True)
+    print('Ready: .poc-tools/venv/bin/python scripts/poc/실행.py --suite smoke', flush=True)
 
 
 if __name__ == '__main__':

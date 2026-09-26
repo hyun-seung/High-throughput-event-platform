@@ -20,7 +20,7 @@ import uuid
 
 import boto3
 from confluent_kafka import Consumer, TopicPartition
-from receipt_flow import ROOT, Run, stop, wait_until
+from 수신결과_흐름 import ROOT, Run, stop, wait_until
 
 HTTP = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 MODULES = {'provider': 'external-api-simulator', 'receipt': 'receipt-api',

@@ -33,4 +33,15 @@ bash scripts/test-java.sh unit
 bash scripts/test-java.sh integration
 ```
 
+실제 JVM 종료·저장소 장애 검증과 기존 PoC는 한글 이름의 실행 메뉴에서 찾을 수 있습니다.
+
+```sh
+bash scripts/검증-실행.sh 목록
+bash scripts/검증-실행.sh 준비
+bash scripts/검증-실행.sh 파이썬-테스트 -q
+bash scripts/검증-실행.sh 고객-통지중-종료
+```
+
+업무 기능·저장 상태 회귀는 위 Java 테스트가 기준이고, Python 도구는 별도 JVM·Docker를 실제 중단하고 복구하는 격리 검증 및 모니터링 도구로 사용합니다. [도구별 역할](docs/48-Java-중심-테스트와-외부-도구-사용-기준.md)을 참고하세요.
+
 업무 검증은 Java/JUnit, 환경 실행은 Bash + Docker Compose, 성능 부하 생성기는 **k6**입니다. 기존 외부 도구의 역할과 미실행 판정은 [테스트 기준](docs/48-Java-중심-테스트와-외부-도구-사용-기준.md)에 명시합니다.

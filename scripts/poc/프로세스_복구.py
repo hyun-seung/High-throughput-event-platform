@@ -11,8 +11,8 @@ import threading
 import time
 
 from confluent_kafka import Consumer, TopicPartition
-from full_flow import FullFlow, ROOT, http, verify_delivery
-from receipt_flow import Run, wait_until
+from 전체_흐름 import FullFlow, ROOT, http, verify_delivery
+from 수신결과_흐름 import Run, wait_until
 
 
 def verify_ack_loss(before, after, callbacks):

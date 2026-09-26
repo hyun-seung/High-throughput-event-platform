@@ -8,7 +8,7 @@ JDK 21, Python 3.11 이상, Docker Compose, curl이 필요하다. macOS/Linux의
 
 ```bash
 # 공식 k6 1.8.1 다운로드·체크섬 확인, 전용 Python 가상환경 설치
-python3 scripts/poc/setup.py
+python3 scripts/poc/환경_준비.py
 
 # JDK 21의 JAVA_HOME 설정 후 현재 앱 빌드
 ./mvnw package
@@ -17,17 +17,17 @@ python3 scripts/poc/setup.py
 .poc-tools/venv/bin/python -m unittest discover -s scripts/poc -p 'test_*.py' -v
 
 # 고유 요청 및 중복 요청 소량 검증
-.poc-tools/venv/bin/python scripts/poc/run.py --suite smoke
+.poc-tools/venv/bin/python scripts/poc/실행.py --suite smoke
 
 # 소량 검증 → 10 TPS 1분 워밍업 → 10/50/100 TPS 각 3분
-.poc-tools/venv/bin/python scripts/poc/run.py --suite baseline
+.poc-tools/venv/bin/python scripts/poc/실행.py --suite baseline
 
 # 동일 조건 재측정 → 두 Worker 동시성만 변경 → Ingress linger만 변경
 # 각 실행은 소량 검증, 10 TPS 1분 워밍업, 100 TPS 20초 중복 입력,
 # 50/100 TPS 각 3분을 포함한다. 실패하면 해당 실행의 후속 단계만 중단한다.
-.poc-tools/venv/bin/python scripts/poc/run.py --suite comparison --worker-concurrency 1 --ingress-linger-ms 5
-.poc-tools/venv/bin/python scripts/poc/run.py --suite comparison --worker-concurrency 3 --ingress-linger-ms 5
-.poc-tools/venv/bin/python scripts/poc/run.py --suite comparison --worker-concurrency 3 --ingress-linger-ms 0
+.poc-tools/venv/bin/python scripts/poc/실행.py --suite comparison --worker-concurrency 1 --ingress-linger-ms 5
+.poc-tools/venv/bin/python scripts/poc/실행.py --suite comparison --worker-concurrency 3 --ingress-linger-ms 5
+.poc-tools/venv/bin/python scripts/poc/실행.py --suite comparison --worker-concurrency 3 --ingress-linger-ms 0
 ```
 
 `--delay-ms 50` 또는 `200`으로 시뮬레이터의 처리 후 응답 지연을 바꿀 수 있다. 앱이 받는 값은 `0~60000ms`이며 실제 발송 read timeout보다 크면 정상 기준선이 실패할 수 있다. 적체 해소 관찰은 기본 300초, `--drain-seconds 2~300`으로 변경한다. 시작 조건이 맞지 않거나 어느 단계가 실패하면 이후 부하 증가는 중단한다.
