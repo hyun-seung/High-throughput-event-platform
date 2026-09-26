@@ -56,10 +56,10 @@
 신규 테이블 초기화는 GSI를 함께 생성한다. 기존 테이블 초기화는 자동으로 스키마를 바꾸지 않는다. 로컬용 이관 도구는 기본 read-only이며 `--apply`가 있을 때만 색인을 만들거나 전달받은 정확한 ID를 보강한다.
 
 ```bash
-.poc-tools/venv/bin/python scripts/dynamodb/수명주기_인덱스.py --endpoint http://localhost:18000
-.poc-tools/venv/bin/python scripts/dynamodb/수명주기_인덱스.py --endpoint http://localhost:18000 --apply
+bash scripts/검증-실행.sh DDB-인덱스 --endpoint http://localhost:18000
+bash scripts/검증-실행.sh DDB-인덱스 --endpoint http://localhost:18000 --apply
 # 기존 미완료 원본 목록에서 확인한 ID만 지정한다. 여러 번 지정 가능.
-.poc-tools/venv/bin/python scripts/dynamodb/수명주기_인덱스.py --endpoint http://localhost:18000 \
+bash scripts/검증-실행.sh DDB-인덱스 --endpoint http://localhost:18000 \
   --apply --delivery-id 00000000-0000-0000-0000-000000000001
 ```
 
