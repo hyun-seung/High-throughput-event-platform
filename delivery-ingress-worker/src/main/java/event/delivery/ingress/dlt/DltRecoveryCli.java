@@ -1,14 +1,11 @@
 package event.delivery.ingress.dlt;
 
 import event.common.delivery.DeliveryTopics;
+import event.common.dynamodb.config.LocalOperationsDynamoDbClient;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.apache.kafka.common.serialization.StringSerializer;
-import software.amazon.awssdk.auth.credentials.*;
-import software.amazon.awssdk.http.apache5.Apache5HttpClient;
-import software.amazon.awssdk.regions.Region;
-import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import tools.jackson.databind.json.JsonMapper;
 import java.net.URI;
 import java.sql.DriverManager;
@@ -53,11 +50,7 @@ public final class DltRecoveryCli {
             if ((resume || intake) && (limit < 1 || limit > 100 || seconds < 1 || seconds > 3600)) throw new IllegalArgumentException("Invalid worker bounds");
             var record = resume || intake ? null : DltInspector.fetchExact(bootstrap, args[1], Integer.parseInt(args[2]), Long.parseLong(args[3]));
             var mapper = JsonMapper.builder().build();
-            try (var db = DynamoDbClient.builder().endpointOverride(URI.create(endpoint)).region(Region.AP_NORTHEAST_2)
-                    .credentialsProvider(StaticCredentialsProvider.create(AwsBasicCredentials.create("dummy", "dummy")))
-                    .httpClientBuilder(Apache5HttpClient.builder().maxConnections(4).connectionTimeout(Duration.ofSeconds(2))
-                            .connectionAcquisitionTimeout(Duration.ofSeconds(2)).socketTimeout(Duration.ofSeconds(5)))
-                    .overrideConfiguration(c -> c.apiCallTimeout(Duration.ofSeconds(10)).apiCallAttemptTimeout(Duration.ofSeconds(5))).build()) {
+            try (var db = LocalOperationsDynamoDbClient.create(URI.create(endpoint))) {
                 var planner = new DltRecoveryPlanner(db, store, ttl, sourceTopic, Clock.systemUTC());
                 var plan = resume || intake ? null : planner.plan(record);
                 if (args[0].equals("plan")) { System.out.println(mapper.writeValueAsString(plan.preview())); return 0; }

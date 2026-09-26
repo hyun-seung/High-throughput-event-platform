@@ -1,0 +1,43 @@
+{
+  "date": "2026-09-26",
+  "status": "PASS",
+  "baseCommit": "23e8432f9c1f6b1fceb17103ada18e7304a5a3f8",
+  "runDirectory": ".poc-results/java-test-20260926040325-43808",
+  "javaUnit": {
+    "runDirectory": ".poc-results/java-test-20260926040233-43481",
+    "executed": 184,
+    "skippedIntegration": 224,
+    "failures": 0,
+    "errors": 0
+  },
+  "javaIntegration": {
+    "suites": 44,
+    "executed": 421,
+    "skipped": 0,
+    "failures": 0,
+    "errors": 0
+  },
+  "tools": {
+    "tests": "Java 21/JUnit, Maven Wrapper clean verify -Pintegration-tests",
+    "faultServer": "Java HttpServer on loopback with actual AWS SDK 2.54.12",
+    "environment": "Bash + isolated Docker Compose with PostgreSQL, Kafka, DynamoDB Local and Redis",
+    "performance": "k6 v1.8.1 binary and Docker daemon checked; no load test run"
+  },
+  "verified": [
+    "DLT recovery and delivery inspection CLIs now share one local DynamoDB client configuration",
+    "The local client uses a ten-second API budget, five-second attempt budget, and STANDARD retry with at most three attempts including the initial request",
+    "Three actual HTTP 503 responses stop the call; the same client succeeds on the next call after the server recovers",
+    "Full Java integration regression passed after the CLI changes"
+  ],
+  "cleanup": {
+    "containersStopped": true,
+    "containersRemoved": true,
+    "networkRemoved": true,
+    "volumesRetained": true
+  },
+  "limits": [
+    "The HTTP fault server verifies SDK transport behavior, not real DynamoDB persistence or a multi-Pod recovery burst",
+    "The CLI clients are local-only and do not inherit Spring properties; Redis and Kafka client reconnect behavior remains to be reviewed",
+    "This is a regression run, not a sustained k6, Pod capacity or 10000 TPS measurement"
+  ]
+}

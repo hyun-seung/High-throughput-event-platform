@@ -1,9 +1,8 @@
 package event.delivery.result.operations;
 
 import com.zaxxer.hikari.*;
+import event.common.dynamodb.config.LocalOperationsDynamoDbClient;
 import org.springframework.jdbc.core.JdbcTemplate;
-import software.amazon.awssdk.auth.credentials.*;
-import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import tools.jackson.databind.json.JsonMapper;
 import java.net.URI;
@@ -43,9 +42,7 @@ public final class DeliveryOperationsCli {
     static DynamoDbClient dynamo() {
         String endpoint = required("OPS_DYNAMODB_ENDPOINT"); var uri = URI.create(endpoint); local(uri);
         if (!endpoint.startsWith("http://")) throw new IllegalArgumentException("Local DynamoDB required");
-        return DynamoDbClient.builder().endpointOverride(uri).region(Region.AP_NORTHEAST_2)
-                .credentialsProvider(StaticCredentialsProvider.create(AwsBasicCredentials.create("local", "local")))
-                .overrideConfiguration(c -> c.apiCallTimeout(Duration.ofSeconds(10)).apiCallAttemptTimeout(Duration.ofSeconds(5))).build();
+        return LocalOperationsDynamoDbClient.create(uri);
     }
     private static void local(URI uri) {
         if (!Set.of("localhost", "127.0.0.1").contains(uri.getHost()) || uri.getPort() < 1 || uri.getUserInfo() != null
