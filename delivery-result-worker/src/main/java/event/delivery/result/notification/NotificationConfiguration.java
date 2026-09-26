@@ -27,7 +27,9 @@ public class NotificationConfiguration {
     @Bean NotificationService notificationService(NotificationRepository repository, CustomerNotificationClient client, NotificationProperties settings, MeterRegistry meters) {
         return new NotificationService(repository, client, settings, meters);
     }
-    @Bean(destroyMethod = "close") NotificationScheduler notificationScheduler(NotificationService service, NotificationProperties settings, MeterRegistry meters) {
-        return new NotificationScheduler(service, settings, meters);
+    @Bean(destroyMethod = "close") NotificationScheduler notificationScheduler(NotificationService service, NotificationProperties settings, MeterRegistry meters,
+            @org.springframework.beans.factory.annotation.Value("${notification.failure-initial-delay:1s}") java.time.Duration initial,
+            @org.springframework.beans.factory.annotation.Value("${notification.failure-max-delay:30s}") java.time.Duration maximum) {
+        return new NotificationScheduler(service, settings, meters, new event.common.recovery.FailureBackoff(initial, maximum));
     }
 }
