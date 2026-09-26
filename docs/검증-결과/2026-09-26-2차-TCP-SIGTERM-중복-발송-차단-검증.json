@@ -1,0 +1,40 @@
+{
+  "date": "2026-09-26",
+  "status": "PASS",
+  "javaIntegration": {
+    "runDirectory": ".poc-results/java-test-20260926094619-59048",
+    "suites": 47,
+    "executed": 427,
+    "skipped": 0,
+    "failures": 0,
+    "errors": 0
+  },
+  "secondaryTcpSigterm": {
+    "runDirectory": ".poc-results/full-flow-7f1f423f6223",
+    "passedCases": 1,
+    "dispatchExitCode": 143,
+    "shutdownSeconds": 5.099156707990915,
+    "gracefulShutdownLogged": true,
+    "restartUsesNewPid": true,
+    "stepVersionRetryLeaseAndDeadlinePreservedAfterRestart": true,
+    "primaryProviderCalls": 1,
+    "primaryProviderEffects": 0,
+    "secondaryProviderCalls": 1,
+    "secondaryProviderEffects": 1,
+    "providerDeduplicationEnabled": false,
+    "result": "EXPIRED",
+    "resultRouteOrder": 2,
+    "resultAtOriginalDeadline": true,
+    "customerNotificationAndCleanupCompleted": true,
+    "historyRows": 1,
+    "ownedProcessesStopped": true,
+    "containersRemovedAfterRun": true,
+    "networkRemovedAfterRun": true,
+    "volumesRetained": true
+  },
+  "limits": [
+    "One local dispatch JVM and secondary TCP provider call; other in-flight worker stages remain untested here",
+    "No Kubernetes eviction, multiple Pods, or throughput measurement",
+    "Ordinary running-state NO_RESPONSE retry behavior is unchanged; suppression is limited to context shutdown"
+  ]
+}
