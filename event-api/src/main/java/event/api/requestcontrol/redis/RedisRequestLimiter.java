@@ -3,7 +3,9 @@ package event.api.requestcontrol.redis;
 import event.api.requestcontrol.RequestLimiter;
 import event.api.requestcontrol.result.RequestLimitResult;
 import event.api.requestcontrol.result.RequestLimitStatus;
-import lombok.RequiredArgsConstructor;
+import event.common.recovery.FailureBackoff;
+import io.micrometer.core.instrument.MeterRegistry;
+import org.springframework.beans.factory.annotation.Qualifier;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.QueryTimeoutException;
 import org.springframework.data.redis.RedisConnectionFailureException;
@@ -17,11 +19,16 @@ import java.util.Objects;
 
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class RedisRequestLimiter implements RequestLimiter {
 
     private final StringRedisTemplate redisTemplate;
     private final RedisScript<List> requestLimitScript;
+    private final FailureBackoff backoff;
+    private final MeterRegistry metrics;
+    public RedisRequestLimiter(StringRedisTemplate redisTemplate, RedisScript<List> requestLimitScript,
+            @Qualifier("redisRecoveryBackoff") FailureBackoff backoff, MeterRegistry metrics) {
+        this.redisTemplate = redisTemplate; this.requestLimitScript = requestLimitScript; this.backoff = backoff; this.metrics = metrics;
+    }
 
     @Override
     public RequestLimitResult tryAcquire(Long userId) {
@@ -33,12 +40,19 @@ public class RedisRequestLimiter implements RequestLimiter {
                 RequestControlRedisKey.quota(userId, YearMonth.now())
         );
 
+        var ticket = backoff.acquire();
+        if (ticket == null) {
+            metrics.counter("delivery.redis.calls.skipped", "operation", "request_limit").increment();
+            return RequestLimitResult.redisUnavailableBypass();
+        }
         try {
             List<?> result = redisTemplate.execute(requestLimitScript, keys);
-            return convertResult(userId, result);
+            var converted = convertResult(userId, result); backoff.succeeded(ticket); return converted;
         } catch (RedisConnectionFailureException | QueryTimeoutException e) {
-            log.error("Redis unavailable. Request control bypassed. userId={}, cause={}", userId, e.getMessage());
+            if (backoff.failed(ticket)) log.warn("Redis unavailable; request control bypassed until recovery probe. failure={}", e.getClass().getSimpleName());
             return RequestLimitResult.redisUnavailableBypass();
+        } catch (RuntimeException invalid) {
+            backoff.succeeded(ticket); throw invalid;
         }
     }
 
