@@ -1,0 +1,72 @@
+{
+  "date": "2026-09-26",
+  "status": "PASS",
+  "baseCommit": "1e93ed7c567a57cb75523d6c244a23fe0fd28880",
+  "runDirectory": ".poc-results/java-test-20260926034009-39192",
+  "javaIntegration": {
+    "suites": 44,
+    "executed": 420,
+    "skipped": 0,
+    "failures": 0,
+    "errors": 0
+  },
+  "newTests": {
+    "dynamoDbClientRecovery": 7
+  },
+  "tools": {
+    "applicationTests": "Java 21/JUnit, Maven Wrapper clean verify -Pintegration-tests",
+    "faultServer": "Java HttpServer on loopback; actual AWS SDK 2.54.12 + Apache5 HTTP transport",
+    "environment": "Bash + Docker Compose, fresh isolated project",
+    "performance": "Not run; Virtual Thread expansion and performance changes deferred to measured k6 comparisons"
+  },
+  "infrastructure": {
+    "kafka": "apache/kafka:4.0.2",
+    "postgresql": "postgres:17-alpine",
+    "dynamodb": "amazon/dynamodb-local:2.6.1",
+    "redis": "redis:7.4-alpine"
+  },
+  "cleanup": {
+    "containersStopped": true,
+    "containersRemoved": true,
+    "networkRemoved": true,
+    "volumesRetained": true
+  },
+  "developmentRuns": [],
+  "defaults": {
+    "apiCallTimeout": "10s",
+    "apiCallAttemptTimeout": "5s",
+    "retryStrategy": "STANDARD",
+    "maxAttemptsIncludingInitial": 3,
+    "connectionPoolSize": 64
+  },
+  "verified": [
+    "Two actual HTTP 503 responses followed by HTTP 200 produce three server requests, three SDK transport-attempt metrics, and one logical success duration",
+    "Persistent HTTP 503 stops after the configured three attempts, then the same SDK client recovers on the next successful call",
+    "A conditional PutItem HTTP 400 is sent once and remains a condition failure, not a storage outage",
+    "Continuous response bytes arrive before socket timeout, but the API attempt budget stops the operation; the same client subsequently succeeds",
+    "The total API budget stops repeated slow responses before the configured ten-attempt ceiling",
+    "Spring properties bind total/attempt budgets and attempt count without a metrics registry; a one-attempt configuration sends only once",
+    "Invalid timeout ordering, non-positive timeouts, and out-of-range attempt counts fail before client creation",
+    "Full pre-existing integration suite remains green, including conditional claims, results, cleanup and unknown-write recovery paths"
+  ],
+  "scopeAndLimits": [
+    "Production change applies to the shared Spring DynamoDB client only; standalone operations clients do not automatically inherit it",
+    "Local Java server models SDK transport behavior, not real DynamoDB persistence, multi-AZ failure, or AWS throttling capacity",
+    "beforeTransmission counts transport entry including SDK retries; it does not prove server receipt, successful writes or consumed capacity",
+    "API timeout is a per-SDK-call budget, not a complete workflow deadline, hard real-time guarantee, cancellation of an already committed write, or proof of non-commit",
+    "SDK maxAttempts is an upper bound; total timeout and SDK circuit breaking may end a call earlier",
+    "No pool size, worker concurrency, Virtual Thread, JVM resources, or k6 load changes",
+    "Lettuce/Kafka reconnect settings, standalone client consistency, multi-Pod bursts and production connection recovery remain to be reviewed"
+  ],
+  "officialSources": [
+    "https://docs.aws.amazon.com/sdk-for-java/latest/developer-guide/timeouts.html",
+    "https://docs.aws.amazon.com/sdk-for-java/latest/developer-guide/retry-strategy.html"
+  ],
+  "sourceSha256": {
+    "event-common/src/main/java/event/common/dynamodb/config/DynamoDbAutoConfiguration.java": "7f41a4b8db103174abd9570b77b0b3d5579e240ee1df10bcc3cf7d636521db06",
+    "event-common/src/main/java/event/common/dynamodb/config/DynamoDbProperties.java": "9cc1107487d4cab35ceb89c5668e2692f098f4ce12155ccb769aea3f2cfefc83",
+    "event-common/src/main/java/event/common/metrics/DynamoDbMetricsInterceptor.java": "a46d248bacb7658602aafd4c9e789c9b075abe89e633a4d8fb971a953a23f62a",
+    "event-common/src/test/java/event/common/dynamodb/DynamoDbClientRecoveryTest.java": "47e5d39e2de1f3db3d8e9c6d7a545d018cf39d0bccdd67a95c159faae4b835f4"
+  },
+  "postRunChanges": "Documentation and evidence only; no code changes after final integration"
+}

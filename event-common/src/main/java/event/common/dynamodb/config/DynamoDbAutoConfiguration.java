@@ -12,6 +12,7 @@ import org.springframework.context.annotation.Bean;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.http.apache5.Apache5HttpClient;
+import software.amazon.awssdk.retries.StandardRetryStrategy;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClientBuilder;
@@ -37,9 +38,12 @@ public class DynamoDbAutoConfiguration {
                         .connectionMaxIdleTime(properties.getMaxIdleTime())
                         .useIdleConnectionReaper(true));
         MeterRegistry registry = registries.getIfAvailable();
-        if (registry != null) {
-            builder.overrideConfiguration(config -> config.addExecutionInterceptor(new DynamoDbMetricsInterceptor(registry)));
-        }
+        builder.overrideConfiguration(config -> {
+            config.apiCallTimeout(properties.getApiCallTimeout())
+                    .apiCallAttemptTimeout(properties.getApiCallAttemptTimeout())
+                    .retryStrategy(StandardRetryStrategy.builder().maxAttempts(properties.getMaxAttempts()).build());
+            if (registry != null) config.addExecutionInterceptor(new DynamoDbMetricsInterceptor(registry));
+        });
 
         if (properties.getEndpoint() != null && !properties.getEndpoint().isBlank()) {
             builder.endpointOverride(URI.create(properties.getEndpoint()))
