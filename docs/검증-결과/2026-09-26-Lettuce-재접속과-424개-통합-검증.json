@@ -1,0 +1,56 @@
+{
+  "date": "2026-09-26",
+  "status": "PASS",
+  "baseCommit": "14a8bb04cddbd51dd7dad088b694bc65e4fd9d8c",
+  "javaIntegration": {
+    "runDirectory": ".poc-results/java-test-20260926041545-46341",
+    "suites": 45,
+    "executed": 424,
+    "skipped": 0,
+    "failures": 0,
+    "errors": 0,
+    "containersStopped": true,
+    "containersRemoved": true,
+    "networkRemoved": true,
+    "volumesRetained": true
+  },
+  "redisProcessRecovery": {
+    "runDirectory": ".poc-results/full-flow-538f9896d332",
+    "passedScenarios": 3,
+    "historyRows": 3,
+    "resultCounts": {"DELIVERED": 2, "EXPIRED": 1},
+    "bypassedRequests": 3,
+    "providerCalls": 3,
+    "providerEffects": 3,
+    "applicationPidsUnchanged": true,
+    "ownedProcessesStopped": true,
+    "containersRemovedAfterRun": true,
+    "networkRemovedAfterRun": true,
+    "volumesRetained": true
+  },
+  "verified": [
+    "Spring Boot auto-configuration applies Lettuce auto-reconnect, disconnected command rejection, per-connection queue limit 1024, and 100 ms to 30 s jittered reconnect delay",
+    "A client-side disconnected rejection enters the existing Redis bypass and backoff path; a Redis server policy error remains an error",
+    "After a real Redis container stop, accepted requests retain their provider effect, customer result and cleanup; DDB recovery expires a request without a Redis schedule at its original deadline",
+    "After the same Redis container restarts, TPS and quota policies apply again and a new completion marker is written"
+  ],
+  "environmentIssue": "First Java integration launch could not create a Docker network because predefined address pools were exhausted. Removed only the just-run full-flow-538f9896d332 Compose project network and stopped containers, kept volumes, then the complete integration run passed.",
+  "postRunHarnessFix": {
+    "change": "The full-flow Python runner now uses docker compose down for its unique project at teardown, removing stopped containers and its network while retaining volumes.",
+    "verification": "13 Python unittest cases passed in scripts/poc/test_full_flow.py, including an owned-project cleanup assertion; the long Redis scenario was run before this teardown-only change."
+  },
+  "limits": [
+    "Single local Redis process and same-volume recovery, not a multi-Pod reconnect-rate or HA proof",
+    "Lettuce rejection is proven by the real outage log, but a saturated live-connection queue was checked by configuration and failure-classification tests rather than a throughput test",
+    "No k6 performance test or Kafka reconnect configuration change"
+  ],
+  "officialSources": [
+    "https://redis.github.io/lettuce/advanced-usage/client-options/",
+    "https://docs.spring.io/spring-boot/api/java/org/springframework/boot/data/redis/autoconfigure/LettuceClientOptionsBuilderCustomizer.html"
+  ],
+  "sourceSha256": {
+    "event-common/src/main/java/event/common/redis/DeliveryCacheAutoConfiguration.java": "cebc913aa4ae0a8cf3b61467c8f8ae16ff0035bd0c5d6c275af92a40a1c4c9c0",
+    "event-api/src/main/java/event/api/requestcontrol/redis/RedisRequestLimiter.java": "6b677048ed3341705b1566b6e1c44061a4f0a205b22ce134b98c2a98608669c8"
+  },
+  "postRunChanges": "Import ordering and the Python harness teardown change only; Java behavior is unchanged since the full integration run."
+}
