@@ -19,7 +19,11 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'poc'))
 from 실행 import Runner, ROOT, RESULTS, TOOLS, request, write_json
 from 검증_근거 import KafkaProbe
-from 로그_상태 import inspect_log
+
+def inspect_log(text):
+    result = subprocess.run(['java', str(ROOT / 'scripts/testing/LogHealth.java')],
+                            input=text, text=True, capture_output=True, check=True, timeout=30)
+    return json.loads(result.stdout)
 
 
 # Runs inside the already available Python collector. Management ports stay private.
@@ -159,7 +163,7 @@ class MonitoringRunner(Runner):
         ingress = next(x for x in containers if x['name'] == '/platform-monitoring-ingress-1')
         if ingress['settings'].get('INGRESS_KAFKA_LINGER_MS') != '5':
             raise RuntimeError('Benchmark expects ingress linger 5ms')
-        sources = [Path(__file__), Path(__file__).with_name('로그_상태.py'),
+        sources = [Path(__file__), ROOT / 'scripts/testing/LogHealth.java',
                    *sorted((ROOT / 'scripts/poc').glob('*.py')), ROOT / 'scripts/poc/load.js']
         write_json(self.directory / 'environment.json', {
             'runId': self.run_id, 'suite': self.args.suite, 'composeProject': 'platform-monitoring',

@@ -38,7 +38,7 @@ bash scripts/test-java.sh integration
 ```sh
 bash scripts/검증-실행.sh 목록
 bash scripts/검증-실행.sh 준비
-bash scripts/검증-실행.sh 파이썬-테스트 -q
+bash scripts/검증-실행.sh 도구-테스트 -q
 bash scripts/검증-실행.sh 고객-통지중-종료
 ```
 

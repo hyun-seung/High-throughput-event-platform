@@ -7,7 +7,7 @@ usage() {
   cat <<'EOF'
 사용법: bash scripts/검증-실행.sh <이름> [추가 옵션]
 
-준비/검증: 준비, 파이썬-테스트, Java-단위, Java-통합
+준비/검증: 준비, 도구-테스트, Java-단위, Java-통합
 실제 JVM 종료: 강제종료, 정상종료, 1차-호출중-종료, 2차-호출중-종료, 고객-통지중-종료
 전체 흐름: 전체흐름, 전체흐름-부하, 수신결과, 수명주기
 저장소 장애: 카프카, 카프카-복제, 레디스, 포스트그레스, 다이나모DB
@@ -40,9 +40,9 @@ python_bin=.poc-tools/venv/bin/python
 [[ -x "$python_bin" ]] || { echo "먼저 bash scripts/검증-실행.sh 준비 를 실행하세요." >&2; exit 1; }
 
 case "$scenario" in
-  파이썬-테스트)
+  도구-테스트|파이썬-테스트)
     "$python_bin" -m unittest discover -s scripts/poc -p 'test_*.py' "$@"
-    "$python_bin" -m unittest discover -s scripts/monitoring -p 'test_*.py' "$@"
+    java scripts/testing/LogHealth.java self-test
     "$python_bin" -m unittest discover -s monitoring/collector -p 'test_*.py' "$@"
     exec "$python_bin" -m unittest discover -s scripts/dynamodb -p 'test_*.py' "$@" ;;
   강제종료) script=scripts/poc/프로세스_복구.py ;;
