@@ -1,0 +1,90 @@
+{
+  "date": "2026-09-26",
+  "status": "PASS",
+  "baseCommit": "b9223e534d1bea2033143875123cbc3960143904",
+  "runDirectory": ".poc-results/java-test-20260926032845-37969",
+  "javaIntegration": {
+    "suites": 43,
+    "executed": 413,
+    "skipped": 0,
+    "failures": 0,
+    "errors": 0
+  },
+  "newTests": {
+    "storageFailureClassification": 3,
+    "notificationScheduler": 2,
+    "cleanupWorker": 2,
+    "notificationPostgresHttp": 1,
+    "cleanupPostgresDynamo": 1,
+    "dltPostgresDynamoKafka": 3,
+    "total": 12
+  },
+  "tools": {
+    "applicationTests": "Java 21/JUnit, Maven Wrapper clean verify -Pintegration-tests",
+    "environment": "Bash + Docker Compose, fresh isolated project",
+    "performance": "Not run; k6 reserved for performance phase"
+  },
+  "infrastructure": {
+    "kafka": "apache/kafka:4.0.2",
+    "postgresql": "postgres:17-alpine",
+    "dynamodb": "amazon/dynamodb-local:2.6.1",
+    "redis": "redis:7.4-alpine"
+  },
+  "cleanup": {
+    "containersStopped": true,
+    "containersRemoved": true,
+    "networkRemoved": true,
+    "volumesRetained": true
+  },
+  "developmentRuns": [
+    {
+      "runDirectory": ".poc-results/java-test-20260926032558-37540",
+      "status": "TEST_FAILED",
+      "reason": "Two new DLT fixtures shared the original Kafka source coordinate and correctly deduplicated to one recovery operation. Changed the second fixture's original source offset to model two operations. Reactor stopped at ingress; mixed existing reports were not counted as a full suite."
+    }
+  ],
+  "verified": [
+    "Storage outage classification follows wrapped SQL connection/timeout/overload failures and DynamoDB connection/5xx/throttling, excluding data and conditional conflicts",
+    "Notification scheduler defers 100 ticks after injected SQL failure and permits one recovery probe; a customer-specific data error does not pause other customers",
+    "Actual customer HTTP acknowledgement followed by injected SQL completion failure retains the original batch lease and attempt count during backoff and before lease expiry",
+    "After controlled lease expiry, the same HTTP batch body and key are retried; SQL is DELIVERED with attempt_count=2, history retained, customer test-server effect count remains one",
+    "Cleanup stops its lane on DynamoDB SDK failure, including an SQL retry-record failure following an unrelated data error",
+    "Actual DynamoDB cleanup transaction commits before an injected lost-response exception; 100 skipped ticks preserve the SQL reservation and do not claim again",
+    "After controlled backoff and SQL retry schedule advancement, cleanup reaches DONE without another DynamoDB write transaction; customer notification budget remains zero",
+    "DLT SQL connection failure skips 100 repeated scans, then recovers the persisted command through actual Kafka using its original occurrence time even when the planner clock is eight hours later",
+    "A backend failure returned as UNCONFIRMED stops a two-operation DLT batch after the first attempt; skipped cycles do not append attempts; probe selects at most one PENDING operation",
+    "DLT intake archives two raw records with cursor=2 before injected Kafka timeout; blocked cycles leave raw records, cursor, and recovery attempt count intact",
+    "Recovered intake and PENDING resumer publish the saved execution command using the original deadline basis",
+    "Normal successful DynamoDB write budget remains five calls and seven item mutations; process-local gates introduce no durable backoff writes"
+  ],
+  "notVerifiedOrImplemented": [
+    "New outage tests use Java exception injection and controlled clocks/SQL schedule advancement, not physical network disconnection or long real-time outages",
+    "Customer effect count relies on the test receiver deduplicating the same batch/result IDs; external exactly-once delivery is not claimed",
+    "Passing an empty SQL claim or empty DLT scan proves that call only; it does not prove every downstream dependency is healthy",
+    "Lettuce/Kafka/AWS SDK internal reconnect and retry configuration changes or connection-attempt measurement",
+    "Cluster-wide backoff coordination, multi-Pod restart bursts, durable backoff state",
+    "New dedicated Grafana panels/alerts; notification/cleanup delay and deferred-poll metrics are exposed",
+    "k6 load tests, Pod limits, ten-thousand TPS and multi-AZ durability proof"
+  ],
+  "sourceSha256": {
+    "delivery-ingress-worker/src/main/java/event/delivery/ingress/dlt/DltIntakeStore.java": "26f118894296d805b991f07398fefddaffd8398a8842a40cd35c662d7caeb6f9",
+    "delivery-ingress-worker/src/main/java/event/delivery/ingress/dlt/DltIntakeWorker.java": "ac2c1fe5d6c989532c99914f000286d69cd75e428585d45f8d22660b22401f49",
+    "delivery-ingress-worker/src/main/java/event/delivery/ingress/dlt/DltRecoveryCli.java": "c57f90fb7c5b752a500629da5a6475e1d1ea9c21990d8ac8532f796d86b9f396",
+    "delivery-ingress-worker/src/main/java/event/delivery/ingress/dlt/DltRecoveryResumer.java": "f82585dbbb9847a42b9509e627f40a43e6a75b9a6f30314f2e88cde27d6162a4",
+    "delivery-ingress-worker/src/main/java/event/delivery/ingress/dlt/DltRecoveryStore.java": "c2b7ba7c20eaa170890dbea066668248e393d66c576073a79876d9d02948f11b",
+    "delivery-ingress-worker/src/test/java/event/delivery/ingress/dlt/DltRecoveryIntegrationTest.java": "fc5a13d3081e83ee26a63d27509b17f2432a39d98156fc11e3919bb8052d3a62",
+    "delivery-result-worker/src/main/java/event/delivery/result/cleanup/CleanupConfiguration.java": "c48716e56bc6892f94c6395cbde98eff9c1dd037e69b8dc67f38e89dd11ea1a7",
+    "delivery-result-worker/src/main/java/event/delivery/result/cleanup/CleanupWorker.java": "6b283385fe01f2172454c50a9a858779e955925b748bee943599455a98ddb64c",
+    "delivery-result-worker/src/main/java/event/delivery/result/notification/NotificationConfiguration.java": "11b3d17943b5dc38635fe033c5401ba5b1863127ada86c29766fd8d86511794b",
+    "delivery-result-worker/src/main/java/event/delivery/result/notification/NotificationScheduler.java": "0b6390d5238dbe76100b21bae4322c9ff502e9f652d9619f2752935d0a8db23e",
+    "delivery-result-worker/src/main/resources/application.yml": "64c6b9b135fd145d9dc73844ebdb0092ad3802291b3d63040894af16d0fc413c",
+    "delivery-result-worker/src/test/java/event/delivery/result/CleanupPostgresDynamoDbTest.java": "f6162dad5dbe06696f75c15033cefc300f4375a63f3e75f3278bef4bde359823",
+    "delivery-result-worker/src/test/java/event/delivery/result/NotificationPostgresTest.java": "9cabed217ac721a7cc3da70b85c48475840e32aa8c81bfc545ca57353fc0047d",
+    "delivery-result-worker/src/test/java/event/delivery/result/cleanup/CleanupWorkerTest.java": "d1d276308f0c520943c19be7e9fa63285f937b4b65aff9fee091ffcc9de59bb7",
+    "delivery-ingress-worker/src/main/java/event/delivery/ingress/dlt/DltBackoff.java": "63d325e597b81e410f4a2810eb7aa072d7e934c60cef8baf22075a921927bf70",
+    "delivery-result-worker/src/test/java/event/delivery/result/notification/NotificationSchedulerTest.java": "b383a618c80f01ca4f80d2b28e75f0b2a6211ecf160fbb4e2f50fec4a15d4ca5",
+    "event-common/src/main/java/event/common/recovery/StorageFailure.java": "698412e825d6c249fc376f3297be3c4c7d7048deb56efe8af48edca5347f17cb",
+    "event-common/src/test/java/event/common/recovery/StorageFailureTest.java": "09a65f546fe8c276ef38fe450432a913846063ad3b0d442d95bd8ba008d73e0a"
+  },
+  "postRunChanges": "Documentation and evidence only; no code changes after final integration"
+}

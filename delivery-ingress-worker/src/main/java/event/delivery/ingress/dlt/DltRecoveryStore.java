@@ -16,7 +16,9 @@ public final class DltRecoveryStore implements DltRecoveryPlanner.HistoryReader 
     @FunctionalInterface public interface Connections { Connection open() throws SQLException; }
     @FunctionalInterface public interface Publisher { Ack send(DeliveryEvent command) throws Exception; }
     public record Ack(String topic, int partition, long offset) { }
-    public record Result(UUID operationId, String status) { }
+    public record Result(UUID operationId, String status, boolean backendUnavailable) {
+        public Result(UUID operationId, String status) { this(operationId, status, false); }
+    }
     public record Pending(UUID operationId, String checkpointJson, Instant updatedAt) { }
     private final Connections connections;
     private final String schema;
@@ -156,7 +158,7 @@ public final class DltRecoveryStore implements DltRecoveryPlanner.HistoryReader 
                     // The record may already exist in Kafka. Retain the identical execution command for a later retry.
                     finish(connection, operation, attempt, "PENDING", "UNCONFIRMED", null);
                     if (uncertain instanceof InterruptedException) Thread.currentThread().interrupt();
-                    return new Result(operation, "UNCONFIRMED");
+                    return new Result(operation, "UNCONFIRMED", DltBackoff.unavailable(uncertain));
                 }
             } finally {
                 try (var unlock = connection.prepareStatement("SELECT pg_advisory_unlock(?)")) {

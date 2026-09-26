@@ -146,6 +146,31 @@ class CleanupPostgresDynamoDbTest {
         return db.getItem(r -> r.tableName(STEP).key(key(e, "ATTEMPT#" + e.attemptId())).consistentRead(true)).item();
     }
 
+    @Test void lostCleanupCommitResponseBacksOffThenCompletesFromDurableReservation() {
+        var e = seedModern(UUID.randomUUID().toString()); store.save(e);
+        var lost = mock(DynamoDbClient.class, org.mockito.AdditionalAnswers.delegatesTo(db));
+        doAnswer(call -> {
+            db.transactWriteItems((software.amazon.awssdk.services.dynamodb.model.TransactWriteItemsRequest) call.getArgument(0));
+            throw software.amazon.awssdk.core.exception.SdkClientException.create("response lost after actual cleanup commit");
+        }).when(lost).transactWriteItems(any(software.amazon.awssdk.services.dynamodb.model.TransactWriteItemsRequest.class));
+        var observed = spy(repository); var nanos = new java.util.concurrent.atomic.AtomicLong();
+        var backoff = new event.common.recovery.FailureBackoff(Duration.ofSeconds(1), Duration.ofSeconds(30), nanos::get, () -> 1.0);
+        try (var worker = new CleanupWorker(observed, new DeliveryCompactor(lost), meters, 1, 20, backoff)) {
+            worker.tick(); assertTrue(origin(e).isEmpty()); assertTrue(step(e).isEmpty());
+            assertEquals("PENDING", jdbc.queryForObject("SELECT status FROM delivery_cleanup_outbox", String.class));
+            var retained = jdbc.queryForMap("SELECT * FROM delivery_cleanup_outbox");
+            for (int i = 0; i < 100; i++) worker.tick();
+            verify(observed, times(1)).claim(); assertEquals(retained, jdbc.queryForMap("SELECT * FROM delivery_cleanup_outbox"));
+            assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM delivery_history", Integer.class));
+            assertEquals(0, jdbc.queryForObject("SELECT attempt_count FROM customer_notification_outbox", Integer.class));
+            jdbc.update("UPDATE delivery_cleanup_outbox SET next_attempt_at=clock_timestamp()-interval '1 second'");
+            nanos.addAndGet(Duration.ofSeconds(1).toNanos()); worker.tick();
+            assertEquals("DONE", jdbc.queryForObject("SELECT status FROM delivery_cleanup_outbox", String.class));
+            verify(lost, times(1)).transactWriteItems(any(software.amazon.awssdk.services.dynamodb.model.TransactWriteItemsRequest.class));
+            assertEquals(0, jdbc.queryForObject("SELECT attempt_count FROM customer_notification_outbox", Integer.class));
+        }
+    }
+
     @Test void manualIntentIsCommittedBeforeDynamoMutationAndSameActionRemainsIdempotent() {
         Instant now = Instant.now(); var e = unresolved(now); var request = resolutionRequest(e, 2, ManualResolution.Decision.SUCCEEDED);
         var observed = mock(DynamoDbClient.class, org.mockito.AdditionalAnswers.delegatesTo(db));

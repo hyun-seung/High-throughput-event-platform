@@ -155,6 +155,37 @@ class NotificationPostgresTest {
         assertEquals(server.requests.get(0).body(), server.requests.get(1).body());
     }
 
+    @Test void sqlOutageBackoffPreservesAcknowledgedBatchLeaseAndRetryBudget() throws Exception {
+        save(42);
+        settings = new NotificationProperties(true, 1, 10, settings.httpTimeout(), settings.lease(),
+                settings.retryDelay(), settings.maxRetryDelay(), settings.maxBatchBytes(), Map.of(42L, settings.customers().get(42L)));
+        repository = org.mockito.Mockito.spy(repository);
+        org.mockito.Mockito.doThrow(new org.springframework.dao.DataAccessResourceFailureException("SQL unavailable after HTTP ack"))
+                .doCallRealMethod().when(repository).complete(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyBoolean(),
+                        org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+        var nanos = new java.util.concurrent.atomic.AtomicLong();
+        var backoff = new event.common.recovery.FailureBackoff(Duration.ofSeconds(1), Duration.ofSeconds(30), nanos::get, () -> 1.0);
+        try (var scheduler = new NotificationScheduler(service(), settings, meters, backoff)) {
+            scheduler.tick(); await(() -> meters.get("delivery.notification.active").gauge().value() == 0);
+            var lease = jdbc.queryForMap("SELECT batch_id,lease_token,lease_until,attempt_count FROM customer_notification_batch");
+            assertEquals(1, server.requests.size()); assertEquals(1, count("PENDING"));
+            assertEquals("IN_FLIGHT", jdbc.queryForObject("SELECT status FROM customer_notification_batch", String.class));
+            for (int i = 0; i < 100; i++) scheduler.tick();
+            assertEquals(lease, jdbc.queryForMap("SELECT batch_id,lease_token,lease_until,attempt_count FROM customer_notification_batch"));
+            assertEquals(1, server.requests.size());
+            nanos.addAndGet(Duration.ofSeconds(1).toNanos());
+            scheduler.tick(); await(() -> meters.get("delivery.notification.active").gauge().value() == 0);
+            assertEquals(lease, jdbc.queryForMap("SELECT batch_id,lease_token,lease_until,attempt_count FROM customer_notification_batch"));
+            expireLease(); scheduler.tick(); await(() -> meters.get("delivery.notification.active").gauge().value() == 0);
+            assertEquals(1, count("DELIVERED")); assertEquals(2, server.requests.size());
+            assertEquals(1, server.effects.size());
+            assertEquals(server.requests.get(0).body(), server.requests.get(1).body());
+            assertEquals(server.requests.get(0).key(), server.requests.get(1).key());
+            assertEquals(2, jdbc.queryForObject("SELECT attempt_count FROM customer_notification_outbox", Integer.class));
+            assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM delivery_history", Integer.class));
+        }
+    }
+
     @Test void claimRollbackDoesNotSpendAttemptOrSendHttp() {
         save(42);
         jdbc.execute("ALTER TABLE customer_notification_outbox ADD CONSTRAINT injected_failure CHECK (attempt_count = 0)");
