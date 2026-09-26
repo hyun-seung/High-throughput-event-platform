@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import tempfile
 import subprocess
+import threading
 import unittest
 from unittest.mock import patch
 from full_flow import FullFlow, verify_delivery
@@ -121,6 +122,19 @@ class InfrastructureStartupTest(unittest.TestCase):
                     patch('full_flow.subprocess.check_output', return_value='{"Running":false,"Status":"created"}'):
                 with self.assertRaises(subprocess.TimeoutExpired): runner.start_container('owned-container', None)
             self.assertEqual(run.call_count, 2)
+
+    def test_cleanup_removes_only_owned_project_network_and_keeps_volumes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            runner = self.runner(directory)
+            runner.apps = {}; runner.probe = None; runner.server = None; runner.logs = []
+            runner.lock = threading.Lock(); runner.callback_records = []; runner.infra_started = True
+            with patch('full_flow.subprocess.run') as run:
+                runner.close()
+            command = run.call_args.args[0]
+            self.assertEqual(command, runner.compose + ['down', '--timeout', '20'])
+            self.assertNotIn('--volumes', command)
+            cleanup = json.loads((Path(directory) / 'cleanup.json').read_text())
+            self.assertTrue(cleanup['containersRemoved'] and cleanup['networkRemoved'] and cleanup['volumesRetained'])
 
 
 if __name__ == '__main__': unittest.main()

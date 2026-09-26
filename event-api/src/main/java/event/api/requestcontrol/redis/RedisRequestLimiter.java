@@ -4,11 +4,13 @@ import event.api.requestcontrol.RequestLimiter;
 import event.api.requestcontrol.result.RequestLimitResult;
 import event.api.requestcontrol.result.RequestLimitStatus;
 import event.common.recovery.FailureBackoff;
+import io.lettuce.core.RedisException;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.beans.factory.annotation.Qualifier;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.QueryTimeoutException;
 import org.springframework.data.redis.RedisConnectionFailureException;
+import org.springframework.data.redis.RedisSystemException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Component;
@@ -51,9 +53,22 @@ public class RedisRequestLimiter implements RequestLimiter {
         } catch (RedisConnectionFailureException | QueryTimeoutException e) {
             if (backoff.failed(ticket)) log.warn("Redis unavailable; request control bypassed until recovery probe. failure={}", e.getClass().getSimpleName());
             return RequestLimitResult.redisUnavailableBypass();
+        } catch (RedisSystemException failure) {
+            // Lettuce reports rejected disconnected/overflowed commands as a plain RedisException.
+            // Redis error replies have a specific subtype and must not bypass the policy.
+            if (!localClientRejection(failure)) { backoff.succeeded(ticket); throw failure; }
+            if (backoff.failed(ticket)) log.warn("Redis unavailable; request control bypassed until recovery probe. failure={}", failure.getClass().getSimpleName());
+            return RequestLimitResult.redisUnavailableBypass();
         } catch (RuntimeException invalid) {
             backoff.succeeded(ticket); throw invalid;
         }
+    }
+
+    private static boolean localClientRejection(Throwable failure) {
+        for (int depth = 0; failure != null && depth < 6; depth++, failure = failure.getCause()) {
+            if (failure.getClass() == RedisException.class) return true;
+        }
+        return false;
     }
 
     private RequestLimitResult convertResult(Long userId, List<?> result) {

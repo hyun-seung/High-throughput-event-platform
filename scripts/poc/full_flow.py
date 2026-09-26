@@ -362,11 +362,14 @@ class FullFlow:
         for log in self.logs: log.close()
         with self.lock: self.write('customer-receipts.json', self.callback_records)
         if self.infra_started:
-            with (self.directory / 'infra-stop.log').open('w') as log:
-                subprocess.run(self.compose + ['stop', '--timeout', '20'], cwd=ROOT, env=self.compose_env,
+            with (self.directory / 'infra-down.log').open('w') as log:
+                subprocess.run(self.compose + ['down', '--timeout', '20'], cwd=ROOT, env=self.compose_env,
                     stdout=log, stderr=subprocess.STDOUT, check=True, timeout=120)
         self.write('cleanup.json', {'ownedProcessesStopped': True, 'composeProject': self.run_id,
-                                   'containersStopped': self.infra_started, 'volumesRetained': True})
+                                   'containersStopped': self.infra_started,
+                                   'containersRemoved': self.infra_started,
+                                   'networkRemoved': self.infra_started,
+                                   'volumesRetained': True})
 
 
 def main():
