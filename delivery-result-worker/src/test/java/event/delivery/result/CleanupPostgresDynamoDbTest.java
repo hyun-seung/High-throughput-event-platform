@@ -7,6 +7,7 @@ import event.delivery.result.cleanup.*;
 import event.delivery.result.notification.*;
 import event.delivery.result.operations.DeliveryOperations;
 import event.delivery.result.operations.CleanupOperations;
+import event.delivery.result.operations.ResolutionOperations;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.*;
@@ -125,6 +126,164 @@ class CleanupPostgresDynamoDbTest {
                 .expressionAttributeValues(Map.of(":state", s(state), ":deadline", AttributeValue.fromN(Long.toString(deadline.toEpochMilli())),
                         ":lease", AttributeValue.fromN(Long.toString(lease.toEpochMilli())), ":reason", s("LEASE_EXPIRED_WITHOUT_RESULT"),
                         ":provider", s("test-provider"), ":route", AttributeValue.fromN("1"))));
+    }
+
+    ResolutionOperations resolutions(DynamoDbClient client, Instant now) {
+        return new ResolutionOperations(jdbc, new DataSourceTransactionManager(pool), new ManualResolution(client), Clock.fixed(now, ZoneOffset.UTC));
+    }
+    DeliveryFinalized unresolved(Instant now) {
+        var e = seedModern(UUID.randomUUID().toString()); activeStep(e, "PROCESSING", now.plusSeconds(60), now.minusSeconds(1));
+        db.updateItem(r -> r.tableName(STEP).key(key(e, "ATTEMPT#" + e.attemptId()))
+                .updateExpression("SET schema_version=:two,delivery_id=:id,retry_count=:zero")
+                .expressionAttributeValues(Map.of(":two", AttributeValue.fromN("2"), ":id", s(e.deliveryId()), ":zero", AttributeValue.fromN("0"))));
+        return e;
+    }
+    ResolutionOperations.Request resolutionRequest(DeliveryFinalized e, long version, ManualResolution.Decision decision) {
+        return new ResolutionOperations.Request(new ManualResolution.Target(42, UUID.fromString(e.requestKey()), UUID.fromString(e.deliveryId()),
+                UUID.fromString(e.attemptId()), version, UUID.randomUUID(), decision), "operator.test", "외부 처리 내역 확인");
+    }
+    Map<String, AttributeValue> step(DeliveryFinalized e) {
+        return db.getItem(r -> r.tableName(STEP).key(key(e, "ATTEMPT#" + e.attemptId())).consistentRead(true)).item();
+    }
+
+    @Test void manualIntentIsCommittedBeforeDynamoMutationAndSameActionRemainsIdempotent() {
+        Instant now = Instant.now(); var e = unresolved(now); var request = resolutionRequest(e, 2, ManualResolution.Decision.SUCCEEDED);
+        var observed = mock(DynamoDbClient.class, org.mockito.AdditionalAnswers.delegatesTo(db));
+        doAnswer(call -> {
+            // Independent connection proves the audit intent is already committed, not just visible inside the action transaction.
+            try (var connection = pool.getConnection(); var statement = connection.createStatement();
+                 var rows = statement.executeQuery("SELECT status FROM delivery_resolution_action")) {
+                assertTrue(rows.next()); assertEquals("PENDING", rows.getString(1));
+            }
+            return db.transactWriteItems((software.amazon.awssdk.services.dynamodb.model.TransactWriteItemsRequest) call.getArgument(0));
+        }).when(observed).transactWriteItems(any(software.amazon.awssdk.services.dynamodb.model.TransactWriteItemsRequest.class));
+        assertEquals(ResolutionOperations.Outcome.APPLIED, resolutions(observed, now).resolve(request));
+        var after = step(e); assertEquals("DELIVERED", after.get("status").s()); assertEquals("3", after.get("version").n());
+        assertEquals("0", after.get("retry_count").n()); assertEquals(Long.toString(now.plusSeconds(60).toEpochMilli()), after.get("deadline_at").n());
+        assertEquals(ResolutionOperations.Outcome.ALREADY_APPLIED, resolutions(db, now.plusSeconds(100)).resolve(request)); assertEquals(after, step(e));
+        assertEquals(ResolutionOperations.Outcome.ACTION_CONFLICT, resolutions(db, now).resolve(new ResolutionOperations.Request(request.target(), request.actor(), "다른 사유")));
+        assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM delivery_resolution_action", Integer.class));
+        assertEquals("APPLIED", jdbc.queryForObject("SELECT status FROM delivery_resolution_action", String.class));
+    }
+
+    @Test void lostDynamoCommitResponseLeavesPendingAndResumesEvenAfterDeadline() {
+        Instant now = Instant.now(); var e = unresolved(now); var request = resolutionRequest(e, 2, ManualResolution.Decision.FAILED);
+        var lost = mock(DynamoDbClient.class, org.mockito.AdditionalAnswers.delegatesTo(db));
+        doAnswer(call -> {
+            db.transactWriteItems((software.amazon.awssdk.services.dynamodb.model.TransactWriteItemsRequest) call.getArgument(0));
+            throw software.amazon.awssdk.core.exception.SdkClientException.create("response lost after actual commit");
+        }).when(lost).transactWriteItems(any(software.amazon.awssdk.services.dynamodb.model.TransactWriteItemsRequest.class));
+        assertThrows(software.amazon.awssdk.core.exception.SdkClientException.class, () -> resolutions(lost, now).resolve(request));
+        assertEquals("PENDING", jdbc.queryForObject("SELECT status FROM delivery_resolution_action", String.class));
+        var before = step(e); assertEquals("DECISION_PENDING", before.get("status").s());
+        assertEquals(ResolutionOperations.Outcome.ALREADY_APPLIED, resolutions(db, now.plusSeconds(100)).resume(42, request.target().actionId()));
+        assertEquals(before, step(e)); assertTrue(resolutions(db, now).pending(42, null, 10).records().isEmpty());
+    }
+
+    @Test void pendingAuditOutcomeBlocksOnlyCleanupUntilMarkerIsReconciled() {
+        Instant now = Instant.now(); var e = unresolved(now); var request = resolutionRequest(e, 2, ManualResolution.Decision.SUCCEEDED);
+        jdbc.execute("CREATE FUNCTION reject_resolution_update() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'audit update unavailable'; END $$");
+        jdbc.execute("CREATE TRIGGER reject_resolution_update BEFORE UPDATE ON delivery_resolution_action FOR EACH ROW EXECUTE FUNCTION reject_resolution_update()");
+        assertThrows(org.springframework.dao.DataAccessException.class, () -> resolutions(db, now).resolve(request));
+        assertEquals(request.target().actionId().toString(), step(e).get("operator_action_id").s());
+        // Model the existing lifecycle's durable finalization and SQL handoff; dispatch integration tests exercise that lifecycle directly.
+        db.updateItem(r -> r.tableName(ORIGIN).key(DeliveryCompletion.metaKey(e.requestKey())).updateExpression("SET completion_event_id=:event")
+                .expressionAttributeValues(Map.of(":event", s(e.eventId()))));
+        db.updateItem(r -> r.tableName(STEP).key(key(e, "ATTEMPT#" + e.attemptId()))
+                .updateExpression("SET lifecycle_closed=:yes,result_event=:event,publish_state=:pending")
+                .expressionAttributeValues(Map.of(":yes", AttributeValue.fromBool(true), ":event", s(new FinalizedCodec().encode(e)), ":pending", s("PENDING"))));
+        store.save(e);
+        assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM customer_notification_outbox WHERE status='PENDING'", Integer.class));
+        assertTrue(repository.claim().isEmpty()); assertEquals("RESOLUTION_PENDING", operations(now).cleanup(42, null, 1).records().getFirst().attention());
+        assertEquals(QUEUED, cleanupOperations().retry(cleanupRequest(e, 0))); assertTrue(repository.claim().isEmpty());
+        jdbc.execute("DROP TRIGGER reject_resolution_update ON delivery_resolution_action");
+        assertEquals(ResolutionOperations.Outcome.ALREADY_APPLIED, resolutions(db, now).resume(42, request.target().actionId()));
+        worker(repository).tick(); assertTrue(origin(e).isEmpty()); assertEquals("DONE", cleanupRow().get("status"));
+        assertEquals(ResolutionOperations.Outcome.ALREADY_APPLIED, resolutions(db, now).resume(42, request.target().actionId()));
+    }
+
+    @Test void missingAuditIntentPreventsAnyDynamoChange() {
+        Instant now = Instant.now(); var e = unresolved(now); var before = step(e);
+        jdbc.execute("CREATE FUNCTION reject_resolution_insert() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'audit unavailable'; END $$");
+        jdbc.execute("CREATE TRIGGER reject_resolution_insert BEFORE INSERT ON delivery_resolution_action FOR EACH ROW EXECUTE FUNCTION reject_resolution_insert()");
+        assertThrows(org.springframework.dao.DataAccessException.class, () -> resolutions(db, now).resolve(resolutionRequest(e, 2, ManualResolution.Decision.FAILED)));
+        assertEquals(before, step(e)); assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM delivery_resolution_action", Integer.class));
+    }
+
+    @Test void manualResolutionRejectsLiveLeaseExpiredDeadlineAcceptedStateAndStaleVersion() {
+        Instant now = Instant.now(); var e = unresolved(now); var operations = resolutions(db, now);
+        assertEquals(ResolutionOperations.Outcome.REJECTED, operations.resolve(resolutionRequest(e, 1, ManualResolution.Decision.SUCCEEDED)));
+        activeStep(e, "PROCESSING", now.plusSeconds(60), now.plusSeconds(10));
+        assertEquals(ResolutionOperations.Outcome.PENDING_RECONCILIATION, operations.resolve(resolutionRequest(e, 2, ManualResolution.Decision.SUCCEEDED)));
+        activeStep(e, "REVIEW_REQUIRED", now, now.minusSeconds(1));
+        assertEquals(ResolutionOperations.Outcome.PENDING_RECONCILIATION, operations.resolve(resolutionRequest(e, 2, ManualResolution.Decision.SUCCEEDED)));
+        activeStep(e, "ACCEPTED", now.plusSeconds(60), now.minusSeconds(1));
+        assertEquals(ResolutionOperations.Outcome.REJECTED, operations.resolve(resolutionRequest(e, 2, ManualResolution.Decision.SUCCEEDED)));
+        assertFalse(step(e).containsKey("operator_action_id")); assertEquals("2", step(e).get("version").n());
+    }
+
+    @Test void operatorCannotModifyOtherTenantReplacedExecutionOrDltHeldOrigin() {
+        Instant now = Instant.now(); var e = unresolved(now); var request = resolutionRequest(e, 2, ManualResolution.Decision.SUCCEEDED);
+        var target = request.target();
+        assertEquals(ResolutionOperations.Outcome.REJECTED, resolutions(db, now).resolve(new ResolutionOperations.Request(
+                new ManualResolution.Target(43, target.requestKey(), target.deliveryId(), target.attemptId(), 2, UUID.randomUUID(), target.decision()), request.actor(), request.reason())));
+        db.updateItem(r -> r.tableName(ORIGIN).key(DeliveryCompletion.metaKey(e.requestKey())).updateExpression("SET delivery_id=:id")
+                .expressionAttributeValues(Map.of(":id", s(UUID.randomUUID().toString()))));
+        assertEquals(ResolutionOperations.Outcome.REJECTED, resolutions(db, now).resolve(request));
+        db.updateItem(r -> r.tableName(ORIGIN).key(DeliveryCompletion.metaKey(e.requestKey())).updateExpression("SET delivery_id=:id,dlt_recovery_hold=:hold")
+                .expressionAttributeValues(Map.of(":id", s(e.deliveryId()), ":hold", s("hold"))));
+        assertEquals(ResolutionOperations.Outcome.PENDING_RECONCILIATION, resolutions(db, now).resolve(resolutionRequest(e, 2, ManualResolution.Decision.SUCCEEDED)));
+        assertFalse(step(e).containsKey("operator_action_id"));
+    }
+
+    @Test void timedOutCallIsNotDeclaredRejectedUntilVersionOrResultFencesIt() {
+        Instant now = Instant.now(); var e = unresolved(now); var request = resolutionRequest(e, 2, ManualResolution.Decision.SUCCEEDED);
+        var captured = new java.util.concurrent.atomic.AtomicReference<software.amazon.awssdk.services.dynamodb.model.TransactWriteItemsRequest>();
+        var delayed = mock(DynamoDbClient.class, org.mockito.AdditionalAnswers.delegatesTo(db));
+        doAnswer(call -> {
+            captured.set(call.getArgument(0));
+            throw software.amazon.awssdk.core.exception.SdkClientException.create("request outcome unknown");
+        }).when(delayed).transactWriteItems(any(software.amazon.awssdk.services.dynamodb.model.TransactWriteItemsRequest.class));
+        assertThrows(software.amazon.awssdk.core.exception.SdkClientException.class, () -> resolutions(delayed, now).resolve(request));
+        assertEquals(ResolutionOperations.Outcome.PENDING_RECONCILIATION, resolutions(db, now.plusSeconds(100)).resume(42, request.target().actionId()));
+        assertEquals("PENDING", jdbc.queryForObject("SELECT status FROM delivery_resolution_action", String.class));
+        // A delayed server commit may use the decision time captured before the deadline; it must never contradict a REJECTED audit.
+        db.transactWriteItems(captured.get());
+        assertEquals(ResolutionOperations.Outcome.ALREADY_APPLIED, resolutions(db, now.plusSeconds(100)).resume(42, request.target().actionId()));
+        assertEquals("APPLIED", jdbc.queryForObject("SELECT status FROM delivery_resolution_action", String.class));
+    }
+
+    @Test void pendingActionsAreTenantScopedPagedAndCanResumeAfterPreWriteFailure() {
+        Instant now = Instant.now(); var first = unresolved(now); var second = unresolved(now);
+        var down = mock(DynamoDbClient.class); when(down.getItem(any(java.util.function.Consumer.class)))
+                .thenThrow(software.amazon.awssdk.core.exception.SdkClientException.create("DynamoDB unavailable"));
+        for (var e : List.of(first, second)) assertThrows(software.amazon.awssdk.core.exception.SdkClientException.class,
+                () -> resolutions(down, now).resolve(resolutionRequest(e, 2, ManualResolution.Decision.SUCCEEDED)));
+        var operations = resolutions(db, now); var page = operations.pending(42, null, 1); assertTrue(page.hasMore());
+        var last = operations.pending(42, page.nextAfterId(), 1); assertFalse(last.hasMore()); assertEquals(1, last.records().size());
+        assertTrue(operations.pending(43, null, 1).records().isEmpty());
+        assertThrows(IllegalArgumentException.class, () -> operations.resume(43, page.records().getFirst().actionId()));
+        assertEquals(ResolutionOperations.Outcome.APPLIED, operations.resume(42, page.records().getFirst().actionId()));
+        assertEquals(1, operations.pending(42, null, 100).records().size());
+    }
+
+    @Test void concurrentResolutionsOnSameVersionHaveOneDurableWinner() throws Exception {
+        Instant now = Instant.now(); var e = unresolved(now); var gate = new CountDownLatch(1);
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var first = executor.submit(() -> { gate.await(); return resolutions(db, now).resolve(resolutionRequest(e, 2, ManualResolution.Decision.SUCCEEDED)); });
+            var second = executor.submit(() -> { gate.await(); return resolutions(db, now).resolve(resolutionRequest(e, 2, ManualResolution.Decision.FAILED)); });
+            gate.countDown();
+            // Transaction conflicts may remain PENDING for explicit resume; only the winning marker can be accepted.
+            for (var future : List.of(first, second)) {
+                try { future.get(10, TimeUnit.SECONDS); }
+                catch (ExecutionException failure) { assertInstanceOf(software.amazon.awssdk.services.dynamodb.model.TransactionCanceledException.class, failure.getCause()); }
+            }
+        }
+        var operations = resolutions(db, now);
+        for (var pending : operations.pending(42, null, 10).records()) operations.resume(42, pending.actionId());
+        assertEquals("3", step(e).get("version").n());
+        assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM delivery_resolution_action WHERE status='APPLIED'", Integer.class));
+        assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM delivery_resolution_action WHERE status='REJECTED'", Integer.class));
     }
 
     CleanupOperations cleanupOperations() { return new CleanupOperations(jdbc, new DataSourceTransactionManager(pool)); }

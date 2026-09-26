@@ -40,7 +40,7 @@ public final class DeliveryOperationsCli {
             System.err.println("Delivery inspection unavailable (no writes): " + failure.getClass().getSimpleName()); return 1;
         }
     }
-    private static DynamoDbClient dynamo() {
+    static DynamoDbClient dynamo() {
         String endpoint = required("OPS_DYNAMODB_ENDPOINT"); var uri = URI.create(endpoint); local(uri);
         if (!endpoint.startsWith("http://")) throw new IllegalArgumentException("Local DynamoDB required");
         return DynamoDbClient.builder().endpointOverride(uri).region(Region.AP_NORTHEAST_2)

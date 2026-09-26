@@ -409,6 +409,75 @@ class LifecycleDynamoDbTest {
     LifecycleService service(LifecycleRepository repository, FinalizedPublisher publisher) {
         return new LifecycleService(repository, sources, dispatch, secondary, config, publisher, clock, metrics);
     }
+    DeliveryEvent modernEvent(boolean fallback) {
+        var event = event(fallback).forAdmission();
+        db.updateItem(r -> r.tableName(ORIGIN).key(DeliveryCompletion.metaKey(event.requestKey()))
+                .updateExpression("SET schema_version=:two,request_key=:key")
+                .expressionAttributeValues(Map.of(":two", AttributeValue.fromN("2"), ":key", AttributeValue.fromS(event.requestKey()))));
+        return event;
+    }
+    ManualResolution.Target manualTarget(DeliveryEvent event, int route, ManualResolution.Decision decision) {
+        return new ManualResolution.Target(999, UUID.fromString(event.requestKey()), UUID.fromString(event.deliveryId()), UUID.fromString(id(event, route)),
+                Long.parseLong(item(event, route).get("version").n()), UUID.randomUUID(), decision);
+    }
+
+    @Test void operatorSuccessUsesExistingFinalizationWithoutResendingAndFencesLaterReceipt() {
+        var event = modernEvent(false); var claim = claim(event); clock.now = NOW.plusSeconds(2);
+        var target = manualTarget(event, 1, ManualResolution.Decision.SUCCEEDED);
+        assertEquals(ManualResolution.Outcome.APPLIED, new ManualResolution(db).apply(target, clock.now));
+        service.reconcile(event.deliveryId()); assertEquals("DELIVERED", published.getFirst().outcome());
+        assertEquals(clock.now, published.getFirst().resultAt()); assertEquals(NOW.plusSeconds(3), published.getFirst().deadline());
+        assertEquals(0, primaryCalls.get()); assertEquals(0, secondaryCalls.get());
+        assertThrows(ConditionalCheckFailedException.class, () -> attempts.markAccepted(claim, clock.now, clock.now));
+        var before = item(event, 1); success(event, 1); assertEquals(before, item(event, 1));
+        assertEquals(ManualResolution.Outcome.ALREADY_APPLIED, new ManualResolution(db).apply(target, NOW.plusSeconds(30)));
+    }
+
+    @Test void operatorPrimaryFailureStartsOnlyConfiguredFallbackFromDecisionTime() {
+        var event = modernEvent(true); claim(event); clock.now = NOW.plusSeconds(2);
+        assertEquals(ManualResolution.Outcome.APPLIED, new ManualResolution(db).apply(manualTarget(event, 1, ManualResolution.Decision.FAILED), clock.now));
+        service.reconcile(event.deliveryId()); assertEquals(1, secondaryCalls.get()); assertTrue(published.isEmpty());
+        assertEquals(NOW.plusSeconds(7), LifecycleRepository.deadline(item(event, 2)));
+        db.updateItem(r -> r.tableName(STEP).key(LifecycleRepository.key(event.deliveryId(), "ATTEMPT#" + id(event, 2)))
+                .updateExpression("SET #state=:review").expressionAttributeNames(Map.of("#state", "status"))
+                .expressionAttributeValues(Map.of(":review", AttributeValue.fromS("REVIEW_REQUIRED"))));
+        clock.now = NOW.plusSeconds(4);
+        assertEquals(ManualResolution.Outcome.APPLIED, new ManualResolution(db).apply(manualTarget(event, 2, ManualResolution.Decision.FAILED), clock.now));
+        service.reconcile(event.deliveryId()); assertEquals("FAILED", published.getFirst().outcome());
+        assertEquals("OPERATOR_CONFIRMED_FAILED", published.getFirst().reason()); assertEquals(2, published.getFirst().routeOrder());
+        assertEquals(NOW.plusSeconds(7), published.getFirst().deadline()); assertEquals(1, secondaryCalls.get());
+    }
+
+    @Test void operatorFailureCannotEnableFallbackAbsentFromOriginalRequest() {
+        var event = modernEvent(false); claim(event); clock.now = NOW.plusSeconds(2);
+        assertEquals(ManualResolution.Outcome.APPLIED, new ManualResolution(db).apply(manualTarget(event, 1, ManualResolution.Decision.FAILED), clock.now));
+        service.reconcile(event.deliveryId()); assertEquals("FAILED", published.getFirst().outcome());
+        assertEquals(0, secondaryCalls.get()); assertTrue(item(event, 2).isEmpty());
+    }
+
+    @Test void automaticExpiryWinsAgainstOperatorPausedBeforeConditionalCommit() {
+        var event = modernEvent(false); claim(event); clock.now = NOW.plusSeconds(2);
+        var paused = mock(DynamoDbClient.class, org.mockito.AdditionalAnswers.delegatesTo(db));
+        doAnswer(call -> {
+            assertTrue(lifecycle.expire(event.deliveryId(), item(event, 1), NOW.plusSeconds(3)));
+            return db.transactWriteItems((TransactWriteItemsRequest) call.getArgument(0));
+        }).when(paused).transactWriteItems(any(TransactWriteItemsRequest.class));
+        assertEquals(ManualResolution.Outcome.STALE_OR_INELIGIBLE, new ManualResolution(paused).apply(manualTarget(event, 1, ManualResolution.Decision.SUCCEEDED), clock.now));
+        clock.now = NOW.plusSeconds(3); service.reconcile(event.deliveryId());
+        assertEquals("EXPIRED", published.getFirst().outcome()); assertEquals(NOW.plusSeconds(3), published.getFirst().resultAt());
+        assertFalse(item(event, 1).containsKey("operator_action_id"));
+    }
+
+    @Test void actualReceiptWinsAgainstOperatorPausedBeforeConditionalCommit() {
+        var event = modernEvent(false); claim(event); clock.now = NOW.plusSeconds(2);
+        var paused = mock(DynamoDbClient.class, org.mockito.AdditionalAnswers.delegatesTo(db));
+        doAnswer(call -> { success(event, 1); return db.transactWriteItems((TransactWriteItemsRequest) call.getArgument(0)); })
+                .when(paused).transactWriteItems(any(TransactWriteItemsRequest.class));
+        assertEquals(ManualResolution.Outcome.STALE_OR_INELIGIBLE, new ManualResolution(paused).apply(manualTarget(event, 1, ManualResolution.Decision.FAILED), clock.now));
+        service.reconcile(event.deliveryId()); assertEquals("DELIVERED", published.getFirst().outcome());
+        assertFalse(item(event, 1).containsKey("operator_action_id")); assertEquals(0, secondaryCalls.get());
+    }
+
     DeliveryEvent event(boolean fallback) {
         var event = DeliveryEvent.requested(UUID.randomUUID().toString(), 999L, "SMS", Map.of("message", "test"), NOW, fallback).toDispatchRequested();
         events.add(event);
