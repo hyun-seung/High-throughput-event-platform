@@ -97,7 +97,7 @@ class Runner:
             self.awake = subprocess.Popen(['caffeinate', '-i', '-w', str(os.getpid())])
         if shutil.disk_usage(ROOT).free < 2 * 1024**3: raise RuntimeError('Less than 2 GiB free disk')
         version = subprocess.check_output([str(TOOLS / 'k6'), 'version'], text=True).strip()
-        if not version.startswith('k6 v1.8.1 '): raise RuntimeError('Run 환경_준비.py to install pinned k6 v1.8.1')
+        if not version.startswith('k6 v1.8.1 '): raise RuntimeError('Run bash scripts/검증-실행.sh 준비 to install pinned k6 v1.8.1')
         java_home = os.environ.get('JAVA_HOME', '')
         self.java = str(Path(java_home) / 'bin/java') if java_home else 'java'
         java_version = subprocess.check_output([self.java, '-XshowSettings:properties', '-version'], stderr=subprocess.STDOUT, text=True)

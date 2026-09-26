@@ -15,7 +15,7 @@ usage() {
 그 밖의 도구: 로컬-점검, DDB-인덱스, DDB-분리, 모니터링-데모, 모니터링-측정,
              모니터링-검증(Java), 대시보드-생성, 정체-분석(Java), 실행파일-보관(Java)
 
-실제 JVM 시험은 Docker와 JDK 21이 필요합니다. 처음 실행할 때 '준비'를 실행하세요.
+준비와 실제 JVM 시험에는 JDK 21이 필요하고, 실제 JVM 시험에는 Docker도 필요합니다.
 추가 옵션은 해당 도구에 그대로 전달합니다.
 EOF
 }
@@ -31,7 +31,7 @@ fi
 
 case "$scenario" in
   도움말|목록|-h|--help) usage; exit 0 ;;
-  준비) exec python3 scripts/poc/환경_준비.py "$@" ;;
+  준비) exec "${JAVA_HOME:+$JAVA_HOME/bin/}java" scripts/testing/PocSetup.java "$@" ;;
   Java-단위) exec bash scripts/test-java.sh unit "$@" ;;
   Java-통합) exec bash scripts/test-java.sh integration "$@" ;;
   정체-분석|모니터링-검증|모니터링-데모)

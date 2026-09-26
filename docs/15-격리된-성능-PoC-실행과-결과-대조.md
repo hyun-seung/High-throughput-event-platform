@@ -8,7 +8,7 @@ JDK 21, Python 3.11 이상, Docker Compose, curl이 필요하다. macOS/Linux의
 
 ```bash
 # 공식 k6 1.8.1 다운로드·체크섬 확인, 전용 Python 가상환경 설치
-python3 scripts/poc/환경_준비.py
+bash scripts/검증-실행.sh 준비
 
 # JDK 21의 JAVA_HOME 설정 후 현재 앱 빌드
 ./mvnw package

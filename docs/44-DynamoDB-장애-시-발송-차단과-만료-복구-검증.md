@@ -26,7 +26,7 @@
 - 여섯 JVM은 전체 시험에서 PID를 유지한다. D-01의 일시정지·재개와 앱 재시작을 구분한다.
 
 ```sh
-# JDK 21, Docker, scripts/poc/환경_준비.py 도구 준비 후
+# JDK 21, Docker, `bash scripts/검증-실행.sh 준비` 실행 후
 ./mvnw -DskipTests package
 .poc-tools/venv/bin/python -m unittest discover -s scripts/poc -p 'test_*.py'
 .poc-tools/venv/bin/python scripts/poc/다이나모DB_복구.py
