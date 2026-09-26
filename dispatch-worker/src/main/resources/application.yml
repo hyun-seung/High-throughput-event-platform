@@ -39,6 +39,8 @@ dispatch:
     enabled: ${DISPATCH_LIFECYCLE_ENABLED:false}
     poll-ms: ${DISPATCH_LIFECYCLE_POLL_MS:1000}
     recovery-poll-ms: ${DISPATCH_LIFECYCLE_RECOVERY_POLL_MS:600000}
+    failure-initial-delay: ${DISPATCH_LIFECYCLE_FAILURE_INITIAL_DELAY:1s}
+    failure-max-delay: ${DISPATCH_LIFECYCLE_FAILURE_MAX_DELAY:30s}
     concurrency: ${DISPATCH_LIFECYCLE_CONCURRENCY:4}
   provider: ${DISPATCH_PROVIDER:mock-provider}
   lease-duration: ${DISPATCH_LEASE_DURATION:30s}
