@@ -409,6 +409,34 @@ class LifecycleDynamoDbTest {
     LifecycleService service(LifecycleRepository repository, FinalizedPublisher publisher) {
         return new LifecycleService(repository, sources, dispatch, secondary, config, publisher, clock, metrics);
     }
+    @Test void throttledRecoveryStillExpiresOriginalDeadlinesAfterLongOutage() throws Exception {
+        var event = modernEvent(true); accepted(event); clock.now = NOW.plusSeconds(100);
+        var flaky = spy(new LifecycleRepository(db, mapper));
+        doThrow(SdkClientException.create("injected DDB read outage")).doCallRealMethod().when(flaky).read(event.deliveryId(), "FINAL");
+        var discovery = mock(LifecycleRepository.class);
+        when(discovery.due(anyInt(), any(), anyInt(), anyMap())).thenReturn(QueryResponse.builder().build());
+        var cache = mock(event.common.redis.DeliveryCache.class); when(cache.due(any(), anyInt())).thenReturn(Set.of(event.deliveryId()));
+        var nanos = new AtomicLong();
+        var scheduler = new LifecycleScheduler(discovery, service(flaky, published::add), clock, metrics, 10, 1,
+                new event.common.recovery.FailureBackoff(Duration.ofSeconds(1), Duration.ofSeconds(4), nanos::get, () -> 1),
+                new event.common.recovery.FailureBackoff(Duration.ofSeconds(1), Duration.ofSeconds(4), nanos::get, () -> 1));
+        scheduler.cache(cache, 600_000);
+        try {
+            scheduler.tick(); awaitLifecycleIdle(); assertTrue(published.isEmpty());
+            for (int i = 0; i < 100; i++) scheduler.tick();
+            verify(flaky, times(1)).read(event.deliveryId(), "FINAL");
+            nanos.set(1_000_000_000); scheduler.tick(); awaitLifecycleIdle();
+            assertEquals("SECONDARY_EXPIRED", published.getFirst().reason());
+            assertEquals(NOW.plusSeconds(8), published.getFirst().deadline());
+            assertEquals(0, primaryCalls.get()); assertEquals(0, secondaryCalls.get());
+        } finally { scheduler.close(); }
+    }
+    void awaitLifecycleIdle() throws Exception {
+        long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (metrics.get("delivery.lifecycle.active").gauge().value() != 0 && System.nanoTime() < until) Thread.sleep(1);
+        assertEquals(0, metrics.get("delivery.lifecycle.active").gauge().value());
+    }
+
     DeliveryEvent modernEvent(boolean fallback) {
         var event = event(fallback).forAdmission();
         db.updateItem(r -> r.tableName(ORIGIN).key(DeliveryCompletion.metaKey(event.requestKey()))

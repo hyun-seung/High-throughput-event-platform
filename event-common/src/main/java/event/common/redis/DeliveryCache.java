@@ -5,6 +5,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import java.time.*;
 import java.util.*;
 import java.util.function.Supplier;
+import event.common.recovery.FailureBackoff;
 
 /** Optional acceleration only. A cache failure never grants a DynamoDB claim. */
 public class DeliveryCache {
@@ -12,9 +13,13 @@ public class DeliveryCache {
     private final StringRedisTemplate redis;
     private final MeterRegistry metrics;
     private final Duration retention;
+    private final FailureBackoff backoff;
     public DeliveryCache(StringRedisTemplate redis, MeterRegistry metrics, Duration retention) {
+        this(redis, metrics, retention, new FailureBackoff(Duration.ofSeconds(1), Duration.ofSeconds(30)));
+    }
+    public DeliveryCache(StringRedisTemplate redis, MeterRegistry metrics, Duration retention, FailureBackoff backoff) {
         if (retention.isNegative() || retention.isZero()) throw new IllegalArgumentException("Positive completion retention required");
-        this.redis = redis; this.metrics = metrics; this.retention = retention;
+        this.redis = redis; this.metrics = metrics; this.retention = retention; this.backoff = backoff;
     }
     public String completed(String requestKey) {
         return safely("read", () -> redis.opsForValue().get("delivery:completed:" + requestKey), null);
@@ -39,8 +44,14 @@ public class DeliveryCache {
     }
     private <T> T safely(String operation, Supplier<T> action, T fallback) {
         if (redis == null) return fallback;
-        try { return action.get(); }
+        var ticket = backoff.acquire();
+        if (ticket == null) {
+            if (metrics != null) metrics.counter("delivery.redis.calls.skipped", "operation", operation).increment();
+            return fallback;
+        }
+        try { T result = action.get(); backoff.succeeded(ticket); return result; }
         catch (RuntimeException unavailable) {
+            backoff.failed(ticket);
             if (metrics != null) metrics.counter("delivery.cache.errors", "operation", operation).increment();
             return fallback;
         }

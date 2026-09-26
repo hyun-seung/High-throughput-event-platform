@@ -1,0 +1,91 @@
+{
+  "date": "2026-09-26",
+  "status": "PASS",
+  "baseCommit": "a8ee9714704a0c33acdf77ebfac39e2e7a844dae",
+  "runDirectory": ".poc-results/java-test-20260926021536-35659",
+  "javaIntegration": {
+    "suites": 41,
+    "executed": 401,
+    "skipped": 0,
+    "failures": 0,
+    "errors": 0
+  },
+  "newTests": {
+    "failureBackoff": 5,
+    "redisRecoveryUnit": 3,
+    "redisRecoveryIntegration": 1,
+    "lifecycleScheduler": 5,
+    "lifecycleDynamoIntegration": 1,
+    "total": 15
+  },
+  "tools": {
+    "applicationTests": "Java 21/JUnit, Maven Wrapper clean verify -Pintegration-tests",
+    "environment": "Bash + Docker Compose, fresh isolated project",
+    "performance": "Not run; k6 reserved for performance phase"
+  },
+  "infrastructure": {
+    "kafka": "apache/kafka:4.0.2",
+    "postgresql": "postgres:17-alpine",
+    "dynamodb": "amazon/dynamodb-local:2.6.1",
+    "redis": "redis:7.4-alpine"
+  },
+  "cleanup": {
+    "containersStopped": true,
+    "containersRemoved": true,
+    "networkRemoved": true,
+    "volumesRetained": true
+  },
+  "developmentRuns": [
+    {
+      "runDirectory": ".poc-results/java-test-20260926020444-34680",
+      "status": "COMPILE_FAILED",
+      "reason": "New test code used SimpleMeterRegistry as AutoCloseable; corrected to explicit finally close. Partial report counts are not a full validation result."
+    },
+    {
+      "runDirectory": ".poc-results/java-test-20260926020606-34997",
+      "status": "PASS",
+      "executed": 400,
+      "scope": "Before adding due-DynamoDB-sweep priority and its starvation regression test"
+    }
+  ],
+  "verified": [
+    "Exponential delay caps at configured maximum and resets after a successful probe",
+    "Stale in-flight successes/failures cannot close or inflate the current outage generation",
+    "32 concurrent callers admit one recovery probe; unused probe is releasable",
+    "In a Java unit test, 1000 requests during an injected Redis outage execute the mocked Redis operation once and bypass limits 1000 times; recovery restores actual TPS decision handling",
+    "Invalid policy responses remain errors; shared cache recovery does not bypass quota policy",
+    "Actual Redis integration after an injected connection failure verifies skipped schedule stays absent, subsequent real probe recovers, and new schedule/completion TTL operations work",
+    "First failed lifecycle query stops the sweep and repeated ticks do not shorten configured ten-minute recovery interval",
+    "Failed query retains its page cursor",
+    "Backend work failure pauses candidate polling and permits one recovery probe",
+    "Saturated lifecycle workers stop repeated Redis and DynamoDB candidate fetches",
+    "At the ten-minute recovery boundary a missing Redis schedule receives capacity before continually due Redis candidates",
+    "Actual DynamoDB lifecycle processing after an injected read outage expires both stages using the original deadlines without provider calls",
+    "Normal successful DynamoDB write budget stays five calls and seven item mutations; backoff state is process-local"
+  ],
+  "notVerifiedOrImplemented": [
+    "New tests use Java exception injection and controlled clocks rather than physically disconnecting Redis/DynamoDB or waiting through a long real-time outage",
+    "1000-request test is a deterministic call-count assertion, not a TPS/performance measurement",
+    "SQL notification/cleanup and DLT loop backoff",
+    "Lettuce/Kafka/AWS SDK internal reconnect and retry configuration changes or connection-attempt measurements",
+    "Cluster-wide circuit coordination, multi-Pod restart bursts, durable circuit state",
+    "Automatic reconstruction of skipped Redis writes or permanent quarantine of poison Redis candidates",
+    "Dedicated new Grafana panels/alerts; new application metrics are exposed for inspection",
+    "k6 load, Pod limits, ten-thousand TPS or multi-AZ data-loss proof"
+  ],
+  "sourceSha256": {
+    "event-common/src/main/java/event/common/recovery/FailureBackoff.java": "9fdba5087dd79d66e6533ace30a9b80822216a6bffc0731f64f6bc1ca907aa7d",
+    "event-common/src/main/java/event/common/redis/DeliveryCache.java": "37afa132b183c24a2f8ec826b88b114471676516b02597f78a3d7a9882575df8",
+    "event-common/src/main/java/event/common/redis/DeliveryCacheAutoConfiguration.java": "5b55a991e4d59bef5328b6a4544791ff9b12d07ca98f382b5fdad408d8366b90",
+    "event-api/src/main/java/event/api/requestcontrol/redis/RedisRequestLimiter.java": "2163570847b918addca55319655bade1aa3fdc20e3ebd0c7947c079e88115c4d",
+    "dispatch-worker/src/main/java/event/delivery/dispatch/lifecycle/LifecycleScheduler.java": "ff437e4fabb6d687410a202ae1e7e3ca343570d73a56faa8556e3d7ed1231851",
+    "dispatch-worker/src/main/java/event/delivery/dispatch/lifecycle/LifecycleConfiguration.java": "f475b111756d31f897e33936eaf2904e6a2539a6d98d2284c5f088f57cbd793e",
+    "dispatch-worker/src/main/resources/application.yml": "c55e60f506806df6a6b53de477a41363f21d48615357eb541448f813594b7f41",
+    "event-common/src/test/java/event/common/recovery/FailureBackoffTest.java": "d70e7cc9020135924dc4451775dde2307ea0a45f1ceff20820216baa99d0223c",
+    "event-api/src/test/java/event/api/requestcontrol/redis/RedisRecoveryTest.java": "0f72acfe05ddbbd873773e301044aaa9b5dd2ad37d755a4550a81873733d7ed4",
+    "event-api/src/test/java/event/api/requestcontrol/redis/RedisRecoveryIntegrationTest.java": "716dbfa3b89b94f3f1b13355717bcdcb686c0042513c94693a980fa540e0e03f",
+    "dispatch-worker/src/test/java/event/delivery/dispatch/lifecycle/LifecycleSchedulerTest.java": "dd8b0dda16bc1448b1d1c8270851794fd618f4f162274ac8401bfa1aec0d0fa7",
+    "dispatch-worker/src/test/java/event/delivery/dispatch/lifecycle/LifecycleDynamoDbTest.java": "6db1b48370f55fb1e93c7d36e28d2b3acfe27f262fdc56dd7a60ae492b13b325"
+  },
+  "postRunChanges": "Documentation and evidence only; no behavior changes after final integration"
+}
