@@ -155,7 +155,7 @@ Redis 시험은 기존 개발 환경이 아닌 `platform-monitoring-redis-1`만 
 `demo`는 화면 확인용이다. 요청별 정합성까지 검사하려면 기존 PoC 도구 설치 후 아래 명령을 사용한다.
 
 ```bash
-python3 scripts/poc/환경_준비.py
+bash scripts/검증-실행.sh 준비
 bash scripts/monitoring.sh benchmark --suite smoke
 # 소량 → 10 TPS 1분 워밍업 → 100 TPS 20초 중복 → 50/100 TPS 각 3분
 bash scripts/monitoring.sh benchmark --suite baseline

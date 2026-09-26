@@ -69,4 +69,6 @@ Grafana·Prometheus·Loki 읽기 검증도 `verification-tools`의 `monitoring` 
 
 모니터링 데모 요청 생성기도 `verification-tools`의 `demo` 명령으로 옮겼다. `bash scripts/monitoring.sh demo --rate 20 --seconds 30` 또는 `bash scripts/검증-실행.sh 모니터링-데모`로 실행한다. Java 도구는 기존의 단독 실행 잠금, 초당 요청 간격, 10번째 요청의 멱등성 키 재사용, 선택적 강제 실패 1건과 JSON 요약을 유지한다. 로컬 HTTP fixture로 요청 10건·고유 ID 9개·강제 실패 1건과 잠금 충돌을 검증했다. 실제 모니터링 스택에 트래픽을 보내는 시험은 수행하지 않았다. 남은 Python 파일은 **33개**다.
 
+PoC 환경 준비는 `scripts/testing/PocSetup.java`로 옮겼다. `bash scripts/검증-실행.sh 준비`가 Python 가상환경과 고정 버전 의존성을 준비하고, k6 체크섬 목록과 압축 파일의 SHA-256을 확인한 뒤 실행 파일만 설치한다. `bash scripts/검증-실행.sh 준비 self-test`로 임시 ZIP/TAR 추출과 체크섬 불일치 거부를 검증했다. 실제 다운로드와 의존성 재설치는 이번 이관 검증에서 실행하지 않았다. 환경 준비 단계가 Python 스크립트를 필요로 하지는 않지만, 남은 PoC 시험 실행에는 Python 가상환경이 필요하다. 기존 Python 준비 파일을 제거해 남은 Python 파일은 **32개**다.
+
 한글 경로에서 Python 시험 60개가 통과했고, DynamoDB 마이그레이션 시험 3개는 별도 환경이 없어 기존 조건대로 건너뛰었다. 모든 PoC 진입점의 `--help`를 확인했으며 고객 통지 중 SIGTERM 시험을 실제 Docker·JVM으로 재실행해 같은 묶음의 2회 수신과 최종 완료를 확인했다. [검증 기록](검증-결과/2026-09-26-한글-Python-실행경로-검증.json). 이 파일명 변경이 전체 성능 시험이나 모든 장애 시나리오의 재실행을 뜻하지는 않는다.

@@ -27,7 +27,7 @@ SQL 이력·통지·정리 예약을 저장할 수 없으면 결과 소비자는
 offset 조회용 consumer는 subscribe/commit하지 않는다. 미커밋 offset의 음수 표기는 시작 offset 0과 같은 위치로 비교한다. 이 비교는 retention·offset 초기화가 없는 새 격리 토픽을 전제로 한다.
 
 ```sh
-# JDK 21과 Docker 및 scripts/poc/환경_준비.py 도구 준비 후
+# JDK 21과 Docker 및 `bash scripts/검증-실행.sh 준비` 실행 후
 ./mvnw -DskipTests package
 .poc-tools/venv/bin/python -m unittest discover -s scripts/poc -p 'test_*.py'
 .poc-tools/venv/bin/python scripts/poc/포스트그레스_복구.py

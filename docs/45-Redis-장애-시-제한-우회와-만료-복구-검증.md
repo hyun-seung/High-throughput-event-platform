@@ -36,7 +36,7 @@ TPS 시험은 빈 버킷과 초당 0.001개 보충·용량 1개를 사용해 소
 - 최종 SQL 고유 이력 3건과 접수 ID 집합을 대조한다. 요청·발송·업체 웹훅·최종 결과 토픽 모든 파티션 lag가 0이어야 한다. offset 조회 도구는 subscribe/commit하지 않는다.
 
 ```sh
-# JDK 21, Docker, scripts/poc/환경_준비.py 도구 준비 후
+# JDK 21, Docker, `bash scripts/검증-실행.sh 준비` 실행 후
 ./mvnw -DskipTests package
 .poc-tools/venv/bin/python -m unittest discover -s scripts/poc -p 'test_*.py'
 .poc-tools/venv/bin/python scripts/poc/레디스_복구.py
