@@ -1,0 +1,35 @@
+{
+  "date": "2026-09-26",
+  "status": "PASS",
+  "runDirectory": ".poc-results/full-flow-ce42edc237f1",
+  "measuredOutageSeconds": 60.0065,
+  "javaProcesses": 8,
+  "consumerReplicaCounts": {"ingress": 2, "dispatch": 2},
+  "javaFailedConnectionLogLines": {
+    "api": 8,
+    "receipt": 10,
+    "ingress": 25,
+    "ingress_2": 16,
+    "dispatch": 79,
+    "dispatch_2": 87,
+    "result": 16
+  },
+  "verification": {
+    "passedCases": 3,
+    "historyRows": 3,
+    "applicationPidsUnchanged": true,
+    "businessTopicsDrained": true,
+    "customerNotificationAndCleanupCompleted": true,
+    "ownedProcessesStopped": true,
+    "containersRemoved": true,
+    "networkRemoved": true,
+    "volumesRetained": true
+  },
+  "measurement": "Counts are Java NetworkClient 'Connection to node ... could not be established' log lines written during the 60-second window; the Python confluent-kafka observer clients are excluded.",
+  "limits": [
+    "Two local JVMs per selected consumer group, not Kubernetes Pods, multiple Kafka brokers, or multi-AZ operation",
+    "Log lines do not count every TCP connection attempt or establish a global reconnect limit",
+    "No k6 throughput measurement"
+  ],
+  "postRunHarnessCorrection": "The executed summary.json mistakenly labeled elapsed time through broker recovery as outageSeconds (85.59 seconds). The measured reconnect-attempts.json window is 60.0065 seconds; the script now labels that measured window explicitly."
+}

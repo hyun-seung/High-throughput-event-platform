@@ -3,9 +3,18 @@ import json
 import unittest
 
 from kafka_recovery import verify_owned_kafka, verify_unconfirmed, verify_retained_expiry, kafka_volumes
+from kafka_reconnect_replicas import failed_connections
 
 
 class KafkaRecoveryEvidenceTest(unittest.TestCase):
+    def test_only_java_network_client_failed_connections_are_counted(self):
+        log = ('2026-09-26T13:38:24.523+09:00  WARN app org.apache.kafka.clients.NetworkClient : '
+               '[Consumer clientId=x] Connection to node -1 (localhost:9092) could not be established.\n'
+               '2026-09-26T13:38:25.028+09:00  WARN app org.apache.kafka.clients.NetworkClient : '
+               '[Consumer clientId=x] Bootstrap broker localhost:9092 disconnected\n'
+               '%3|1758888888|FAIL|observer#consumer-1: Connect to localhost:9092 failed\n')
+        self.assertEqual(['2026-09-26T13:38:24.523+09:00'], failed_connections(log))
+
     def test_volume_identity_is_independent_of_docker_mount_order(self):
         mounts = [{'Type': 'volume', 'Destination': '/var/lib/kafka/data', 'Name': 'data'},
                   {'Type': 'volume', 'Destination': '/etc/kafka/secrets', 'Name': 'secrets'}]
