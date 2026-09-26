@@ -4,7 +4,7 @@
 
 ## 1. 시험 범위와 주입 방법
 
-`scripts/poc/dynamo_recovery.py`는 실행별 Compose·포트·볼륨을 갖는 격리 환경에서 DynamoDB Local 컨테이너만 두 차례 stop/start한다. project/service label과 컨테이너 ID를 확인하며 동일 컨테이너·볼륨으로 복구한다. Kafka offset·DB 내용을 시험 도구로 수정하지 않는다.
+`scripts/poc/다이나모DB_복구.py`는 실행별 Compose·포트·볼륨을 갖는 격리 환경에서 DynamoDB Local 컨테이너만 두 차례 stop/start한다. project/service label과 컨테이너 ID를 확인하며 동일 컨테이너·볼륨으로 복구한다. Kafka offset·DB 내용을 시험 도구로 수정하지 않는다.
 
 첫 시나리오의 선점 전 경계를 맞추기 위해 도구가 생성한 dispatch JVM의 `Popen`에만 SIGSTOP을 보내고 OS 상태 `T`를 확인한다. 그동안 API·Ingress가 ORIGIN과 Kafka 발송 명령을 만든다. STEP 부재와 미완료 Kafka 입력을 확인하고 DB를 중단한 뒤 SIGCONT로 worker를 계속 실행한다. **프로세스를 정지해 놓은 상태의 무발송을 합격 근거로 삼지 않는다.** 재개한 worker의 선점 실패 계측 2회 이상 증가와 외부 호출 0회를 함께 확인한다. 실패 시에도 종료 처리 전에 정지한 worker를 재개한다.
 
@@ -26,10 +26,10 @@
 - 여섯 JVM은 전체 시험에서 PID를 유지한다. D-01의 일시정지·재개와 앱 재시작을 구분한다.
 
 ```sh
-# JDK 21, Docker, scripts/poc/setup.py 도구 준비 후
+# JDK 21, Docker, scripts/poc/환경_준비.py 도구 준비 후
 ./mvnw -DskipTests package
 .poc-tools/venv/bin/python -m unittest discover -s scripts/poc -p 'test_*.py'
-.poc-tools/venv/bin/python scripts/poc/dynamo_recovery.py
+.poc-tools/venv/bin/python scripts/poc/다이나모DB_복구.py
 ```
 
 원장 스냅샷·컨테이너 상태·연결 실패·worker 신호·계측 원문·Kafka 위치·SQL 이력·고객 수신을 `.poc-results/<실행 ID>/`에 보관한다. 시험 실패 시에도 자료와 볼륨을 유지한다. 종료 시 소유 JVM과 컨테이너만 정지한다.

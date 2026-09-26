@@ -13,7 +13,7 @@ from urllib.error import HTTPError
 
 from confluent_kafka import Consumer, TopicPartition
 from confluent_kafka.admin import ConfigResource, ResourceType, NewTopic
-from receipt_flow import Run, ROOT, TABLE, ORIGIN, request, wait_until, stop
+from 수신결과_흐름 import Run, ROOT, TABLE, ORIGIN, request, wait_until, stop
 
 
 class LifecycleRun(Run):
@@ -120,7 +120,7 @@ class LifecycleRun(Run):
         self.skip_input = True
         delivery, _ = self.send({'simulatorReceiptCodes': ['NONE']}, True, age=10)
         self.skip_input = False
-        subprocess.run([sys.executable, str(ROOT / 'scripts/dynamodb/lifecycle_index.py'), '--endpoint', self.args.dynamo,
+        subprocess.run([sys.executable, str(ROOT / 'scripts/dynamodb/수명주기_인덱스.py'), '--endpoint', self.args.dynamo,
                         '--apply', '--delivery-id', delivery], check=True, stdout=subprocess.DEVNULL)
         self.check_final('Attempt가 없는 원본의 명시적 보강 후 만료 복구', delivery, 'EXPIRED', 2, 0)
 

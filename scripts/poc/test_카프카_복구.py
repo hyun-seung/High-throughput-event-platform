@@ -2,8 +2,8 @@ import copy
 import json
 import unittest
 
-from kafka_recovery import verify_owned_kafka, verify_unconfirmed, verify_retained_expiry, kafka_volumes
-from kafka_reconnect_replicas import failed_connections
+from 카프카_복구 import verify_owned_kafka, verify_unconfirmed, verify_retained_expiry, kafka_volumes
+from 카프카_복제_재연결 import failed_connections
 
 
 class KafkaRecoveryEvidenceTest(unittest.TestCase):

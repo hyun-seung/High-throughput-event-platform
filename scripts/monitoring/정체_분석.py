@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "poc"))
-from run import metric
+from 실행 import metric
 
 
 def analyze(directory):

@@ -6,7 +6,7 @@
 
 SQL 이력·통지·정리 예약을 저장할 수 없으면 결과 소비자는 Kafka offset을 넘기지 않아야 한다. ORIGIN·STEP은 SQL 인계 전 삭제하면 안 된다. Kafka·DynamoDB·Redis가 정상이고 이미 발급된 유효 JWT로 접수하면 업체 발송과 결과 확정은 계속 가능해야 한다.
 
-시험 도구는 `scripts/poc/postgres_recovery.py`다. [전체 격리 실행 도구](37-전체-호출-흐름의-격리-실행과-전수-대조.md)를 재사용하고, 실행별 Compose project/service label로 소유권을 확인한 PostgreSQL 컨테이너 ID에만 stop/start를 수행한다. 여섯 JVM은 시험 중 재시작하지 않으며 PID가 모두 유지돼야 통과한다. 같은 컨테이너·볼륨으로 복구하고 Kafka offset이나 DB 데이터를 수정하지 않는다.
+시험 도구는 `scripts/poc/포스트그레스_복구.py`다. [전체 격리 실행 도구](37-전체-호출-흐름의-격리-실행과-전수-대조.md)를 재사용하고, 실행별 Compose project/service label로 소유권을 확인한 PostgreSQL 컨테이너 ID에만 stop/start를 수행한다. 여섯 JVM은 시험 중 재시작하지 않으며 PID가 모두 유지돼야 통과한다. 같은 컨테이너·볼륨으로 복구하고 Kafka offset이나 DB 데이터를 수정하지 않는다.
 
 | 요청 | PostgreSQL 중단 중 기대 동작 | 복구 후 판정 |
 |---|---|---|
@@ -27,10 +27,10 @@ SQL 이력·통지·정리 예약을 저장할 수 없으면 결과 소비자는
 offset 조회용 consumer는 subscribe/commit하지 않는다. 미커밋 offset의 음수 표기는 시작 offset 0과 같은 위치로 비교한다. 이 비교는 retention·offset 초기화가 없는 새 격리 토픽을 전제로 한다.
 
 ```sh
-# JDK 21과 Docker 및 scripts/poc/setup.py 도구 준비 후
+# JDK 21과 Docker 및 scripts/poc/환경_준비.py 도구 준비 후
 ./mvnw -DskipTests package
 .poc-tools/venv/bin/python -m unittest discover -s scripts/poc -p 'test_*.py'
-.poc-tools/venv/bin/python scripts/poc/postgres_recovery.py
+.poc-tools/venv/bin/python scripts/poc/포스트그레스_복구.py
 ```
 
 실행별 `.poc-results/<실행 ID>/`에 중단 전·중·복구 후 자료, 저장 실패 Prometheus 원문, 고객 수신 원문, SQL 이력, 환경·도구/JAR 해시를 남긴다. 실패 시에도 자료를 보존하며, 종료 시 소유 앱과 컨테이너만 정지하고 볼륨을 유지한다.

@@ -7,10 +7,10 @@ import json
 from pathlib import Path
 import subprocess
 
-from full_flow import FullFlow, HTTP
-from process_recovery import ProcessRecovery
-from receipt_flow import wait_until
-from run import metric
+from 전체_흐름 import FullFlow, HTTP
+from 프로세스_복구 import ProcessRecovery
+from 수신결과_흐름 import wait_until
+from 실행 import metric
 
 
 GROUPS = {'delivery.requested.v1': 'delivery-ingress-worker',
@@ -61,7 +61,7 @@ class PostgresRecovery(ProcessRecovery):
         env.update({'primaryTtlSeconds': 30, 'secondaryTtlSeconds': 40,
                     'scope': 'single local PostgreSQL service outage; not failover/WAL loss/load proof',
                     'postgresRecoveryHarnessSha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
-                    'sharedRecoveryHarnessSha256': hashlib.sha256(Path(__file__).with_name('process_recovery.py').read_bytes()).hexdigest()})
+                    'sharedRecoveryHarnessSha256': hashlib.sha256(Path(__file__).with_name('프로세스_복구.py').read_bytes()).hexdigest()})
         self.write('environment.json', env)
 
     def postgres(self):

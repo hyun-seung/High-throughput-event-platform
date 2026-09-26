@@ -5,7 +5,7 @@ import unittest
 import urllib.error
 from unittest.mock import Mock, patch
 
-from redis_recovery import RedisRecovery, verify_owned_redis, verify_without_cache
+from 레디스_복구 import RedisRecovery, verify_owned_redis, verify_without_cache
 
 
 class RedisOutageEvidenceTest(unittest.TestCase):
@@ -41,11 +41,11 @@ class RedisOutageEvidenceTest(unittest.TestCase):
         for status, code, passes in [(429, 3001, True), (429, 3002, False), (503, 3001, False)]:
             failure = urllib.error.HTTPError('http://localhost', status, 'test', {},
                                             io.BytesIO(json.dumps({'data': {'code': code}}).encode()))
-            with patch('redis_recovery.http', side_effect=failure):
+            with patch('레디스_복구.http', side_effect=failure):
                 if passes: run.reject('tps', 3001)
                 else:
                     with self.assertRaises(AssertionError): run.reject('tps', 3001)
-        with patch('redis_recovery.http', return_value=(202, {})):
+        with patch('레디스_복구.http', return_value=(202, {})):
             with self.assertRaises(AssertionError): run.reject('tps', 3001)
 
 

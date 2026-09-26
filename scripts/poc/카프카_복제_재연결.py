@@ -8,9 +8,9 @@ import socket
 import subprocess
 import time
 
-from full_flow import ROOT, http
-from kafka_recovery import KafkaRecovery
-from receipt_flow import wait_until
+from 전체_흐름 import ROOT, http
+from 카프카_복구 import KafkaRecovery
+from 수신결과_흐름 import wait_until
 
 
 ATTEMPT = re.compile(r'^([^ ]+) .*org\.apache\.kafka\.clients\.NetworkClient.*Connection to node .*could not be established', re.M)

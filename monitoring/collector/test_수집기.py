@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import patch
 from urllib.error import HTTPError
 sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'scripts/poc'))
-import collector
+import 수집기 as collector
 
 class CollectorTest(unittest.TestCase):
     def setUp(self):

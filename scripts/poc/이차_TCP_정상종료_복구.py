@@ -4,10 +4,10 @@ import argparse
 from datetime import datetime, timezone
 import time
 
-from full_flow import verify_delivery
-from graceful_inflight_recovery import GracefulInflightRecovery
-from process_recovery import verify_uncertain_step
-from receipt_flow import Run, wait_until
+from 전체_흐름 import verify_delivery
+from 업체_호출중_정상종료_복구 import GracefulInflightRecovery
+from 프로세스_복구 import verify_uncertain_step
+from 수신결과_흐름 import Run, wait_until
 
 
 class GracefulTcpRecovery(GracefulInflightRecovery):

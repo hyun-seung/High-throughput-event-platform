@@ -1,6 +1,6 @@
 import copy
 import unittest
-from full_flow_load import reconcile_phase
+from 전체_흐름_부하 import reconcile_phase
 
 
 class FullFlowLoadEvidenceTest(unittest.TestCase):

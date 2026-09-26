@@ -1,5 +1,5 @@
 import unittest
-from log_health import inspect_log
+from 로그_상태 import inspect_log
 
 
 class LogHealthTest(unittest.TestCase):

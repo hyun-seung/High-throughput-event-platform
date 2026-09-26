@@ -9,7 +9,7 @@
 ## 재현 방법과 시간 기준
 
 ```bash
-python3 scripts/monitoring/analyze_stalls.py \
+python3 scripts/monitoring/정체_분석.py \
   .poc-results/20260924T121505Z-075d4b00/monitored-100 \
   > /tmp/platform-stall-analysis.json
 ```

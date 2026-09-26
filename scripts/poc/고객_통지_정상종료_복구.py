@@ -3,9 +3,9 @@
 import argparse
 from datetime import datetime, timezone
 
-from graceful_inflight_recovery import GracefulInflightRecovery
-from process_recovery import verify_ack_loss
-from receipt_flow import wait_until
+from 업체_호출중_정상종료_복구 import GracefulInflightRecovery
+from 프로세스_복구 import verify_ack_loss
+from 수신결과_흐름 import wait_until
 
 
 class GracefulCustomerRecovery(GracefulInflightRecovery):

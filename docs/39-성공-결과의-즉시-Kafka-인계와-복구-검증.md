@@ -48,8 +48,8 @@ Kafka 발행은 기존 acks=all·멱등 producer를 사용한다. 새로운 완�
 # JAVA_HOME은 JDK 21. 실제 DB 시험은 고유 ID를 쓰고 fixture가 정리한다.
 DYNAMODB_TEST_ENDPOINT=http://localhost:18000 ./mvnw -pl dispatch-worker -am test
 ./mvnw -DskipTests package
-.poc-tools/venv/bin/python scripts/poc/full_flow.py
-.poc-tools/venv/bin/python scripts/poc/full_flow_load.py --rates 10 100 --seconds 5
+.poc-tools/venv/bin/python scripts/poc/전체_흐름.py
+.poc-tools/venv/bin/python scripts/poc/전체_흐름_부하.py --rates 10 100 --seconds 5
 ```
 
 짧은 단일 측정의 처리량을 지속 최대 TPS로 해석하지 않는다.

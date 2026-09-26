@@ -13,9 +13,9 @@ import time
 import urllib.request
 
 from confluent_kafka import Consumer, TopicPartition
-from evidence import complete_input, percentile, read_manifest
-from full_flow import FullFlow, ROOT, HTTP, MODULES, http
-from receipt_flow import Run, stop
+from 검증_근거 import complete_input, percentile, read_manifest
+from 전체_흐름 import FullFlow, ROOT, HTTP, MODULES, http
+from 수신결과_흐름 import Run, stop
 
 GROUPS = {'delivery.requested.v1': 'delivery-ingress-worker',
           'delivery.dispatch-requested.v1': 'delivery-dispatch-worker',

@@ -12,11 +12,11 @@ import time
 import boto3
 from botocore.config import Config
 from botocore.exceptions import EndpointConnectionError, ConnectionClosedError, ReadTimeoutError
-from full_flow import FullFlow, HTTP
-from process_recovery import ProcessRecovery
-from postgres_recovery import GROUPS
-from receipt_flow import wait_until
-from run import metric
+from 전체_흐름 import FullFlow, HTTP
+from 프로세스_복구 import ProcessRecovery
+from 포스트그레스_복구 import GROUPS
+from 수신결과_흐름 import wait_until
+from 실행 import metric
 
 
 def verify_owned_dynamo(item, project):
@@ -56,7 +56,7 @@ class DynamoRecovery(ProcessRecovery):
         env.update({'primaryTtlSeconds': 90, 'secondaryTtlSeconds': 40,
             'scope': 'local DynamoDB endpoint unavailable with intact volume; not managed-service/AZ/PITR proof',
             'dynamoRecoveryHarnessSha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
-            'sharedRecoveryHarnessSha256': hashlib.sha256(Path(__file__).with_name('process_recovery.py').read_bytes()).hexdigest()})
+            'sharedRecoveryHarnessSha256': hashlib.sha256(Path(__file__).with_name('프로세스_복구.py').read_bytes()).hexdigest()})
         self.write('environment.json', env)
 
     def dynamo(self):

@@ -3,7 +3,7 @@ import unittest
 import uuid
 from unittest.mock import patch
 
-from split_origin_step import canonical, destination, ensure_tables, migrate
+from 원본_단계_분리 import canonical, destination, ensure_tables, migrate
 
 
 @unittest.skipUnless(os.getenv('DYNAMODB_TEST_ENDPOINT'), 'Local DynamoDB endpoint required')
@@ -42,7 +42,7 @@ class SplitTableIntegrationTest(unittest.TestCase):
     def test_dry_run_copy_and_repeat_preserve_source_and_all_values(self):
         import subprocess, sys, json
         from pathlib import Path
-        output = subprocess.check_output([sys.executable, str(Path(__file__).with_name('split_origin_step.py')),
+        output = subprocess.check_output([sys.executable, str(Path(__file__).with_name('원본_단계_분리.py')),
                 '--endpoint', os.environ['DYNAMODB_TEST_ENDPOINT'], '--source-table', self.source], text=True)
         plan = json.loads(output)
         self.assertFalse(plan['applied'])

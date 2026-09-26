@@ -1,6 +1,6 @@
 # Kafka 장애 시 접수 보류와 결과 복구 검증
 
-2026-09-25. `scripts/poc/kafka_recovery.py`는 고유 Compose 프로젝트와 6개 실제 JVM을 띄우고 **소유한 Kafka 컨테이너만** 두 번 중단·재기동한다. PostgreSQL·DynamoDB·Redis는 유지한다. Kafka producer mock이나 앱 재시작으로 대체하지 않는다.
+2026-09-25. `scripts/poc/카프카_복구.py`는 고유 Compose 프로젝트와 6개 실제 JVM을 띄우고 **소유한 Kafka 컨테이너만** 두 번 중단·재기동한다. PostgreSQL·DynamoDB·Redis는 유지한다. Kafka producer mock이나 앱 재시작으로 대체하지 않는다.
 
 ## 1. 검증할 경계
 
@@ -26,7 +26,7 @@
 
 같은 점검에서 기존 Compose의 `kafka-data:/var/lib/kafka` 아래 실제 로그 경로 `/var/lib/kafka/data`에는 이미지가 만든 **별도 익명 볼륨**이 있음을 확인했다. 같은 컨테이너의 stop/start에는 남지만 컨테이너 재생성 때 명명 볼륨만 재연결하는 것으로 실제 로그를 보존한다고 믿을 수 없다. [Docker 공식 볼륨 설명](https://docs.docker.com/engine/storage/volumes/)도 익명 볼륨의 수명과 재사용을 명명 볼륨과 구분한다.
 
-신규 환경의 마운트를 `kafka-data:/var/lib/kafka/data`로 수정했다. 시험은 이 경로의 실제 볼륨 이름까지 확인한다. **기존 환경의 데이터는 자동 이관하지 않았다.** `local.sh infra`·`monitoring.sh up`·고정 platform-poc 환경의 `scripts/poc/run.py`는 기존 컨테이너의 부모 경로 마운트를 발견하면 데이터 변경 없이 중단한다. 직접 docker compose up을 사용하는 경우에도 아래 이관 확인이 먼저다.
+신규 환경의 마운트를 `kafka-data:/var/lib/kafka/data`로 수정했다. 시험은 이 경로의 실제 볼륨 이름까지 확인한다. **기존 환경의 데이터는 자동 이관하지 않았다.** `local.sh infra`·`monitoring.sh up`·고정 platform-poc 환경의 `scripts/poc/실행.py`는 기존 컨테이너의 부모 경로 마운트를 발견하면 데이터 변경 없이 중단한다. 직접 docker compose up을 사용하는 경우에도 아래 이관 확인이 먼저다.
 
 기존 데이터를 유지할 환경의 이관 순서:
 
@@ -43,7 +43,7 @@
 # JAVA_HOME을 JDK 21로 지정하고 기존 도구를 준비한다.
 ./mvnw package
 .poc-tools/venv/bin/python -m unittest discover -s scripts/poc -p 'test_*.py'
-.poc-tools/venv/bin/python scripts/poc/kafka_recovery.py
+.poc-tools/venv/bin/python scripts/poc/카프카_복구.py
 ```
 
 실행별 `.poc-results/`에 환경·도구/JAR 해시, 중단/복구 상태·마운트, 503 응답, 중단 중 원장·결과·발행 실패 계측, SQL/고객 결과·offset·정리를 남긴다. 인증 값이나 앱 실행 인수는 근거 파일에 저장하지 않는다. 종료 시 소유 앱·컨테이너만 정지하고 볼륨은 유지한다.

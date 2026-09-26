@@ -9,11 +9,11 @@ import subprocess
 import urllib.error
 import urllib.request
 
-from full_flow import FullFlow, HTTP, http
-from process_recovery import ProcessRecovery
-from postgres_recovery import GROUPS
-from receipt_flow import wait_until
-from run import metric
+from 전체_흐름 import FullFlow, HTTP, http
+from 프로세스_복구 import ProcessRecovery
+from 포스트그레스_복구 import GROUPS
+from 수신결과_흐름 import wait_until
+from 실행 import metric
 
 
 def verify_owned_redis(item, project):
@@ -49,7 +49,7 @@ class RedisRecovery(ProcessRecovery):
         env.update({'primaryTtlSeconds': 30, 'secondaryTtlSeconds': 40,
                     'scope': 'single local Redis service outage and same AOF volume restore; not replica/HA/load proof',
                     'redisRecoveryHarnessSha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
-                    'sharedRecoveryHarnessSha256': hashlib.sha256(Path(__file__).with_name('process_recovery.py').read_bytes()).hexdigest()})
+                    'sharedRecoveryHarnessSha256': hashlib.sha256(Path(__file__).with_name('프로세스_복구.py').read_bytes()).hexdigest()})
         self.write('environment.json', env)
 
     def redis_state(self):

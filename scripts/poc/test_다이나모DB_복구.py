@@ -5,7 +5,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 import signal
 
-from dynamo_recovery import DynamoRecovery, verify_blocked, verify_owned_dynamo
+from 다이나모DB_복구 import DynamoRecovery, verify_blocked, verify_owned_dynamo
 
 
 class DynamoOutageEvidenceTest(unittest.TestCase):
@@ -43,7 +43,7 @@ class DynamoOutageEvidenceTest(unittest.TestCase):
             run = object.__new__(DynamoRecovery); run.directory = Path(directory)
             child = Mock(); child.poll.return_value = None; child.pid = 123
             run.apps = {'dispatch': child}; run.paused_dispatch = False; run.signals = []
-            with patch('dynamo_recovery.subprocess.check_output', return_value='T'):
+            with patch('다이나모DB_복구.subprocess.check_output', return_value='T'):
                 run.dispatch_signal(True)
                 with self.assertRaises(AssertionError): run.dispatch_signal(True)
                 run.dispatch_signal(False)

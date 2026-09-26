@@ -8,7 +8,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.request import Request, build_opener, ProxyHandler
 from urllib.error import HTTPError
-from evidence import KafkaProbe, GROUPS
+from 검증_근거 import KafkaProbe, GROUPS
 
 HTTP = build_opener(ProxyHandler({}))
 LOCK = threading.Lock()
