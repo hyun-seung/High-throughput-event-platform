@@ -35,10 +35,19 @@ public final class VerificationTools {
     private VerificationTools() {}
 
     public static void main(String[] args) throws Exception {
-        if (args.length != 2 || !args[0].equals("stall")) {
-            throw new IllegalArgumentException("Usage: java -jar verification-tools/target/verification-tools-1.0-SNAPSHOT.jar stall <phase-directory>");
+        if (args.length == 2 && args[0].equals("stall")) {
+            System.out.println(JSON.writerWithDefaultPrettyPrinter().writeValueAsString(analyzeStall(Path.of(args[1]))));
+            return;
         }
-        System.out.println(JSON.writerWithDefaultPrettyPrinter().writeValueAsString(analyzeStall(Path.of(args[1]))));
+        if (args.length == 1 && args[0].equals("monitoring")) {
+            MonitoringVerification.run(Path.of(""), "http://127.0.0.1:13000", "http://127.0.0.1:19099");
+            return;
+        }
+        if (args.length == 4 && args[0].equals("monitoring")) {
+            MonitoringVerification.run(Path.of(args[1]), args[2], args[3]);
+            return;
+        }
+        throw new IllegalArgumentException("Usage: java -jar verification-tools/target/verification-tools-1.0-SNAPSHOT.jar <stall directory|monitoring [root grafana-url prometheus-url]>");
     }
 
     static Map<String, Object> analyzeStall(Path directory) throws IOException {

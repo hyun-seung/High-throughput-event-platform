@@ -65,4 +65,6 @@ k6 inspect로 목표 rate 10,000의 초기/최대 VU 설정이 유효한지 확�
 
 보존 성능 자료의 정체 분석은 `verification-tools` Java 모듈로 옮겼다. `bash scripts/검증-실행.sh 정체-분석 <측정 디렉터리>`가 도구를 빌드하고 저장된 JSONL·gzip 지표·audit 로그만 읽어 보고서를 출력한다. 2026-09-24의 100 TPS 자료에서 Python과 Java의 **29개 구간 전체 JSON 결과가 정확히 일치**했고 표준 Java 단위 검증 190개도 통과했다. [대조 기록](검증-결과/2026-09-26-Java-정체-분석-이관-검증.json). 기존 Python 분석 파일을 제거해 현재 남은 Python 파일은 **35개**다.
 
+Grafana·Prometheus·Loki 읽기 검증도 `verification-tools`의 `monitoring` 명령으로 옮겼다. `bash scripts/monitoring.sh verify`와 한글 실행 메뉴가 이를 호출한다. 같은 로컬 HTTP fixture를 Python·Java에 제공했을 때 정상 결과(질의 2건·오류 0건)와 대시보드 불일치·민감 로그 결과(오류 2건)가 일치했고 표준 Java 단위 검증 191개도 통과했다. 실제 Grafana는 중지돼 있어 이번 이관 검증에서 운영 스택 전체를 조회하지 않았다. [이관 검증 기록](검증-결과/2026-09-26-Java-모니터링-검증-이관.json). 남은 Python 파일은 **34개**다.
+
 한글 경로에서 Python 시험 60개가 통과했고, DynamoDB 마이그레이션 시험 3개는 별도 환경이 없어 기존 조건대로 건너뛰었다. 모든 PoC 진입점의 `--help`를 확인했으며 고객 통지 중 SIGTERM 시험을 실제 Docker·JVM으로 재실행해 같은 묶음의 2회 수신과 최종 완료를 확인했다. [검증 기록](검증-결과/2026-09-26-한글-Python-실행경로-검증.json). 이 파일명 변경이 전체 성능 시험이나 모든 장애 시나리오의 재실행을 뜻하지는 않는다.

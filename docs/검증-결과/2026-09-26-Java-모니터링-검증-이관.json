@@ -1,0 +1,27 @@
+{
+  "date": "2026-09-26",
+  "status": "PASS",
+  "javaTool": "verification-tools/target/verification-tools-1.0-SNAPSHOT.jar monitoring",
+  "comparison": {
+    "localHttpFixture": true,
+    "successQueries": 2,
+    "successErrors": 0,
+    "failureQueries": 2,
+    "failureErrors": 2,
+    "pythonAndJavaReportsEqualExceptCheckedAt": true,
+    "pythonAndJavaExitCodesEqual": true
+  },
+  "javaTest": {
+    "MonitoringVerificationTest": "PASS",
+    "unitRunDirectory": ".poc-results/java-test-20260926123054-65697",
+    "unitExecuted": 191,
+    "unitSkippedWithoutIntegrationEnvironment": 224,
+    "unitFailures": 0,
+    "unitErrors": 0,
+    "checks": ["Prometheus and Loki queries", "provisioned dashboard comparison", "audit log inspection", "sensitive field rejection"]
+  },
+  "limits": [
+    "The local Grafana service was stopped; no live monitoring-stack verification was performed",
+    "The migration was compared with a controlled local HTTP fixture, not every possible remote API response"
+  ]
+}
