@@ -1,10 +1,13 @@
 server:
   address: 127.0.0.1
   port: ${RECEIPT_API_PORT:8094}
+  shutdown: graceful
   tomcat:
     connection-timeout: 10s
 
 spring:
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
   application:
     name: receipt-api
   mvc:
@@ -44,6 +47,11 @@ receipt:
   secondary-secret: ${RECEIPT_SECONDARY_SECRET:}
 
 management:
+  endpoint:
+    health:
+      probes:
+        enabled: true
+        add-additional-paths: true
   server:
     address: 127.0.0.1
     port: ${RECEIPT_METRICS_PORT:19084}
