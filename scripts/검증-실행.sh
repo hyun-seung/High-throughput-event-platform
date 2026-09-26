@@ -13,7 +13,7 @@ usage() {
 저장소 장애: 카프카, 카프카-복제, 레디스, 포스트그레스, 다이나모DB
 성능 PoC: 성능-PoC
 그 밖의 도구: 로컬-점검, DDB-인덱스, DDB-분리, 모니터링-데모, 모니터링-측정,
-             모니터링-검증, 대시보드-생성, 정체-분석, 실행파일-보관(Java)
+             모니터링-검증, 대시보드-생성, 정체-분석(Java), 실행파일-보관(Java)
 
 실제 JVM 시험은 Docker와 JDK 21이 필요합니다. 처음 실행할 때 '준비'를 실행하세요.
 추가 옵션은 해당 Python 도구에 그대로 전달합니다.
@@ -34,6 +34,11 @@ case "$scenario" in
   준비) exec python3 scripts/poc/환경_준비.py "$@" ;;
   Java-단위) exec bash scripts/test-java.sh unit "$@" ;;
   Java-통합) exec bash scripts/test-java.sh integration "$@" ;;
+  정체-분석)
+    ./mvnw -q -pl verification-tools -am -DskipTests package
+    java_bin=java
+    [[ -z "${JAVA_HOME:-}" ]] || java_bin="$JAVA_HOME/bin/java"
+    exec "$java_bin" -jar verification-tools/target/verification-tools-1.0-SNAPSHOT.jar stall "$@" ;;
 esac
 
 python_bin=.poc-tools/venv/bin/python
@@ -67,7 +72,6 @@ case "$scenario" in
   모니터링-측정) script=scripts/monitoring/성능_측정.py ;;
   모니터링-검증) script=scripts/monitoring/검증.py ;;
   대시보드-생성) script=scripts/monitoring/대시보드_생성.py ;;
-  정체-분석) script=scripts/monitoring/정체_분석.py ;;
   실행파일-보관) exec java scripts/testing/MonitorArtifacts.java snapshot ;;
   *) usage >&2; exit 2 ;;
 esac
