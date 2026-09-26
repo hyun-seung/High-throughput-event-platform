@@ -437,9 +437,9 @@ class CleanupPostgresDynamoDbTest {
         var leased = seedModern(UUID.randomUUID().toString()); store.save(leased);
         var expired = seedModern(UUID.randomUUID().toString()); store.save(expired);
         var missing = seedModern(UUID.randomUUID().toString()); store.save(missing);
-        jdbc.update("UPDATE delivery_cleanup_outbox SET next_attempt_at=clock_timestamp()+interval '10 minutes' WHERE result_event_id=?", UUID.fromString(backoff.eventId()));
-        jdbc.update("UPDATE delivery_cleanup_outbox SET lease_token=?,lease_until=clock_timestamp()+interval '10 minutes' WHERE result_event_id=?", UUID.randomUUID(), UUID.fromString(leased.eventId()));
-        jdbc.update("UPDATE delivery_cleanup_outbox SET lease_token=?,lease_until=clock_timestamp()-interval '10 minutes' WHERE result_event_id=?", UUID.randomUUID(), UUID.fromString(expired.eventId()));
+        jdbc.update("UPDATE delivery_cleanup_outbox SET next_attempt_at=clock_timestamp()+interval '1 day' WHERE result_event_id=?", UUID.fromString(backoff.eventId()));
+        jdbc.update("UPDATE delivery_cleanup_outbox SET lease_token=?,lease_until=clock_timestamp()+interval '1 day' WHERE result_event_id=?", UUID.randomUUID(), UUID.fromString(leased.eventId()));
+        jdbc.update("UPDATE delivery_cleanup_outbox SET lease_token=?,lease_until=clock_timestamp()-interval '1 day' WHERE result_event_id=?", UUID.randomUUID(), UUID.fromString(expired.eventId()));
         jdbc.update("DELETE FROM customer_notification_outbox WHERE result_event_id=?", UUID.fromString(missing.eventId()));
         var before = jdbc.queryForList("SELECT * FROM delivery_cleanup_outbox ORDER BY result_event_id");
         var operations = operations(Instant.now().plusSeconds(1));
