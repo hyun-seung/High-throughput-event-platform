@@ -4,16 +4,11 @@ import json
 import os
 from pathlib import Path
 import subprocess
-import time
 import uuid
 
 REQUESTED = 'delivery.requested.v1'
 DISPATCH = 'delivery.dispatch-requested.v1'
 DLT = 'delivery.requested.dlt.v1'
-TOPICS = (REQUESTED, DISPATCH, DLT)
-GROUPS = {REQUESTED: 'delivery-ingress-worker', DISPATCH: 'delivery-dispatch-worker'}
-
-
 def java_id(text):
     return str(uuid.UUID(bytes=hashlib.md5(text.encode()).digest(), version=3))
 
@@ -59,74 +54,40 @@ def reconcile(starts, results, tenant, records, items, provider):
 
 class KafkaProbe:
     def __init__(self, bootstrap):
-        from confluent_kafka import Consumer, TopicPartition
-        self.tp = TopicPartition
-        base = {'bootstrap.servers': bootstrap, 'enable.auto.commit': False, 'enable.auto.offset.store': False,
-                'allow.auto.create.topics': False, 'socket.timeout.ms': 5000, 'session.timeout.ms': 10000,
-                'broker.address.family': 'v4'}
-        self.groups = {topic: Consumer({**base, 'group.id': group}) for topic, group in GROUPS.items()}
-        self.reader = Consumer({**base, 'group.id': 'poc-read-only-' + uuid.uuid4().hex})
-        metadata = self.reader.list_topics(timeout=10)
-        self.partitions = {}
-        for topic in TOPICS:
-            if topic not in metadata.topics or metadata.topics[topic].error:
-                raise RuntimeError(f'Missing topic {topic}')
-            self.partitions[topic] = sorted(metadata.topics[topic].partitions)
+        self.process = subprocess.Popen(_java_command('poc-kafka', bootstrap), stdin=subprocess.PIPE,
+                                        stdout=subprocess.PIPE, text=True, bufsize=1)
+        ready = self.process.stdout.readline()
+        if not ready or not json.loads(ready).get('ready'):
+            self.close()
+            raise RuntimeError('Java Kafka probe did not become ready')
+
+    def _request(self, payload):
+        if self.process.poll() is not None: raise RuntimeError('Java Kafka probe stopped')
+        self.process.stdin.write(json.dumps(payload) + '\n')
+        self.process.stdin.flush()
+        line = self.process.stdout.readline()
+        if not line: raise RuntimeError('Java Kafka probe stopped without a response')
+        response = json.loads(line)
+        if 'error' in response: raise RuntimeError(response['error'])
+        return response
 
     def snapshot(self, oldest=True):
-        now = time.time()
-        rows = []
-        for topic in TOPICS:
-            partitions = [self.tp(topic, part) for part in self.partitions[topic]]
-            commits = {p.partition: p.offset for p in self.groups[topic].committed(partitions, timeout=5)} if topic in self.groups else {}
-            for part in partitions:
-                start, end = self.reader.get_watermark_offsets(part, timeout=5, cached=False)
-                committed = commits.get(part.partition)
-                # An uninitialized group starts at earliest in this project's configuration.
-                effective = start if committed is not None and committed < 0 else committed
-                if effective is not None and not start <= effective <= end:
-                    raise RuntimeError('Committed offset outside retained range; do not report zero lag')
-                lag = end - effective if effective is not None else None
-                age = None
-                if oldest and lag:
-                    self.reader.assign([self.tp(topic, part.partition, effective)])
-                    message = self.reader.poll(3)
-                    if message is None or message.error() or message.offset() != effective:
-                        raise RuntimeError('Cannot inspect oldest uncommitted record')
-                    timestamp = message.timestamp()[1]
-                    if timestamp >= 0: age = max(0, time.time() - timestamp / 1000)
-                rows.append({'topic': topic, 'partition': part.partition, 'start': start, 'end': end,
-                             'committed': committed, 'lag': lag, 'oldestUncommittedAgeSeconds': age})
-        return {'time': now, 'partitions': rows, 'lag': sum(row['lag'] or 0 for row in rows),
-                'oldestUncommittedAgeSeconds': max((r['oldestUncommittedAgeSeconds'] or 0 for r in rows), default=0)}
+        return self._request({'op': 'snapshot', 'oldest': oldest})
 
     def records(self, before, after):
-        initial = {(r['topic'], r['partition']): r['end'] for r in before['partitions']}
-        rows = []
-        for bounds in after['partitions']:
-            topic, part, end = bounds['topic'], bounds['partition'], bounds['end']
-            start = initial[(topic, part)]
-            if start < bounds['start']: raise RuntimeError('Kafka evidence expired during the run')
-            if start == end: continue
-            self.reader.assign([self.tp(topic, part, start)])
-            deadline = time.monotonic() + 60
-            position = start
-            while position < end:
-                if time.monotonic() > deadline: raise TimeoutError('Kafka evidence collection timed out')
-                message = self.reader.poll(1)
-                if message is None: continue
-                if message.error(): raise RuntimeError(str(message.error()))
-                if message.offset() >= end: break
-                if message.offset() != position: raise RuntimeError('Kafka offset gap in test evidence')
-                position = message.offset() + 1
-                try: event = json.loads(message.value())
-                except (ValueError, TypeError): event = {}
-                rows.append({'topic': topic, 'partition': part, 'offset': message.offset(),
-                             'deliveryId': event.get('deliveryId'), 'requestKey': event.get('requestKey'), 'occurredAt': event.get('occurredAt')})
-        return rows
+        return self._request({'op': 'records', 'before': before, 'after': after})
 
     def close(self):
-        for consumer in [self.reader, *self.groups.values()]: consumer.close()
+        if self.process.poll() is None:
+            try:
+                self._request({'op': 'close'})
+                self.process.wait(timeout=5)
+            except (OSError, RuntimeError, subprocess.TimeoutExpired):
+                self.process.terminate()
+                try: self.process.wait(timeout=5)
+                except subprocess.TimeoutExpired: self.process.kill(); self.process.wait(timeout=5)
+        self.process.stdin.close()
+        self.process.stdout.close()
 
 
 def read_items(endpoint, deliveries):

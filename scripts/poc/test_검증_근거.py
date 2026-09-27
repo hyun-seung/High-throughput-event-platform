@@ -1,9 +1,11 @@
 import json
+import io
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import MagicMock, patch
 
-from 검증_근거 import REQUESTED, DISPATCH, DLT, attempt_id, complete_input, delivery_id, read_manifest, reconcile
+from 검증_근거 import REQUESTED, DISPATCH, DLT, KafkaProbe, attempt_id, complete_input, delivery_id, read_manifest, reconcile
 
 
 class ReconciliationTest(unittest.TestCase):
@@ -100,6 +102,19 @@ class ReconciliationTest(unittest.TestCase):
         self.assertFalse(complete_input(10, 9, 9, 9, 0))
         self.assertFalse(complete_input(10, 11, 10, 10, 0))
         self.assertFalse(complete_input(10, 10, 10, 10, 1))
+
+    def test_kafka_probe_keeps_one_java_process_for_snapshot_and_close(self):
+        process = MagicMock()
+        process.stdin = io.StringIO()
+        process.stdout = io.StringIO('{"ready":true}\n{"lag":2,"partitions":[]}\n{"closed":true}\n')
+        process.poll.return_value = None
+        with patch('검증_근거.subprocess.Popen', return_value=process) as start:
+            probe = KafkaProbe('localhost:29092')
+            self.assertEqual(2, probe.snapshot(oldest=False)['lag'])
+            sent = process.stdin.getvalue().splitlines()
+            self.assertEqual([{'op': 'snapshot', 'oldest': False}], [json.loads(row) for row in sent])
+            probe.close()
+            start.assert_called_once()
 
 
 if __name__ == '__main__':
