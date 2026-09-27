@@ -130,32 +130,6 @@ class KafkaProbe:
 
 
 def read_items(endpoint, deliveries):
-    import boto3
-    from botocore.config import Config
-    client = boto3.client('dynamodb', endpoint_url=endpoint, region_name='ap-northeast-2',
-                         aws_access_key_id='local', aws_secret_access_key='local',
-                         config=Config(connect_timeout=3, read_timeout=5, retries={'max_attempts': 2}))
-    items = {}
-
-    def fetch(table, keys):
-        for index in range(0, len(keys), 100):
-            pending = {table: {'Keys': keys[index:index+100], 'ConsistentRead': True,
-                              'ProjectionExpression': 'pk,sk,#s,occurred_at,updated_at,attempt_id,delivery_id',
-                              'ExpressionAttributeNames': {'#s': 'status'}}}
-            for retry in range(6):
-                result = client.batch_get_item(RequestItems=pending)
-                for item in result['Responses'].get(table, []):
-                    items[(item['pk']['S'], item['sk']['S'])] = item
-                pending = result.get('UnprocessedKeys', {})
-                if not pending: break
-                time.sleep(min(2, 0.1 * 2 ** retry))
-            else: raise RuntimeError('Unprocessed DB keys remain; reconciliation incomplete')
-    try:
-        fetch('ORIGIN', [{'pk': {'S': 'DELIVERY#' + delivery}, 'sk': {'S': 'META'}} for delivery in deliveries])
-        executions = {items.get(('DELIVERY#' + delivery, 'META'), {}).get('delivery_id', {}).get('S', delivery)
-                      for delivery in deliveries}
-        fetch('STEP', [{'pk': {'S': 'DELIVERY#' + execution}, 'sk': {'S': 'ATTEMPT#' + attempt_id(execution)}}
-                       for execution in sorted(executions)])
-    finally:
-        client.close()
-    return items
+    result = subprocess.run(_java_command('poc-items', endpoint), input=json.dumps(deliveries),
+                            text=True, capture_output=True, check=True)
+    return {(item['pk']['S'], item['sk']['S']): item for item in json.loads(result.stdout)}

@@ -87,4 +87,6 @@ Grafana 대시보드는 배포에 사용되는 JSON 7개를 편집 원본으로 
 
 두 부하 실행기가 공유하는 k6 JSONL 입력 기록 검사와 완료 판정도 Java의 `manifest`, `input-complete` 명령으로 옮겼다. `bash scripts/검증-실행.sh 입력기록 <requests.jsonl>`은 시작·결과 이벤트를 대조해 JSON으로 출력하고, `bash scripts/검증-실행.sh 입력완료 <계획> <시작> <응답> <반복> <누락>`은 경계 도착 요청 1건을 포함한 완료 여부를 출력한다. Python 실행기는 Java 결과를 받아 후속 증거와 연결한다. 중복·고아 결과·키 불일치·미응답 입력과 경계값을 Java 단위 시험으로 검증했다. Kafka·DB 조회가 남아 있어 Python 파일 수는 **24개**다.
 
+격리형 PoC의 ORIGIN·STEP 증거 조회는 `verification-tools`의 `poc-items` 명령으로 옮겼다. `bash scripts/검증-실행.sh PoC-항목 http://localhost:28000 < deliveries.json`은 전달된 요청 ID의 META를 먼저 읽고 실제 실행 ID에 해당하는 ATTEMPT를 읽어 DynamoDB 항목 JSON을 출력한다. 두 테이블 모두 일관 읽기와 필요한 속성만의 투영을 사용하며, 100키 단위 분할과 미처리 키 재시도를 유지한다. 모의 클라이언트에서 실행 ID 매핑·읽기 조건·재시도·분할을 검증했고, 실행 중인 로컬 DynamoDB의 ORIGIN·STEP에 존재하지 않는 ID를 읽어 빈 결과를 확인했다. 실제 항목이 있는 경로는 이번 이관에서 조회하지 않았다. Python 파일 수는 **24개**다.
+
 한글 경로에서 Python 시험 60개가 통과했고, DynamoDB 마이그레이션 시험 3개는 별도 환경이 없어 기존 조건대로 건너뛰었다. 모든 PoC 진입점의 `--help`를 확인했으며 고객 통지 중 SIGTERM 시험을 실제 Docker·JVM으로 재실행해 같은 묶음의 2회 수신과 최종 완료를 확인했다. [검증 기록](검증-결과/2026-09-26-한글-Python-실행경로-검증.json). 이 파일명 변경이 전체 성능 시험이나 모든 장애 시나리오의 재실행을 뜻하지는 않는다.
