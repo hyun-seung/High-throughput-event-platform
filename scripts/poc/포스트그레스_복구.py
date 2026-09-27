@@ -11,6 +11,7 @@ from 전체_흐름 import FullFlow, HTTP
 from 프로세스_복구 import ProcessRecovery
 from 수신결과_흐름 import wait_until
 from 실행 import metric
+from 검증_근거 import verify_evidence
 
 
 GROUPS = {'delivery.requested.v1': 'delivery-ingress-worker',
@@ -26,27 +27,7 @@ def verify_owned_postgres(item, project):
 
 
 def verify_outage(before, during):
-    assert during['postgres']['status'] == 'exited' and not during['postgres']['running']
-    assert during['sqlProbeRejected']
-    assert during['applicationPids'] == before['applicationPids']
-    assert during['storeFailures'] >= before['storeFailures'] + 2
-    assert during['customerRequests'] == 0
-    old = {p['partition']: max(0, p['committed']) for p in before['offsets']}
-    new = {p['partition']: max(0, p['committed']) for p in during['offsets']}
-    assert old == new, (old, new)
-    assert sum(p['lag'] for p in during['offsets']) >= 2
-    assert len(during['requests']) == 2
-    assert {r['expectedOutcome'] for r in during['requests']} == {'DELIVERED', 'EXPIRED'}
-    for row in during['requests']:
-        result = json.loads(row['step']['result_event']['S'])
-        assert row['origin']['delivery_id']['S'] == result['deliveryId']
-        assert result['requestKey'] == row['requestKey']
-        assert result['outcome'] == row['expectedOutcome'] and result['routeOrder'] == 1
-        if result['outcome'] == 'EXPIRED':
-            assert result['resultAt'] == result['deadline']
-            assert round(datetime.fromisoformat(result['deadline'].replace('Z', '+00:00')).timestamp() * 1000) == int(row['step']['deadline_at']['N'])
-        assert row['provider'] == [{'calls': 1, 'effects': 1}, {'calls': 0, 'effects': 0}]
-        assert row['completedRedisTtl'] == -2
+    verify_evidence('postgres-outage', {'before': before, 'during': during})
 
 
 class PostgresRecovery(ProcessRecovery):
