@@ -112,3 +112,5 @@ Java 판정 시험 3개와 남은 Python 도구 시험 45개를 통과했고, Py
 PostgreSQL 중단 중의 SQL probe 실패·JVM PID 유지·결과 저장 실패 계측·Kafka offset 보존과 lag·ORIGIN/STEP 최종 결과·업체 효과·고객 조기 전달 금지 판정은 `postgres-outage` Java 명령으로 옮겼다. Python 실행기는 중단/복구와 증거 수집을 계속 담당한다. Java 판정 시험 3개와 남은 Python 도구 시험 40개가 통과했고, Python 연결에서 정상 증거와 조기 고객 수신 증거를 구별했다. 실제 PostgreSQL 중단 시나리오는 이번 묶음에서 재실행하지 않았으며 Python 파일은 **24개**다.
 
 DynamoDB Local 중단 중 선점 전 발송 보류와 접수 후 만료 대기의 판정을 `dynamo-blocked` Java 명령으로 옮겼다. Java 시험 2개와 Python 도구 시험 38개, Python→Java 연결의 정상/불일치 증거를 확인했다. 이어 고유 Compose 프로젝트에서 실제 DynamoDB를 두 차례 중단·복구했다. 두 시나리오가 통과했고 결과 이력 2건, 업체 호출·효과 각 2회, 최종 Kafka 적체 0을 확인했다. 소유 컨테이너·네트워크는 제거하고 볼륨·원본 증거는 보존했다. [실행 근거](검증-결과/2026-09-27-DynamoDB-장애-Java-판정-검증.json). Python 파일 수는 **24개**다.
+
+실제 JVM 종료·재시작 실행기가 공유하는 고객 ACK 유실 뒤 동일 묶음 재전송과 업체 효과 뒤 불확실한 STEP 보존 판정을 `process-evidence` Java 명령으로 옮겼다. Java 판정 시험 4개와 Python 도구 시험 36개, Python→Java 정상/불일치 증거 호출을 확인했다. 고유 Compose 프로젝트의 실제 고객 ACK 대기 중 SIGTERM과 1차 업체 응답 대기 중 SIGTERM도 재실행해 각각 동일 묶음 2회 수신·최종 성공과 업체 효과 1회·원래 기한 만료를 확인했다. 2차 TCP와 SIGKILL 시나리오는 이번 이관에서 재실행하지 않았다. [실행 근거](검증-결과/2026-09-27-프로세스-복구-Java-판정-검증.json). Python 파일 수는 **24개**다.

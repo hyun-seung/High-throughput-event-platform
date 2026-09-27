@@ -64,11 +64,15 @@ case "$scenario" in
     "$python_bin" -m unittest discover -s scripts/poc -p 'test_*.py' "$@"
     java scripts/testing/LogHealth.java self-test
     exec ./mvnw -q -pl verification-tools -am -Dtest=PocKafkaProbeTest,PocItemReaderTest,LoadInputEvidenceTest,PocReconciliationTest,MonitoringCollectorTest,SplitTableMigrationTest,SplitTableMigrationIntegrationTest -Dsurefire.failIfNoSpecifiedTests=false test ;;
-  강제종료) script=scripts/poc/프로세스_복구.py ;;
+  강제종료|1차-호출중-종료|2차-호출중-종료|고객-통지중-종료)
+    ./mvnw -q -pl verification-tools -am -DskipTests package
+    case "$scenario" in
+      강제종료) script=scripts/poc/프로세스_복구.py ;;
+      1차-호출중-종료) script=scripts/poc/업체_호출중_정상종료_복구.py ;;
+      2차-호출중-종료) script=scripts/poc/이차_TCP_정상종료_복구.py ;;
+      고객-통지중-종료) script=scripts/poc/고객_통지_정상종료_복구.py ;;
+    esac ;;
   정상종료) script=scripts/poc/정상종료_복구.py ;;
-  1차-호출중-종료) script=scripts/poc/업체_호출중_정상종료_복구.py ;;
-  2차-호출중-종료) script=scripts/poc/이차_TCP_정상종료_복구.py ;;
-  고객-통지중-종료) script=scripts/poc/고객_통지_정상종료_복구.py ;;
   전체흐름) script=scripts/poc/전체_흐름.py ;;
   전체흐름-부하) script=scripts/poc/전체_흐름_부하.py ;;
   수신결과) script=scripts/poc/수신결과_흐름.py ;;
