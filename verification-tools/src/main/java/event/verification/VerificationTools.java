@@ -70,7 +70,8 @@ public final class VerificationTools {
         if (args.length == 1 && args[0].equals("collector")) { MonitoringCollector.serve(); return; }
         if (args.length == 1 && args[0].equals("collector-inside")) { MonitoringCollector.inside(); return; }
         if (args.length == 1 && args[0].equals("full-flow-reconcile")) { FullFlowReconciliation.run(); return; }
-        throw new IllegalArgumentException("Usage: java -jar verification-tools/target/verification-tools-1.0-SNAPSHOT.jar <stall directory|monitoring [root grafana-url prometheus-url]|demo [--rate N] [--seconds N] [--errors]|dashboards|local-smoke [--metrics]|lifecycle-index [options]|split-table [options]|collector|collector-inside>");
+        if (args.length == 1 && args[0].equals("poc-reconcile")) { PocReconciliation.run(); return; }
+        throw new IllegalArgumentException("Usage: java -jar verification-tools/target/verification-tools-1.0-SNAPSHOT.jar <stall directory|monitoring [root grafana-url prometheus-url]|demo [--rate N] [--seconds N] [--errors]|dashboards|local-smoke [--metrics]|lifecycle-index [options]|split-table [options]|full-flow-reconcile|poc-reconcile|collector|collector-inside>");
     }
 
     static Map<String, Object> analyzeStall(Path directory) throws IOException {

@@ -83,4 +83,6 @@ Grafana 대시보드는 배포에 사용되는 JSON 7개를 편집 원본으로 
 
 전체 흐름 부하 측정의 입력·SQL 이력·고객 수신 결과 대조와 5단계 지연시간 계산은 `verification-tools`의 `full-flow-reconcile` 명령으로 옮겼다. Python 부하 실행기는 시작 시 Java 도구를 빌드하고 각 구간의 증거 JSON을 표준 입력으로 전달한다. `bash scripts/검증-실행.sh 전체흐름-대조 < evidence.json`으로 판정만 따로 재실행할 수 있다. 기존 Python 판정 시험 7개 시나리오를 Java 시험으로 옮겼고, Python 시험 파일을 제거해 남은 Python 파일은 **24개**다. 실제 부하 실행은 별도 환경 점검 후 수행한다.
 
+격리형 성능 PoC의 요청별 HTTP·Kafka·DynamoDB·업체 호출 증거 대조는 `verification-tools`의 `poc-reconcile` 명령으로 옮겼다. Python 실행기는 실제 시스템에서 증거를 수집하고 Java 판정기에 표준 입력으로 전달한다. `bash scripts/검증-실행.sh PoC-대조 < evidence.json`으로 판정을 재실행할 수 있다. 기존 Python 시험 10개가 Java 판정기 호출 경로에서 통과하며, Java 직접 시험도 추가했다. Kafka·DB 조회와 입력 기록 읽기는 아직 Python에 있어 Python 파일 수는 **24개**다. 실제 성능 부하 측정은 이번 이관에서 수행하지 않았다.
+
 한글 경로에서 Python 시험 60개가 통과했고, DynamoDB 마이그레이션 시험 3개는 별도 환경이 없어 기존 조건대로 건너뛰었다. 모든 PoC 진입점의 `--help`를 확인했으며 고객 통지 중 SIGTERM 시험을 실제 Docker·JVM으로 재실행해 같은 묶음의 2회 수신과 최종 완료를 확인했다. [검증 기록](검증-결과/2026-09-26-한글-Python-실행경로-검증.json). 이 파일명 변경이 전체 성능 시험이나 모든 장애 시나리오의 재실행을 뜻하지는 않는다.

@@ -1,8 +1,9 @@
 """Read-only Kafka/DB probes and request-level reconciliation for the local PoC."""
-from collections import Counter, defaultdict
-from datetime import datetime
 import hashlib
 import json
+import os
+from pathlib import Path
+import subprocess
 import time
 import uuid
 
@@ -23,15 +24,6 @@ def delivery_id(tenant, key):
 
 def attempt_id(delivery):
     return java_id(f'attempt:{delivery}:mock-provider:1:1')
-
-
-def percentile(values, fraction):
-    if not values:
-        return None
-    ordered = sorted(values)
-    index = (len(ordered) - 1) * fraction
-    low = int(index)
-    return ordered[low] + (ordered[min(low + 1, len(ordered) - 1)] - ordered[low]) * (index - low)
 
 
 def complete_input(planned, started, answered, iterations, dropped):
@@ -58,59 +50,15 @@ def read_manifest(path):
 
 
 def reconcile(starts, results, tenant, records, items, provider):
-    by_key = defaultdict(list)
-    for iteration, row in starts.items():
-        by_key[row['key']].append(results.get(iteration, {'status': 0, 'deliveryId': None}))
-    kafka = {topic: Counter() for topic in TOPICS}
-    for row in records:
-        if row['deliveryId'] is None:
-            raise ValueError('Unparseable Kafka record cannot be silently omitted')
-        kafka[row['topic']][row.get('requestKey') or row['deliveryId']] += 1
-    dispatch_executions = defaultdict(set)
-    for row in records:
-        if row['topic'] == DISPATCH:
-            dispatch_executions[row.get('requestKey') or row['deliveryId']].add(row['deliveryId'])
-    rows, latencies = [], []
-    for key, responses in by_key.items():
-        delivery = delivery_id(tenant, key)
-        pk = 'DELIVERY#' + delivery
-        meta = items.get((pk, 'META'))
-        execution_id = (meta or {}).get('delivery_id', {}).get('S', delivery)
-        attempt = attempt_id(execution_id)
-        execution = items.get(('DELIVERY#' + execution_id, 'ATTEMPT#' + attempt))
-        state = execution.get('status', {}).get('S') if execution else None
-        if state is None:
-            state = 'META_ONLY' if meta else 'DLT' if kafka[DLT][delivery] else 'KAFKA_ONLY' if kafka[REQUESTED][delivery] else 'UNEXPLAINED'
-        errors = []
-        if any(r['status'] != 202 for r in responses): errors.append('http_unconfirmed_or_rejected')
-        if any(r['status'] == 202 and r['deliveryId'] != delivery for r in responses): errors.append('response_id_mismatch')
-        if state != 'ACCEPTED' or not meta: errors.append('not_persisted_accepted')
-        if not kafka[REQUESTED][delivery] or not kafka[DISPATCH][delivery]: errors.append('missing_kafka_evidence')
-        if kafka[DLT][delivery]: errors.append('dlt_present')
-        if len(dispatch_executions[delivery]) > 1: errors.append('multiple_execution_generations')
-        counts = provider.get(attempt, {'calls': 0, 'effects': 0})
-        if counts != {'calls': 1, 'effects': 1}: errors.append('provider_call_or_effect_mismatch')
-        latency = None
-        if meta and execution and state == 'ACCEPTED':
-            begin = datetime.fromisoformat(meta['occurred_at']['S'].replace('Z', '+00:00'))
-            end = datetime.fromisoformat(execution['updated_at']['S'].replace('Z', '+00:00'))
-            latency = (end - begin).total_seconds() * 1000
-            if latency < 0: errors.append('invalid_wall_clock')
-            else: latencies.append(latency)
-        rows.append({'key': key, 'deliveryId': delivery, 'executionId': execution_id, 'attemptId': attempt, 'state': state,
-                     'httpStatuses': [r['status'] for r in responses], 'provider': counts,
-                     'kafka': {topic: kafka[topic][delivery] for topic in TOPICS},
-                     'persistedTimestampLatencyMs': latency, 'problems': errors})
-    expected = {row['deliveryId'] for row in rows}
-    unexpected = sorted(set().union(*(set(values) for values in kafka.values())) - expected)
-    return rows, {'uniqueRequests': len(rows), 'submitted': len(starts), 'responses': len(results),
-                  'httpStatuses': dict(Counter(str(r['status']) for r in results.values())),
-                  'unanswered': len(starts) - len(results),
-                  'states': dict(Counter(r['state'] for r in rows)),
-                  'problemRequests': sum(bool(r['problems']) for r in rows),
-                  'unexpectedKafkaIds': unexpected,
-                  'persistedTimestampLatencyMs': {f'p{int(p*100)}': percentile(latencies, p) for p in (.50, .95, .99)},
-                  'consistent': all(not r['problems'] for r in rows) and not unexpected and len(results) == len(starts)}
+    root = Path(__file__).resolve().parents[2]
+    payload = {'starts': starts, 'results': results, 'tenant': tenant, 'records': records,
+               'items': [{'pk': pk, 'sk': sk, 'item': item} for (pk, sk), item in items.items()],
+               'provider': provider}
+    java = str(Path(os.environ['JAVA_HOME']) / 'bin/java') if os.environ.get('JAVA_HOME') else 'java'
+    command = [java, '-jar', str(root / 'verification-tools/target/verification-tools-1.0-SNAPSHOT.jar'), 'poc-reconcile']
+    result = subprocess.run(command, input=json.dumps(payload), text=True, capture_output=True, check=True, cwd=root)
+    evidence = json.loads(result.stdout)
+    return evidence['rows'], evidence['summary']
 
 
 class KafkaProbe:
