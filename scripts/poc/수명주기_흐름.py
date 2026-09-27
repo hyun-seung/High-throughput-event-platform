@@ -13,6 +13,7 @@ from urllib.error import HTTPError
 from confluent_kafka import Consumer, TopicPartition
 from confluent_kafka.admin import ConfigResource, ResourceType, NewTopic
 from 수신결과_흐름 import Run, ROOT, TABLE, ORIGIN, request, wait_until, stop
+from 검증_근거 import verify_evidence
 
 
 class LifecycleRun(Run):
@@ -66,17 +67,17 @@ class LifecycleRun(Run):
     def check_final(self, name, delivery, outcome, route, calls, secondary_calls=0):
         item = self.final(delivery)
         result = json.loads(item['result_event']['S'])
-        assert result['outcome'] == outcome and result['routeOrder'] == route, result
-        assert 'lifecycle_bucket' not in item
-        def counts(route, expected):
+        def counts(route):
             try: actual = self.counts(delivery, route)
             except HTTPError as failure:
-                assert failure.code == 404 and expected == 0, (route, expected, failure.code)
+                if failure.code != 404: raise
                 return None
-            assert actual['calls'] == expected, actual
             return actual
-        primary = counts(1, calls)
-        other = counts(2, secondary_calls)
+        primary = counts(1)
+        other = counts(2)
+        verify_evidence('lifecycle-evidence', {'kind': 'final', 'outbox': item, 'result': result,
+            'outcome': outcome, 'route': route, 'primaryCalls': calls, 'secondaryCalls': secondary_calls,
+            'primaryProvider': primary, 'secondaryProvider': other})
         self.final_results.append({'name': name, 'result': result, 'primaryProvider': primary,
                                    'secondaryProvider': other, 'outbox': item})
         self.write('final-results.json', self.final_results)
@@ -149,9 +150,8 @@ class LifecycleRun(Run):
         while self.final_probe.position([TopicPartition(self.finalized, 0)])[0].offset < end and time.monotonic() < until:
             message = self.final_probe.poll(.1)
             if message and not message.error(): self.final_records.append(json.loads(message.value()))
-        assert len(self.final_records) == end
-        assert found == expected
-        assert all(record == expected[record['deliveryId']] for record in self.final_records)
+        verify_evidence('lifecycle-evidence', {'kind': 'kafka', 'expected': expected,
+            'records': self.final_records, 'endOffset': end})
         self.write('final-kafka-records.json', self.final_records)
         for app in ('provider', 'receipt', 'dispatch'):
             (self.directory / (app + '.prom')).write_text(request(f'http://127.0.0.1:{self.ports[app + "_metrics"]}/actuator/prometheus'))
