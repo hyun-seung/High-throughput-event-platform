@@ -103,6 +103,20 @@ services:
       dynamodb-local: {condition: service_healthy}
       db-init: {condition: service_completed_successfully}
       policy-init: {condition: service_completed_successfully}
+  result:
+    <<: *app
+    environment:
+      <<: *app-env
+      RESULT_HTTP_PORT: 8095
+      RESULT_METRICS_PORT: 19085
+      LOGGING_FILE_NAME: /logs/result.log
+    volumes:
+      - ${MONITOR_RESULT_JAR:-./delivery-result-worker/target/delivery-result-worker-1.0-SNAPSHOT.jar}:/app/app.jar:ro
+      - monitoring-logs:/logs
+    depends_on:
+      kafka: {condition: service_healthy}
+      dynamodb-local: {condition: service_healthy}
+      db-init: {condition: service_completed_successfully}
   collector:
     build:
       context: .

@@ -11,6 +11,7 @@ public class NotificationService {
 
     public NotificationService(NotificationRepository repository, CustomerNotificationClient client, NotificationProperties settings, MeterRegistry meters) {
         this.repository = repository; this.client = client; this.settings = settings; this.meters = meters;
+        meters.counter("delivery.notification.events", "outcome", "exhausted");
     }
 
     public void deliver(long tenantId) {
