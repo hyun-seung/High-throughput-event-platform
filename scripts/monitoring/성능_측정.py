@@ -137,6 +137,8 @@ class MonitoringRunner(Runner):
         version = subprocess.check_output([str(TOOLS / 'k6'), 'version'], text=True).strip()
         if not version.startswith('k6 v1.8.1 '):
             raise RuntimeError('Install the pinned PoC tools first')
+        subprocess.run([str(ROOT / 'mvnw'), '-q', '-pl', 'verification-tools', '-am', '-DskipTests', 'package'],
+                       cwd=ROOT, check=True)
         self.assert_apps()
         self.token = json.loads(request(self.api_url + '/api/v1/auth/token',
                     payload={'username': 'local-user', 'password': 'local-password'}))['data']['accessToken']
