@@ -77,7 +77,9 @@ case "$scenario" in
     ./mvnw -q -pl verification-tools -am -DskipTests package
     script=scripts/poc/카프카_복구.py
     [[ "$scenario" != 카프카-복제 ]] || script=scripts/poc/카프카_복제_재연결.py ;;
-  레디스) script=scripts/poc/레디스_복구.py ;;
+  레디스)
+    ./mvnw -q -pl verification-tools -am -DskipTests package
+    script=scripts/poc/레디스_복구.py ;;
   포스트그레스) script=scripts/poc/포스트그레스_복구.py ;;
   다이나모DB) script=scripts/poc/다이나모DB_복구.py ;;
   성능-PoC) script=scripts/poc/실행.py ;;

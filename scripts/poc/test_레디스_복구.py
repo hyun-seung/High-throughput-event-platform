@@ -1,33 +1,13 @@
-import copy
 import io
 import json
 import unittest
 import urllib.error
 from unittest.mock import Mock, patch
 
-from 레디스_복구 import RedisRecovery, verify_owned_redis, verify_without_cache
+from 레디스_복구 import RedisRecovery, verify_owned_redis
 
 
 class RedisOutageEvidenceTest(unittest.TestCase):
-    def setUp(self):
-        result = {'deliveryId': 'execution', 'outcome': 'EXPIRED', 'routeOrder': 1}
-        self.args = [{'result_json': result, 'notification_status': 'DELIVERED', 'cleanup_status': 'DONE'},
-                     'EXPIRED', [{'calls': 1, 'effects': 1}, {'calls': 0, 'effects': 0}], {}, [],
-                     [{'status': 204, 'body': {'results': [copy.deepcopy(result)]}}]]
-
-    def test_durable_completion_can_pass_without_redis_marker(self):
-        verify_without_cache(*self.args)
-
-    def test_missing_http_ack_unfinished_cleanup_or_resend_fails(self):
-        for index, value in [(2, [{'calls': 2, 'effects': 1}, {'calls': 0, 'effects': 0}]),
-                             (3, {'pk': 'origin'}), (4, [{'pk': 'step'}]), (5, [])]:
-            bad = copy.deepcopy(self.args); bad[index] = value
-            with self.subTest(index=index), self.assertRaises(AssertionError): verify_without_cache(*bad)
-        bad = copy.deepcopy(self.args); bad[0]['cleanup_status'] = 'PENDING'
-        with self.assertRaises(AssertionError): verify_without_cache(*bad)
-        bad = copy.deepcopy(self.args); bad[5][0]['body']['results'][0]['outcome'] = 'DELIVERED'
-        with self.assertRaises(AssertionError): verify_without_cache(*bad)
-
     def test_only_owned_redis_can_be_stopped(self):
         labels = {'com.docker.compose.project': 'owned', 'com.docker.compose.service': 'redis'}
         verify_owned_redis({'Config': {'Labels': labels}}, 'owned')
