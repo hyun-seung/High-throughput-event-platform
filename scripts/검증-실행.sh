@@ -12,7 +12,7 @@ usage() {
 전체 흐름: 전체흐름, 전체흐름-부하, 수신결과, 수명주기
 저장소 장애: 카프카, 카프카-복제, 레디스, 포스트그레스, 다이나모DB
 성능 PoC: 성능-PoC
-그 밖의 도구: 로컬-점검, DDB-인덱스, DDB-분리, 모니터링-데모, 모니터링-측정,
+그 밖의 도구: 로컬-점검, DDB-인덱스, DDB-분리, 전체흐름-대조, 모니터링-데모, 모니터링-측정,
              모니터링-검증(Java), 대시보드-검증(Java), 정체-분석(Java), 실행파일-보관(Java)
 
 준비와 실제 JVM 시험에는 JDK 21이 필요하고, 실제 JVM 시험에는 Docker도 필요합니다.
@@ -34,7 +34,7 @@ case "$scenario" in
   준비) exec "${JAVA_HOME:+$JAVA_HOME/bin/}java" scripts/testing/PocSetup.java "$@" ;;
   Java-단위) exec bash scripts/test-java.sh unit "$@" ;;
   Java-통합) exec bash scripts/test-java.sh integration "$@" ;;
-  정체-분석|모니터링-검증|모니터링-데모|대시보드-검증|로컬-점검|DDB-인덱스|DDB-분리)
+  정체-분석|모니터링-검증|모니터링-데모|대시보드-검증|로컬-점검|DDB-인덱스|DDB-분리|전체흐름-대조)
     ./mvnw -q -pl verification-tools -am -DskipTests package
     java_bin=java
     [[ -z "${JAVA_HOME:-}" ]] || java_bin="$JAVA_HOME/bin/java"
@@ -45,6 +45,7 @@ case "$scenario" in
     [[ "$scenario" != 로컬-점검 ]] || command=local-smoke
     [[ "$scenario" != DDB-인덱스 ]] || command=lifecycle-index
     [[ "$scenario" != DDB-분리 ]] || command=split-table
+    [[ "$scenario" != 전체흐름-대조 ]] || command=full-flow-reconcile
     exec "$java_bin" -jar verification-tools/target/verification-tools-1.0-SNAPSHOT.jar "$command" "$@" ;;
 esac
 
