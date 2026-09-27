@@ -102,6 +102,8 @@ class Runner:
         self.java = str(Path(java_home) / 'bin/java') if java_home else 'java'
         java_version = subprocess.check_output([self.java, '-XshowSettings:properties', '-version'], stderr=subprocess.STDOUT, text=True)
         if not re.search(r'java.specification.version = 21\b', java_version): raise RuntimeError('JAVA_HOME must point to JDK 21')
+        subprocess.run([str(ROOT / 'mvnw'), '-q', '-pl', 'verification-tools', '-am', '-DskipTests', 'package'],
+                       cwd=ROOT, check=True)
         jars = {app: ROOT / module / 'target' / f'{module}-1.0-SNAPSHOT.jar' for app, module in MODULES.items()}
         if not all(path.exists() for path in jars.values()): raise RuntimeError('Build all application JARs before running')
         for port in list(MANAGEMENT.values()) + [28080, 28090, 28081, 28082]:
