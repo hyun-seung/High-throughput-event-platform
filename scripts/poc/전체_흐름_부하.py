@@ -167,7 +167,7 @@ class LoadRun(FullFlow):
         for rate in self.args.rates: self.phase(rate)
 
     def close(self):
-        stop(self.load)
+        if self.load: stop(self.load)
         for reader in self.readers.values(): reader.close()
         super().close()
 

@@ -8,6 +8,7 @@ import threading
 import unittest
 from unittest.mock import patch
 from 전체_흐름 import FullFlow, verify_delivery
+from 전체_흐름_부하 import LoadRun
 
 
 class FullFlowEvidenceTest(unittest.TestCase):
@@ -52,6 +53,14 @@ class FullFlowEvidenceTest(unittest.TestCase):
 
 
 class InfrastructureStartupTest(unittest.TestCase):
+    def test_load_runner_closes_after_infrastructure_startup_failure(self):
+        runner = object.__new__(LoadRun)
+        runner.load = None
+        runner.readers = {}
+        with patch.object(FullFlow, 'close') as close:
+            runner.close()
+        close.assert_called_once_with()
+
     def runner(self, directory):
         runner = object.__new__(FullFlow)
         runner.directory = Path(directory)
