@@ -13,21 +13,15 @@ import time
 from confluent_kafka import Consumer, TopicPartition
 from 전체_흐름 import FullFlow, ROOT, http, verify_delivery
 from 수신결과_흐름 import Run, wait_until
+from 검증_근거 import verify_evidence
 
 
 def verify_ack_loss(before, after, callbacks):
-    assert before['status'] == 'IN_FLIGHT' and before['attempt_count'] == 1, before
-    assert after['status'] == 'DELIVERED' and after['attempt_count'] == 2, after
-    assert before['batch_id'] == after['batch_id'] and before['request_body'] == after['request_body']
-    assert len(callbacks) == 2 and [c['status'] for c in callbacks] == [0, 204], callbacks
-    assert callbacks[0]['body'] == callbacks[1]['body'] == json.loads(before['request_body'])
+    verify_evidence('process-evidence', {'kind': 'ack-loss', 'before': before, 'after': after, 'callbacks': callbacks})
 
 
 def verify_uncertain_step(before, after, provider):
-    for field in ('status', 'version', 'retry_count', 'deadline_at', 'lease_until'):
-        assert before[field] == after[field], (field, before, after)
-    assert after['status']['S'] == 'PROCESSING' and after['retry_count']['N'] == '0', after
-    assert provider['calls'] == provider['effects'] == 1, provider
+    verify_evidence('process-evidence', {'kind': 'uncertain-step', 'before': before, 'after': after, 'provider': provider})
 
 
 class ProcessRecovery(FullFlow):

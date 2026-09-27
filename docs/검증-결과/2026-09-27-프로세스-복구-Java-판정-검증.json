@@ -1,0 +1,38 @@
+{
+  "date": "2026-09-27",
+  "purpose": "Verify Java evidence checks against real SIGTERM and restart boundaries",
+  "checks": {
+    "javaEvidenceTests": 4,
+    "pythonToolTests": 36,
+    "pythonJavaBridgeAcceptedValidAndRejectedInvalid": true
+  },
+  "customerAckLoss": {
+    "command": "bash scripts/검증-실행.sh 고객-통지중-종료",
+    "evidence": ".poc-results/full-flow-a873c55b5980",
+    "passed": 1,
+    "sigtermExitCode": 143,
+    "batchReplayIdentical": true,
+    "customerReceipts": 2,
+    "finalAttemptCount": 2,
+    "result": "DELIVERED",
+    "containersRemoved": true,
+    "networkRemoved": true,
+    "volumesRetained": true
+  },
+  "providerUncertain": {
+    "command": "bash scripts/검증-실행.sh 1차-호출중-종료",
+    "evidence": ".poc-results/full-flow-caab39c93c71",
+    "passed": 1,
+    "sigtermExitCode": 143,
+    "providerCalls": 1,
+    "providerEffects": 1,
+    "result": "EXPIRED",
+    "containersRemoved": true,
+    "networkRemoved": true,
+    "volumesRetained": true
+  },
+  "limits": [
+    "Single local JVM per scenario, not Kubernetes eviction or multi-AZ proof",
+    "Secondary TCP and SIGKILL scenarios were not rerun in this change"
+  ]
+}
