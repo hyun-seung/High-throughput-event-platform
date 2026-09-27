@@ -1,0 +1,29 @@
+{
+  "date": "2026-09-27",
+  "purpose": "Validate Java evidence checks against real DynamoDB Local outage and recovery",
+  "command": "bash scripts/검증-실행.sh 다이나모DB",
+  "baseCommit": "fddb8fae17ecefb1b04ba4e602cf4d4ed746755f",
+  "workingTreeDirtyDuringRun": true,
+  "evidence": ".poc-results/full-flow-65e46f6f3786",
+  "project": "full-flow-65e46f6f3786",
+  "result": {
+    "passedCases": 2,
+    "historyRows": 2,
+    "providerCalls": 2,
+    "providerEffects": 2,
+    "applicationPidsUnchanged": true,
+    "claimBlockedWithoutSend": true,
+    "originalDeadlinePreserved": true,
+    "finalKafkaLag": 0
+  },
+  "cleanup": {
+    "ownedProcessesStopped": true,
+    "containersRemoved": true,
+    "networkRemoved": true,
+    "volumesRetained": true
+  },
+  "limits": [
+    "Local DynamoDB service stop and restore with its volume intact",
+    "Not managed-service, PITR, multi-AZ, or sustained load proof"
+  ]
+}

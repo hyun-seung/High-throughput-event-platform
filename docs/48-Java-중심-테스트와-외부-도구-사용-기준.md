@@ -110,3 +110,5 @@ Java 판정 시험 3개와 남은 Python 도구 시험 45개를 통과했고, Py
 다음으로 Redis 중단 중에도 SQL 결과와 고객 204 수신·정리가 완료되고 업체 효과는 1회인지를 확인하는 판정을 `redis-complete` Java 명령으로 옮겼다. Kafka 판정도 공통 Python→Java 증거 호출 경로를 사용한다. Java 판정 시험 3개와 남은 Python 도구 시험 43개가 통과했고, 두 명령 모두 Python 연결에서 정상·불일치 증거를 구별했다. `레디스 --help` 실행 경로를 확인했으며 실제 Redis 중단 시나리오는 이번 묶음에서 재실행하지 않았다. Python 파일 수는 **24개**로, 실행기 이관은 계속 필요하다.
 
 PostgreSQL 중단 중의 SQL probe 실패·JVM PID 유지·결과 저장 실패 계측·Kafka offset 보존과 lag·ORIGIN/STEP 최종 결과·업체 효과·고객 조기 전달 금지 판정은 `postgres-outage` Java 명령으로 옮겼다. Python 실행기는 중단/복구와 증거 수집을 계속 담당한다. Java 판정 시험 3개와 남은 Python 도구 시험 40개가 통과했고, Python 연결에서 정상 증거와 조기 고객 수신 증거를 구별했다. 실제 PostgreSQL 중단 시나리오는 이번 묶음에서 재실행하지 않았으며 Python 파일은 **24개**다.
+
+DynamoDB Local 중단 중 선점 전 발송 보류와 접수 후 만료 대기의 판정을 `dynamo-blocked` Java 명령으로 옮겼다. Java 시험 2개와 Python 도구 시험 38개, Python→Java 연결의 정상/불일치 증거를 확인했다. 이어 고유 Compose 프로젝트에서 실제 DynamoDB를 두 차례 중단·복구했다. 두 시나리오가 통과했고 결과 이력 2건, 업체 호출·효과 각 2회, 최종 Kafka 적체 0을 확인했다. 소유 컨테이너·네트워크는 제거하고 볼륨·원본 증거는 보존했다. [실행 근거](검증-결과/2026-09-27-DynamoDB-장애-Java-판정-검증.json). Python 파일 수는 **24개**다.

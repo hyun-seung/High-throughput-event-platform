@@ -83,7 +83,9 @@ case "$scenario" in
   포스트그레스)
     ./mvnw -q -pl verification-tools -am -DskipTests package
     script=scripts/poc/포스트그레스_복구.py ;;
-  다이나모DB) script=scripts/poc/다이나모DB_복구.py ;;
+  다이나모DB)
+    ./mvnw -q -pl verification-tools -am -DskipTests package
+    script=scripts/poc/다이나모DB_복구.py ;;
   성능-PoC) script=scripts/poc/실행.py ;;
   모니터링-측정) script=scripts/monitoring/성능_측정.py ;;
   실행파일-보관) exec java scripts/testing/MonitorArtifacts.java snapshot ;;
