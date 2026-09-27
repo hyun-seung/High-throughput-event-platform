@@ -76,6 +76,7 @@ public final class VerificationTools {
         if (args.length == 2 && args[0].equals("poc-items")) { PocItemReader.run(args[1]); return; }
         if (args.length == 2 && args[0].equals("poc-kafka")) { PocKafkaProbe.run(args[1]); return; }
         if (args.length == 1 && args[0].equals("kafka-expiry")) { KafkaOutageEvidence.run(); return; }
+        if (args.length == 1 && args[0].equals("redis-complete")) { RedisOutageEvidence.run(); return; }
         throw new IllegalArgumentException("Usage: java -jar verification-tools/target/verification-tools-1.0-SNAPSHOT.jar <stall directory|monitoring [root grafana-url prometheus-url]|demo [--rate N] [--seconds N] [--errors]|dashboards|local-smoke [--metrics]|lifecycle-index [options]|split-table [options]|full-flow-reconcile|poc-reconcile|manifest file|input-complete planned started answered iterations dropped|poc-items local-url|poc-kafka bootstrap|collector|collector-inside>");
     }
 

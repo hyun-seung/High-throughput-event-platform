@@ -42,6 +42,12 @@ def _java_command(name, *args):
             *(str(arg) for arg in args)]
 
 
+def verify_evidence(name, evidence):
+    result = subprocess.run(_java_command(name), input=json.dumps(evidence), text=True, capture_output=True)
+    if result.returncode or not json.loads(result.stdout).get('consistent'):
+        raise AssertionError(result.stderr.strip() or name + ' evidence mismatch')
+
+
 def reconcile(starts, results, tenant, records, items, provider):
     payload = {'starts': starts, 'results': results, 'tenant': tenant, 'records': records,
                'items': [{'pk': pk, 'sk': sk, 'item': item} for (pk, sk), item in items.items()],

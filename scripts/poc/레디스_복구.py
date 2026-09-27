@@ -14,6 +14,7 @@ from 프로세스_복구 import ProcessRecovery
 from 포스트그레스_복구 import GROUPS
 from 수신결과_흐름 import wait_until
 from 실행 import metric
+from 검증_근거 import verify_evidence
 
 
 def verify_owned_redis(item, project):
@@ -23,14 +24,8 @@ def verify_owned_redis(item, project):
 
 
 def verify_without_cache(row, expected, provider, origin, steps, callbacks):
-    result = row['result_json']
-    assert result['outcome'] == expected and result['routeOrder'] == 1
-    assert row['notification_status'] == 'DELIVERED' and row['cleanup_status'] == 'DONE'
-    assert provider == [{'calls': 1, 'effects': 1}, {'calls': 0, 'effects': 0}]
-    assert not origin and not steps
-    received = [r for b in callbacks if b['status'] == 204 for r in b['body']['results']
-                if r['deliveryId'] == result['deliveryId']]
-    assert received and all(r == result for r in received)
+    verify_evidence('redis-complete', {'row': row, 'expected': expected, 'provider': provider,
+                                       'origin': origin, 'steps': steps, 'callbacks': callbacks})
 
 
 class RedisRecovery(ProcessRecovery):

@@ -4,7 +4,6 @@ import argparse
 from datetime import datetime, timezone
 import hashlib
 import json
-import os
 from pathlib import Path
 import subprocess
 import urllib.error
@@ -14,6 +13,7 @@ from 프로세스_복구 import ProcessRecovery
 from 포스트그레스_복구 import GROUPS
 from 수신결과_흐름 import Run, java_id, wait_until
 from 실행 import metric
+from 검증_근거 import verify_evidence
 
 
 def verify_owned_kafka(item, project):
@@ -34,13 +34,7 @@ def verify_unconfirmed(response, expected_code):
 
 
 def verify_retained_expiry(evidence):
-    root = Path(__file__).resolve().parents[2]
-    java_home = os.environ.get('JAVA_HOME')
-    java = str(Path(java_home) / 'bin/java') if java_home else 'java'
-    result = subprocess.run([java, '-jar', str(root / 'verification-tools/target/verification-tools-1.0-SNAPSHOT.jar'),
-                             'kafka-expiry'], input=json.dumps(evidence), text=True, capture_output=True)
-    if result.returncode or not json.loads(result.stdout).get('consistent'):
-        raise AssertionError(result.stderr.strip() or 'Kafka outage evidence mismatch')
+    verify_evidence('kafka-expiry', evidence)
 
 
 class KafkaRecovery(ProcessRecovery):
