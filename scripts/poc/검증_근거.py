@@ -27,36 +27,32 @@ def attempt_id(delivery):
 
 
 def complete_input(planned, started, answered, iterations, dropped):
-    # An arrival exactly at the duration boundary can add one iteration in k6.
-    # Reconcile it too; never discard an extra request or forgive a missing response.
-    return planned <= started <= planned + 1 and started == answered == iterations and dropped == 0
+    result = subprocess.run(_java_command('input-complete', planned, started, answered, iterations, dropped),
+                            text=True, capture_output=True, check=True)
+    return json.loads(result.stdout)
 
 
 def read_manifest(path):
-    starts, results = {}, {}
-    for line in path.read_text().splitlines():
-        # k6 --log-format raw --console-output writes each JSON message on its own line.
-        row = json.loads(line)
-        target = starts if row['kind'] == 'start' else results if row['kind'] == 'result' else None
-        if target is None or row['iteration'] in target:
-            raise ValueError('Unknown or repeated manifest event')
-        target[row['iteration']] = row
-    if not starts or not set(results).issubset(starts):
-        raise ValueError('Missing starts or orphaned responses in manifest')
-    for iteration, result in results.items():
-        if starts[iteration]['key'] != result['key']:
-            raise ValueError('Manifest key mismatch')
-    return starts, results
+    result = subprocess.run(_java_command('manifest', path), text=True, capture_output=True)
+    if result.returncode: raise ValueError(result.stderr.strip())
+    evidence = json.loads(result.stdout)
+    return ({int(i): row for i, row in evidence['starts'].items()},
+            {int(i): row for i, row in evidence['results'].items()})
+
+
+def _java_command(name, *args):
+    root = Path(__file__).resolve().parents[2]
+    java = str(Path(os.environ['JAVA_HOME']) / 'bin/java') if os.environ.get('JAVA_HOME') else 'java'
+    return [java, '-jar', str(root / 'verification-tools/target/verification-tools-1.0-SNAPSHOT.jar'), name,
+            *(str(arg) for arg in args)]
 
 
 def reconcile(starts, results, tenant, records, items, provider):
-    root = Path(__file__).resolve().parents[2]
     payload = {'starts': starts, 'results': results, 'tenant': tenant, 'records': records,
                'items': [{'pk': pk, 'sk': sk, 'item': item} for (pk, sk), item in items.items()],
                'provider': provider}
-    java = str(Path(os.environ['JAVA_HOME']) / 'bin/java') if os.environ.get('JAVA_HOME') else 'java'
-    command = [java, '-jar', str(root / 'verification-tools/target/verification-tools-1.0-SNAPSHOT.jar'), 'poc-reconcile']
-    result = subprocess.run(command, input=json.dumps(payload), text=True, capture_output=True, check=True, cwd=root)
+    result = subprocess.run(_java_command('poc-reconcile'), input=json.dumps(payload),
+                            text=True, capture_output=True, check=True)
     evidence = json.loads(result.stdout)
     return evidence['rows'], evidence['summary']
 

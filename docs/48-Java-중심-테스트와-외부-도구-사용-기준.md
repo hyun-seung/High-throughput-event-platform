@@ -85,4 +85,6 @@ Grafana 대시보드는 배포에 사용되는 JSON 7개를 편집 원본으로 
 
 격리형 성능 PoC의 요청별 HTTP·Kafka·DynamoDB·업체 호출 증거 대조는 `verification-tools`의 `poc-reconcile` 명령으로 옮겼다. Python 실행기는 실제 시스템에서 증거를 수집하고 Java 판정기에 표준 입력으로 전달한다. `bash scripts/검증-실행.sh PoC-대조 < evidence.json`으로 판정을 재실행할 수 있다. 기존 Python 시험 10개가 Java 판정기 호출 경로에서 통과하며, Java 직접 시험도 추가했다. Kafka·DB 조회와 입력 기록 읽기는 아직 Python에 있어 Python 파일 수는 **24개**다. 실제 성능 부하 측정은 이번 이관에서 수행하지 않았다.
 
+두 부하 실행기가 공유하는 k6 JSONL 입력 기록 검사와 완료 판정도 Java의 `manifest`, `input-complete` 명령으로 옮겼다. `bash scripts/검증-실행.sh 입력기록 <requests.jsonl>`은 시작·결과 이벤트를 대조해 JSON으로 출력하고, `bash scripts/검증-실행.sh 입력완료 <계획> <시작> <응답> <반복> <누락>`은 경계 도착 요청 1건을 포함한 완료 여부를 출력한다. Python 실행기는 Java 결과를 받아 후속 증거와 연결한다. 중복·고아 결과·키 불일치·미응답 입력과 경계값을 Java 단위 시험으로 검증했다. Kafka·DB 조회가 남아 있어 Python 파일 수는 **24개**다.
+
 한글 경로에서 Python 시험 60개가 통과했고, DynamoDB 마이그레이션 시험 3개는 별도 환경이 없어 기존 조건대로 건너뛰었다. 모든 PoC 진입점의 `--help`를 확인했으며 고객 통지 중 SIGTERM 시험을 실제 Docker·JVM으로 재실행해 같은 묶음의 2회 수신과 최종 완료를 확인했다. [검증 기록](검증-결과/2026-09-26-한글-Python-실행경로-검증.json). 이 파일명 변경이 전체 성능 시험이나 모든 장애 시나리오의 재실행을 뜻하지는 않는다.
