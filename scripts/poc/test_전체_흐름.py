@@ -1,5 +1,4 @@
 """Prevent the full-flow harness from accepting incomplete or conflicting evidence."""
-import copy
 import json
 from pathlib import Path
 import tempfile
@@ -7,49 +6,8 @@ import subprocess
 import threading
 import unittest
 from unittest.mock import patch
-from 전체_흐름 import FullFlow, verify_delivery
+from 전체_흐름 import FullFlow
 from 전체_흐름_부하 import LoadRun
-
-
-class FullFlowEvidenceTest(unittest.TestCase):
-    def setUp(self):
-        result = {'deliveryId': 'execution-1', 'requestKey': 'request-1', 'outcome': 'DELIVERED', 'routeOrder': 1}
-        self.args = [
-            {'result_json': result, 'notification_status': 'DELIVERED', 'cleanup_status': 'DONE'},
-            'DELIVERED', 1, [1, 0], [{'calls': 1}, {'calls': 0}], None, [], 86000,
-            [{'status': 503, 'body': {'results': [copy.deepcopy(result)]}},
-             {'status': 204, 'body': {'results': [copy.deepcopy(result)]}}]]
-
-    def test_complete_evidence_and_identical_callback_retry_pass(self):
-        verify_delivery(*self.args)
-        self.args[-1].append(copy.deepcopy(self.args[-1][-1]))
-        verify_delivery(*self.args)
-
-    def test_sql_done_cannot_replace_customer_ack(self):
-        self.args[-1] = self.args[-1][:1]
-        with self.assertRaises(AssertionError): verify_delivery(*self.args)
-
-    def test_customer_result_must_match_sql(self):
-        self.args[-1][-1]['body']['results'][0]['outcome'] = 'EXPIRED'
-        with self.assertRaises(AssertionError): verify_delivery(*self.args)
-
-    def test_remaining_step_or_origin_fails_cleanup_proof(self):
-        for position, remaining in ((5, {'pk': 'origin'}), (6, [{'pk': 'step'}])):
-            with self.subTest(position=position):
-                args = copy.deepcopy(self.args); args[position] = remaining
-                with self.assertRaises(AssertionError): verify_delivery(*args)
-
-    def test_unexpected_provider_call_fails(self):
-        self.args[4][1]['calls'] = 1
-        with self.assertRaises(AssertionError): verify_delivery(*self.args)
-
-    def test_missing_completion_or_pending_sql_fails(self):
-        args = copy.deepcopy(self.args); args[7] = -2
-        with self.assertRaises(AssertionError): verify_delivery(*args)
-        for field in ('notification_status', 'cleanup_status'):
-            with self.subTest(field=field):
-                args = copy.deepcopy(self.args); args[0][field] = 'PENDING'
-                with self.assertRaises(AssertionError): verify_delivery(*args)
 
 
 class InfrastructureStartupTest(unittest.TestCase):

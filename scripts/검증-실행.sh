@@ -72,8 +72,10 @@ case "$scenario" in
       2차-호출중-종료) script=scripts/poc/이차_TCP_정상종료_복구.py ;;
       고객-통지중-종료) script=scripts/poc/고객_통지_정상종료_복구.py ;;
     esac ;;
-  정상종료) script=scripts/poc/정상종료_복구.py ;;
-  전체흐름) script=scripts/poc/전체_흐름.py ;;
+  정상종료|전체흐름)
+    ./mvnw -q -pl verification-tools -am -DskipTests package
+    script=scripts/poc/정상종료_복구.py
+    [[ "$scenario" != 전체흐름 ]] || script=scripts/poc/전체_흐름.py ;;
   전체흐름-부하) script=scripts/poc/전체_흐름_부하.py ;;
   수신결과) script=scripts/poc/수신결과_흐름.py ;;
   수명주기) script=scripts/poc/수명주기_흐름.py ;;

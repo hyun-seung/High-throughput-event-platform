@@ -21,6 +21,7 @@ import uuid
 import boto3
 from confluent_kafka import Consumer, TopicPartition
 from 수신결과_흐름 import ROOT, Run, stop, wait_until
+from 검증_근거 import verify_evidence
 
 HTTP = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 MODULES = {'provider': 'external-api-simulator', 'receipt': 'receipt-api',
@@ -38,15 +39,9 @@ def http(url, body=None, headers=None):
 
 def verify_delivery(row, outcome, route, expected_calls, provider, origin, steps, completed_ttl, callbacks):
     """Require independent SQL, provider, DDB, Redis and customer evidence before PASS."""
-    result = row['result_json']
-    assert row['notification_status'] == 'DELIVERED' and row['cleanup_status'] == 'DONE', row
-    assert (result['outcome'], result['routeOrder']) == (outcome, route), result
-    assert [p['calls'] for p in provider] == expected_calls, provider
-    assert not origin and not steps, (origin, steps)
-    assert completed_ttl > 0, completed_ttl
-    received = [r for b in callbacks if b['status'] == 204
-                for r in b['body']['results'] if r['deliveryId'] == result['deliveryId']]
-    assert received and all(r == result for r in received), received
+    verify_evidence('full-flow-delivery', {'row': row, 'outcome': outcome, 'route': route,
+        'expectedCalls': expected_calls, 'provider': provider, 'origin': origin, 'steps': steps,
+        'completedTtl': completed_ttl, 'callbacks': callbacks})
 
 
 class FullFlow:

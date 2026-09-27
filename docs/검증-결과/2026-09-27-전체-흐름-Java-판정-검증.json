@@ -1,0 +1,27 @@
+{
+  "date": "2026-09-27",
+  "purpose": "Verify Java full-flow delivery verdict against actual isolated JVM and Docker data flow",
+  "checks": {
+    "javaEvidenceTests": 3,
+    "pythonToolTests": 30,
+    "pythonJavaBridgeAcceptedValidAndRejectedMissingCustomerAck": true
+  },
+  "fullFlow": {
+    "command": "bash scripts/검증-실행.sh 전체흐름",
+    "evidence": ".poc-results/full-flow-5741f6417792",
+    "passed": 6,
+    "historyRows": 6,
+    "delivered": 4,
+    "expired": 2,
+    "completedDuplicateBlocked": true,
+    "customerRetrySameBatch": true,
+    "redisScheduleLossRecovered": true,
+    "containersRemoved": true,
+    "networkRemoved": true,
+    "volumesRetained": true
+  },
+  "limits": [
+    "Small-count functional proof, not sustained throughput or high-availability proof",
+    "Process recovery scenarios that reuse this verdict were not rerun in this change"
+  ]
+}
