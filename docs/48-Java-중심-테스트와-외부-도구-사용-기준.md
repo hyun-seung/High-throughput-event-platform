@@ -89,6 +89,8 @@ Grafana 대시보드는 배포에 사용되는 JSON 7개를 편집 원본으로 
 
 격리형 PoC의 ORIGIN·STEP 증거 조회는 `verification-tools`의 `poc-items` 명령으로 옮겼다. `bash scripts/검증-실행.sh PoC-항목 http://localhost:28000 < deliveries.json`은 전달된 요청 ID의 META를 먼저 읽고 실제 실행 ID에 해당하는 ATTEMPT를 읽어 DynamoDB 항목 JSON을 출력한다. 두 테이블 모두 일관 읽기와 필요한 속성만의 투영을 사용하며, 100키 단위 분할과 미처리 키 재시도를 유지한다. 모의 클라이언트에서 실행 ID 매핑·읽기 조건·재시도·분할을 검증했고, 실행 중인 로컬 DynamoDB의 ORIGIN·STEP에 존재하지 않는 ID를 읽어 빈 결과를 확인했다. 실제 항목이 있는 경로는 이번 이관에서 조회하지 않았다. Python 파일 수는 **24개**다.
 
-PoC와 모니터링 성능 실행기의 Kafka 증거 수집도 `verification-tools`의 장기 실행 `poc-kafka` 명령으로 옮겼다. Python 실행기는 시작할 때 Java 소비자를 한 번 띄우고 JSONL 요청으로 snapshot·records를 받아 측정 중 연결을 유지한다. Java 시험은 소비자 그룹 offset·미초기화 그룹·DLT의 미정의 lag, 요청 전후 구간 읽기, 만료된 증거와 offset 간격 거부를 검증한다. Kafka 브로커를 대상으로 한 실제 증거 수집과 전체 부하 재실행은 아직 수행하지 않았다. Python 파일 수는 **24개**다.
+PoC와 모니터링 성능 실행기의 Kafka 증거 수집도 `verification-tools`의 장기 실행 `poc-kafka` 명령으로 옮겼다. Python 실행기는 시작할 때 Java 소비자를 한 번 띄우고 JSONL 요청으로 snapshot·records를 받아 측정 중 연결을 유지한다. Java 시험은 소비자 그룹 offset·미초기화 그룹·DLT의 미정의 lag, 요청 전후 구간 읽기, 만료된 증거와 offset 간격 거부를 검증한다. 이관 커밋 당시에는 Kafka 브로커를 대상으로 한 실제 증거 수집을 수행하지 않았다. Python 파일 수는 **24개**다.
+
+2026-09-27에는 Kafka probe 이관 후 실제 API→Kafka→DynamoDB→업체 smoke를 고유 Compose 프로젝트에서 재실행했다. 기존 `platform-poc`은 과거 Kafka 부모 경로 마운트를 가진 채 정지돼 있어 데이터 보호 검사에서 재시작을 거부했다. `--project platform-poc-smoke-20260927a`로 신규 볼륨을 분리해 5 TPS × 2초의 고유·중복 두 구간을 실행했고, 각각 입력 11/10건·고유 11/5건·문제 0건·누락 응답 0건으로 통과했다. 새 프로젝트 컨테이너도 종료했고 기존 컨테이너·볼륨은 변경하지 않았다. 이는 고객 최종 수신·정리나 지속 성능을 측정한 결과가 아니다. [실행 근거](검증-결과/2026-09-27-Java-Kafka-PoC-smoke.json).
 
 한글 경로에서 Python 시험 60개가 통과했고, DynamoDB 마이그레이션 시험 3개는 별도 환경이 없어 기존 조건대로 건너뛰었다. 모든 PoC 진입점의 `--help`를 확인했으며 고객 통지 중 SIGTERM 시험을 실제 Docker·JVM으로 재실행해 같은 묶음의 2회 수신과 최종 완료를 확인했다. [검증 기록](검증-결과/2026-09-26-한글-Python-실행경로-검증.json). 이 파일명 변경이 전체 성능 시험이나 모든 장애 시나리오의 재실행을 뜻하지는 않는다.

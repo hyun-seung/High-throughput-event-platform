@@ -80,7 +80,8 @@ class Runner:
         self.token = None
         self.policy_before = None
         self.compose_env = {**os.environ, **PORTS}
-        self.compose = ['docker', 'compose', '-p', 'platform-poc', '-f', str(ROOT / 'compose.yml')]
+        self.project = getattr(args, 'project', 'platform-poc')
+        self.compose = ['docker', 'compose', '-p', self.project, '-f', str(ROOT / 'compose.yml')]
         self.infra_started = False
         self.summaries = []
         self.awake = None
@@ -114,7 +115,7 @@ class Runner:
                     'workingTreeDirty': bool(dirty), 'platform': platform.platform(), 'logicalCpus': os.cpu_count(),
                     'java': java_version.strip(), 'k6': version,
                     'pythonPackages': subprocess.check_output([sys.executable, '-m', 'pip', 'freeze'], text=True).splitlines(),
-                    'ports': PORTS, 'composeProject': 'platform-poc', 'heapPerApp': '-Xms128m -Xmx512m',
+                    'ports': PORTS, 'composeProject': self.project, 'heapPerApp': '-Xms128m -Xmx512m',
                     'simulatorDelayMillis': self.args.delay_ms, 'simulatorDeduplicate': False,
                     'workerConcurrency': self.args.worker_concurrency,
                     'ingressLingerMillis': self.args.ingress_linger_ms,
@@ -354,12 +355,16 @@ def main():
     signal.signal(signal.SIGTERM, interrupted)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--suite', choices=['smoke', 'baseline', 'comparison'], default='smoke')
+    parser.add_argument('--project', default='platform-poc',
+                        help='Docker Compose project; use a unique platform-poc-* name to preserve older volumes')
     parser.add_argument('--worker-concurrency', type=int, choices=[1, 2, 3], default=1)
     parser.add_argument('--ingress-linger-ms', type=int, choices=[0, 5], default=5)
     parser.add_argument('--delay-ms', type=int, default=0)
     parser.add_argument('--drain-seconds', type=int, default=300)
     args = parser.parse_args()
     if not 0 <= args.delay_ms <= 60000 or not 2 <= args.drain_seconds <= 300: parser.error('Invalid delay/drain limit')
+    if args.project != 'platform-poc' and not re.fullmatch(r'platform-poc-[a-z0-9][a-z0-9-]{0,40}', args.project):
+        parser.error('Project must be platform-poc or a unique platform-poc-* name')
     RESULTS.mkdir(exist_ok=True)
     with (RESULTS / 'runner.lock').open('w') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
