@@ -108,3 +108,5 @@ PoC와 모니터링 성능 실행기의 Kafka 증거 수집도 `verification-too
 Java 판정 시험 3개와 남은 Python 도구 시험 45개를 통과했고, Python→Java 호출에서 정상 증거는 수락·조기 SQL 저장 증거는 거부됨을 확인했다. `카프카 --help` 실행 경로도 확인했다. 실제 브로커를 중단하는 시나리오는 이번 묶음에서 재실행하지 않았다.
 
 다음으로 Redis 중단 중에도 SQL 결과와 고객 204 수신·정리가 완료되고 업체 효과는 1회인지를 확인하는 판정을 `redis-complete` Java 명령으로 옮겼다. Kafka 판정도 공통 Python→Java 증거 호출 경로를 사용한다. Java 판정 시험 3개와 남은 Python 도구 시험 43개가 통과했고, 두 명령 모두 Python 연결에서 정상·불일치 증거를 구별했다. `레디스 --help` 실행 경로를 확인했으며 실제 Redis 중단 시나리오는 이번 묶음에서 재실행하지 않았다. Python 파일 수는 **24개**로, 실행기 이관은 계속 필요하다.
+
+PostgreSQL 중단 중의 SQL probe 실패·JVM PID 유지·결과 저장 실패 계측·Kafka offset 보존과 lag·ORIGIN/STEP 최종 결과·업체 효과·고객 조기 전달 금지 판정은 `postgres-outage` Java 명령으로 옮겼다. Python 실행기는 중단/복구와 증거 수집을 계속 담당한다. Java 판정 시험 3개와 남은 Python 도구 시험 40개가 통과했고, Python 연결에서 정상 증거와 조기 고객 수신 증거를 구별했다. 실제 PostgreSQL 중단 시나리오는 이번 묶음에서 재실행하지 않았으며 Python 파일은 **24개**다.
