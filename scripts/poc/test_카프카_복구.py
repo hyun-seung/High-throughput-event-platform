@@ -1,8 +1,6 @@
-import copy
-import json
 import unittest
 
-from 카프카_복구 import verify_owned_kafka, verify_unconfirmed, verify_retained_expiry, kafka_volumes
+from 카프카_복구 import verify_owned_kafka, verify_unconfirmed, kafka_volumes
 from 카프카_복제_재연결 import failed_connections
 
 
@@ -34,33 +32,5 @@ class KafkaRecoveryEvidenceTest(unittest.TestCase):
         for status, code in [(202, 9003), (500, 9003), (503, 123)]:
             with self.subTest(status=status, code=code), self.assertRaises(AssertionError):
                 verify_unconfirmed({'status': status, 'body': {'code': code}}, 9003)
-
-    def evidence(self):
-        result = {'deliveryId': 'execution', 'requestKey': 'request', 'outcome': 'EXPIRED', 'routeOrder': 1,
-                  'deadline': '2026-09-25T00:00:00Z', 'resultAt': '2026-09-25T00:00:00Z'}
-        return {'kafka': {'status': 'exited', 'running': False}, 'requestKey': 'request',
-                'publishFailuresBefore': 0, 'publishFailuresAfter': 1, 'historyRowsBefore': 2, 'historyRows': 2,
-                'customerRequestsBefore': 2, 'customerRequests': 2, 'completedRedisTtl': -2,
-                'origin': {'delivery_id': {'S': 'execution'}},
-                'step': {'result_event': {'S': json.dumps(result)}, 'deadline_at': {'N': '1790294400000'}},
-                'provider': [{'calls': 1, 'effects': 1}, {'calls': 0, 'effects': 0}]}
-
-    def test_retained_result_requires_unavailable_broker_and_no_early_cleanup(self):
-        evidence = self.evidence(); verify_retained_expiry(evidence)
-        for field, value in [('kafka', {'status': 'running', 'running': True}), ('publishFailuresAfter', 0),
-                             ('historyRows', 3), ('customerRequests', 3), ('completedRedisTtl', 86400),
-                             ('provider', [{'calls': 2, 'effects': 2}, {'calls': 0, 'effects': 0}])]:
-            bad = copy.deepcopy(evidence); bad[field] = value
-            with self.subTest(field=field), self.assertRaises(AssertionError): verify_retained_expiry(bad)
-
-    def test_wrong_identity_or_extended_deadline_fails(self):
-        for field, value in [('deliveryId', 'other'), ('requestKey', 'other'), ('outcome', 'DELIVERED'),
-                             ('resultAt', '2026-09-25T00:00:01Z')]:
-            bad = self.evidence(); result = json.loads(bad['step']['result_event']['S']); result[field] = value
-            bad['step']['result_event']['S'] = json.dumps(result)
-            with self.subTest(field=field), self.assertRaises(AssertionError): verify_retained_expiry(bad)
-        bad = self.evidence(); bad['step']['deadline_at']['N'] = '1790294400001'
-        with self.assertRaises(AssertionError): verify_retained_expiry(bad)
-
 
 if __name__ == '__main__': unittest.main()

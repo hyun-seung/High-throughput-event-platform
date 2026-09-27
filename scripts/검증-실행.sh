@@ -73,8 +73,10 @@ case "$scenario" in
   전체흐름-부하) script=scripts/poc/전체_흐름_부하.py ;;
   수신결과) script=scripts/poc/수신결과_흐름.py ;;
   수명주기) script=scripts/poc/수명주기_흐름.py ;;
-  카프카) script=scripts/poc/카프카_복구.py ;;
-  카프카-복제) script=scripts/poc/카프카_복제_재연결.py ;;
+  카프카|카프카-복제)
+    ./mvnw -q -pl verification-tools -am -DskipTests package
+    script=scripts/poc/카프카_복구.py
+    [[ "$scenario" != 카프카-복제 ]] || script=scripts/poc/카프카_복제_재연결.py ;;
   레디스) script=scripts/poc/레디스_복구.py ;;
   포스트그레스) script=scripts/poc/포스트그레스_복구.py ;;
   다이나모DB) script=scripts/poc/다이나모DB_복구.py ;;
