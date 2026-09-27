@@ -1,7 +1,5 @@
-FROM python:3.14.0-slim
+FROM eclipse-temurin:21.0.7_6-jre
 WORKDIR /app
-RUN pip install --no-cache-dir confluent-kafka==2.15.1
-COPY scripts/poc/검증_근거.py /app/검증_근거.py
-COPY monitoring/collector/수집기.py /app/수집기.py
+COPY verification-tools/target/verification-tools-1.0-SNAPSHOT.jar /app/collector.jar
 USER 65534:65534
-CMD ["python", "-u", "수집기.py"]
+CMD ["java", "-jar", "/app/collector.jar", "collector"]
