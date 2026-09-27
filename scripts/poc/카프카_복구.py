@@ -4,6 +4,7 @@ import argparse
 from datetime import datetime, timezone
 import hashlib
 import json
+import os
 from pathlib import Path
 import subprocess
 import urllib.error
@@ -33,19 +34,13 @@ def verify_unconfirmed(response, expected_code):
 
 
 def verify_retained_expiry(evidence):
-    assert evidence['kafka']['status'] == 'exited' and not evidence['kafka']['running']
-    assert evidence['publishFailuresAfter'] > evidence['publishFailuresBefore']
-    assert evidence['historyRows'] == evidence['historyRowsBefore']
-    assert evidence['customerRequests'] == evidence['customerRequestsBefore']
-    assert evidence['completedRedisTtl'] == -2
-    result = json.loads(evidence['step']['result_event']['S'])
-    assert evidence['origin']['delivery_id']['S'] == result['deliveryId']
-    assert result['requestKey'] == evidence['requestKey']
-    assert result['outcome'] == 'EXPIRED' and result['routeOrder'] == 1
-    assert result['resultAt'] == result['deadline']
-    millis = round(datetime.fromisoformat(result['deadline'].replace('Z', '+00:00')).timestamp() * 1000)
-    assert millis == int(evidence['step']['deadline_at']['N'])
-    assert evidence['provider'] == [{'calls': 1, 'effects': 1}, {'calls': 0, 'effects': 0}]
+    root = Path(__file__).resolve().parents[2]
+    java_home = os.environ.get('JAVA_HOME')
+    java = str(Path(java_home) / 'bin/java') if java_home else 'java'
+    result = subprocess.run([java, '-jar', str(root / 'verification-tools/target/verification-tools-1.0-SNAPSHOT.jar'),
+                             'kafka-expiry'], input=json.dumps(evidence), text=True, capture_output=True)
+    if result.returncode or not json.loads(result.stdout).get('consistent'):
+        raise AssertionError(result.stderr.strip() or 'Kafka outage evidence mismatch')
 
 
 class KafkaRecovery(ProcessRecovery):
