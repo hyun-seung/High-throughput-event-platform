@@ -1,0 +1,30 @@
+{
+  "date": "2026-09-27",
+  "purpose": "Full Java integration regression after evidence-tool migration and local full-flow smoke",
+  "command": "bash scripts/검증-실행.sh Java-통합",
+  "baseCommit": "7b644fd5ad8da7d27152f244b5e73fe1d4a550d6",
+  "evidence": ".poc-results/java-test-20260927095325-92863",
+  "tools": {
+    "assertions": "Java/JUnit",
+    "runner": "Maven Wrapper",
+    "orchestration": "Bash + Docker Compose",
+    "stores": ["Kafka", "Redis", "PostgreSQL", "DynamoDB Local"]
+  },
+  "result": {
+    "suites": 60,
+    "executed": 461,
+    "skipped": 0,
+    "failures": 0,
+    "errors": 0
+  },
+  "cleanup": {
+    "containersStopped": true,
+    "containersRemoved": true,
+    "networkRemoved": true,
+    "volumesRetained": true
+  },
+  "limits": [
+    "Does not rerun every process-failure scenario",
+    "Does not measure sustained per-Pod capacity or the 10000 TPS goal"
+  ]
+}
