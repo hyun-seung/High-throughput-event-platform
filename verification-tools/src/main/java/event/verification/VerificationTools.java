@@ -80,7 +80,8 @@ public final class VerificationTools {
         if (args.length == 1 && args[0].equals("postgres-outage")) { PostgresOutageEvidence.run(); return; }
         if (args.length == 1 && args[0].equals("dynamo-blocked")) { DynamoOutageEvidence.run(); return; }
         if (args.length == 1 && args[0].equals("process-evidence")) { ProcessRecoveryEvidence.run(); return; }
-        throw new IllegalArgumentException("Usage: java -jar verification-tools/target/verification-tools-1.0-SNAPSHOT.jar <stall directory|monitoring [root grafana-url prometheus-url]|demo [--rate N] [--seconds N] [--errors]|dashboards|local-smoke [--metrics]|lifecycle-index [options]|split-table [options]|full-flow-reconcile|poc-reconcile|manifest file|input-complete planned started answered iterations dropped|poc-items local-url|poc-kafka bootstrap|kafka-expiry|redis-complete|postgres-outage|dynamo-blocked|process-evidence|collector|collector-inside>");
+        if (args.length == 1 && args[0].equals("full-flow-delivery")) { FullFlowEvidence.run(); return; }
+        throw new IllegalArgumentException("Usage: java -jar verification-tools/target/verification-tools-1.0-SNAPSHOT.jar <stall directory|monitoring [root grafana-url prometheus-url]|demo [--rate N] [--seconds N] [--errors]|dashboards|local-smoke [--metrics]|lifecycle-index [options]|split-table [options]|full-flow-reconcile|poc-reconcile|manifest file|input-complete planned started answered iterations dropped|poc-items local-url|poc-kafka bootstrap|kafka-expiry|redis-complete|postgres-outage|dynamo-blocked|process-evidence|full-flow-delivery|collector|collector-inside>");
     }
 
     static Map<String, Object> analyzeStall(Path directory) throws IOException {
