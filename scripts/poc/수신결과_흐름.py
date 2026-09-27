@@ -19,7 +19,7 @@ import uuid
 import boto3
 from confluent_kafka import Consumer, Producer, TopicPartition
 from confluent_kafka.admin import AdminClient, NewTopic
-from 검증_근거 import java_id
+from 검증_근거 import java_id, stop_owned_process
 
 ROOT = Path(__file__).resolve().parents[2]
 HTTP = urllib.request.build_opener(urllib.request.ProxyHandler({}))
@@ -48,11 +48,10 @@ def wait_until(check, seconds=25):
 
 def stop(process):
     if process.poll() is None:
-        process.terminate()
-        try:
-            process.wait(timeout=15)
+        stop_owned_process(process.pid, 'terminate')
+        try: process.wait(timeout=15)
         except subprocess.TimeoutExpired:
-            process.kill()
+            stop_owned_process(process.pid, 'kill')
             process.wait(timeout=5)
 
 
