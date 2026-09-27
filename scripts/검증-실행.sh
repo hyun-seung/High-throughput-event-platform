@@ -78,7 +78,9 @@ case "$scenario" in
     [[ "$scenario" != 전체흐름 ]] || script=scripts/poc/전체_흐름.py ;;
   전체흐름-부하) script=scripts/poc/전체_흐름_부하.py ;;
   수신결과) script=scripts/poc/수신결과_흐름.py ;;
-  수명주기) script=scripts/poc/수명주기_흐름.py ;;
+  수명주기)
+    ./mvnw -q -pl verification-tools -am -DskipTests package
+    script=scripts/poc/수명주기_흐름.py ;;
   카프카|카프카-복제)
     ./mvnw -q -pl verification-tools -am -DskipTests package
     script=scripts/poc/카프카_복구.py
