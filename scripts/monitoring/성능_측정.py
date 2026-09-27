@@ -26,7 +26,7 @@ def inspect_log(text):
     return json.loads(result.stdout)
 
 
-# Runs inside the already available Python collector. Management ports stay private.
+# Fallback for a previously started Python collector. Management ports stay private.
 # Auth token and IDs travel on stdin, never in command arguments or evidence files.
 READ_INSIDE = '''
 import json, sys
@@ -60,6 +60,7 @@ print(json.dumps(result))
 class MonitoringRunner(Runner):
     def __init__(self, args):
         super().__init__(args)
+        self.java_collector = None
         self.api_url = 'http://127.0.0.1:38080'
         self.dynamo_url = 'http://127.0.0.1:38000'
         self.compose += ['-f', str(ROOT / 'monitoring/compose.yml')]
@@ -68,7 +69,15 @@ class MonitoringRunner(Runner):
                                 POSTGRES_HOST_PORT='35432', DYNAMODB_HOST_PORT='38000')
 
     def inside(self, mode, **fields):
-        return json.loads(self.docker('exec', '-T', 'collector', 'python', '-c', READ_INSIDE,
+        if self.java_collector is None:
+            try:
+                self.docker('exec', '-T', 'collector', 'test', '-f', '/app/collector.jar')
+                self.java_collector = True
+            except subprocess.CalledProcessError:
+                self.java_collector = False  # Previously started Python collector; keep attached runs usable.
+        command = ['java', '-jar', '/app/collector.jar', 'collector-inside'] if self.java_collector \
+            else ['python', '-c', READ_INSIDE]
+        return json.loads(self.docker('exec', '-T', 'collector', *command,
                           input=json.dumps({'mode': mode, **fields}), timeout=240))
 
     def assert_apps(self):

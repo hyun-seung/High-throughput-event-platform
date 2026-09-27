@@ -15,6 +15,11 @@ case "${1:-help}" in
     for module in event-api delivery-ingress-worker dispatch-worker external-api-simulator; do
       [[ -f "$module/target/$module-1.0-SNAPSHOT.jar" ]] || { echo 'Build the application JARs first.' >&2; exit 1; }
     done
+    if command -v /usr/libexec/java_home >/dev/null 2>&1; then
+      JAVA_HOME="$(/usr/libexec/java_home -v 21)"
+      export JAVA_HOME
+    fi
+    ./mvnw -q -pl verification-tools -am -DskipTests package
     mkdir -p .monitoring
     if [[ ! -f .monitoring/grafana-admin ]]; then
       (umask 077; java scripts/testing/MonitorArtifacts.java token > .monitoring/grafana-admin)

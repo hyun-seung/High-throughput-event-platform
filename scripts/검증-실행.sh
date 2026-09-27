@@ -55,8 +55,7 @@ case "$scenario" in
   도구-테스트|파이썬-테스트)
     "$python_bin" -m unittest discover -s scripts/poc -p 'test_*.py' "$@"
     java scripts/testing/LogHealth.java self-test
-    "$python_bin" -m unittest discover -s monitoring/collector -p 'test_*.py' "$@"
-    exec ./mvnw -q -pl verification-tools -am -Dtest=SplitTableMigrationTest,SplitTableMigrationIntegrationTest -Dsurefire.failIfNoSpecifiedTests=false test ;;
+    exec ./mvnw -q -pl verification-tools -am -Dtest=MonitoringCollectorTest,SplitTableMigrationTest,SplitTableMigrationIntegrationTest -Dsurefire.failIfNoSpecifiedTests=false test ;;
   강제종료) script=scripts/poc/프로세스_복구.py ;;
   정상종료) script=scripts/poc/정상종료_복구.py ;;
   1차-호출중-종료) script=scripts/poc/업체_호출중_정상종료_복구.py ;;
