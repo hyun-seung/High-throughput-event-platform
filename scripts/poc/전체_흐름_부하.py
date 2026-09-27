@@ -2,7 +2,6 @@
 """Short open-loop load measurement through customer receipt and DynamoDB cleanup."""
 import argparse
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
 import gzip
 import hashlib
 import json
@@ -13,7 +12,7 @@ import time
 import urllib.request
 
 from confluent_kafka import Consumer, TopicPartition
-from 검증_근거 import complete_input, percentile, read_manifest
+from 검증_근거 import complete_input, read_manifest
 from 전체_흐름 import FullFlow, ROOT, HTTP, MODULES, http
 from 수신결과_흐름 import Run, stop
 
@@ -23,43 +22,14 @@ GROUPS = {'delivery.requested.v1': 'delivery-ingress-worker',
           'delivery.finalized.v1': 'delivery-result-worker-v1'}
 
 
-def epoch(value):
-    return datetime.fromisoformat(value.replace('Z', '+00:00')).timestamp()
-
-
-def distribution(values):
-    return {name: percentile(values, p) for name, p in [('p50', .5), ('p95', .95), ('p99', .99), ('max', 1)]}
-
-
 def reconcile_phase(starts, responses, history, callbacks):
-    expected = {r['deliveryId'] for r in responses.values()}
-    if len(expected) != len(starts) or any(r['status'] != 202 or not r['deliveryId'] for r in responses.values()):
-        raise AssertionError('Every unique input needs a confirmed API requestKey')
-    rows = [r for r in history if r['result_json']['requestKey'] in expected]
-    if len(rows) != len(expected) or {r['result_json']['requestKey'] for r in rows} != expected:
-        raise AssertionError('Input/history set mismatch or duplicate execution')
-    earliest = {}
-    for batch in callbacks:
-        if batch['status'] != 204: raise AssertionError('Unexpected customer response in normal load test')
-        for result in batch['body']['results']:
-            if result['requestKey'] not in expected: continue
-            key = result['deliveryId']
-            if key in earliest and earliest[key][0] != result: raise AssertionError('Conflicting customer result')
-            if key not in earliest: earliest[key] = (result, epoch(batch['receivedAt']))
-    times = {r['deliveryId']: starts[i]['started'] / 1000 for i, r in responses.items()}
-    latencies = {stage: [] for stage in ['providerResult', 'finalized', 'sqlStored', 'customerReceived', 'cleanup']}
-    for row in rows:
-        result = row['result_json']; execution = result['deliveryId']
-        if result['outcome'] != 'DELIVERED' or result['routeOrder'] != 1: raise AssertionError('Unexpected delivery result')
-        if row['notification_status'] != 'DELIVERED' or row['cleanup_status'] != 'DONE': raise AssertionError('Incomplete SQL workflow')
-        if execution not in earliest or earliest[execution][0] != result: raise AssertionError('Missing/conflicting customer receipt')
-        start = times[result['requestKey']]
-        for stage, end in [('providerResult', epoch(result['resultAt'])), ('finalized', epoch(result['finalizedAt'])),
-                           ('sqlStored', epoch(row['stored_at'])), ('customerReceived', earliest[execution][1]),
-                           ('cleanup', epoch(row['cleanup_completed_at']))]:
-            if end < start: raise AssertionError('Negative wall-clock latency')
-            latencies[stage].append((end - start) * 1000)
-    return rows, {stage: distribution(values) for stage, values in latencies.items()}
+    payload = json.dumps({'starts': starts, 'responses': responses, 'history': history, 'callbacks': callbacks})
+    java = str(Path(os.environ['JAVA_HOME']) / 'bin/java')
+    command = [java, '-jar', str(ROOT / 'verification-tools/target/verification-tools-1.0-SNAPSHOT.jar'),
+               'full-flow-reconcile']
+    result = subprocess.run(command, input=payload, text=True, capture_output=True, check=True, cwd=ROOT)
+    evidence = json.loads(result.stdout)
+    return evidence['rows'], evidence['stats']
 
 
 class LoadRun(FullFlow):
@@ -82,6 +52,8 @@ class LoadRun(FullFlow):
         self.k6 = ROOT / '.poc-tools/k6'
         version = subprocess.check_output([str(self.k6), 'version'], text=True).strip()
         if not version.startswith('k6 v1.8.1 '): raise RuntimeError('Pinned k6 v1.8.1 required')
+        subprocess.run([str(ROOT / 'mvnw'), '-q', '-pl', 'verification-tools', '-am', '-DskipTests', 'package'],
+                       cwd=ROOT, check=True)
         super().initialize()
         env = json.loads((self.directory / 'environment.json').read_text())
         env.update({'primaryTtlSeconds': 10800, 'secondaryTtlSeconds': 14400, 'recoveryPollMillis': 600000,
@@ -168,7 +140,8 @@ class LoadRun(FullFlow):
         elapsed = time.monotonic() - start
         if abs((time.time() - wall_start) - elapsed) > 1: raise AssertionError('Wall/monotonic clock discontinuity')
         history = self.history()
-        with self.lock: rows, latencies = reconcile_phase(starts, responses, history, self.callback_records)
+        with self.lock: callbacks = json.loads(json.dumps(self.callback_records))
+        rows, latencies = reconcile_phase(starts, responses, history, callbacks)
         self.write(label + '/history.json', rows)
         def verify(row):
             result = row['result_json']; execution = result['deliveryId']
