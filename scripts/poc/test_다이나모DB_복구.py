@@ -1,36 +1,13 @@
-import copy
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 import signal
 
-from 다이나모DB_복구 import DynamoRecovery, verify_blocked, verify_owned_dynamo
+from 다이나모DB_복구 import DynamoRecovery, verify_owned_dynamo
 
 
 class DynamoOutageEvidenceTest(unittest.TestCase):
-    def setUp(self):
-        self.before = {'applicationPids': {'dispatch': 123}, 'metrics': {'claimFailed': 0, 'lifecycleFailed': 0},
-                       'dispatchOffsets': [{'partition': 0, 'committed': -1001, 'lag': 1}]}
-        self.during = {'dynamo': {'status': 'exited', 'running': False}, 'applicationPids': {'dispatch': 123},
-                       'metrics': {'claimFailed': 2, 'lifecycleFailed': 1},
-                       'dispatchOffsets': [{'partition': 0, 'committed': -1001, 'lag': 1}],
-                       'provider': [{'calls': 0, 'effects': 0}, {'calls': 0, 'effects': 0}],
-                       'historyRows': 0, 'customerResults': 0, 'completedRedisTtl': -2}
-
-    def test_pending_claim_and_expiry_require_independent_evidence(self):
-        verify_blocked(self.before, self.during, 0, 'claimFailed')
-        self.during['provider'][0] = {'calls': 1, 'effects': 1}
-        verify_blocked(self.before, self.during, 1, 'lifecycleFailed')
-
-    def test_false_outage_offset_advance_or_external_send_cannot_pass(self):
-        for field, value in [('dynamo', {'status': 'running', 'running': True}), ('applicationPids', {'dispatch': 124}),
-                             ('metrics', {'claimFailed': 0}), ('historyRows', 1), ('customerResults', 1),
-                             ('completedRedisTtl', 24), ('dispatchOffsets', [{'partition': 0, 'committed': 1, 'lag': 1}]),
-                             ('provider', [{'calls': 1, 'effects': 1}, {'calls': 0, 'effects': 0}])]:
-            bad = copy.deepcopy(self.during); bad[field] = value
-            with self.subTest(field=field), self.assertRaises(AssertionError): verify_blocked(self.before, bad, 0, 'claimFailed')
-
     def test_only_owned_dynamo_can_be_stopped(self):
         labels = {'com.docker.compose.project': 'owned', 'com.docker.compose.service': 'dynamodb-local'}
         verify_owned_dynamo({'Config': {'Labels': labels}}, 'owned')

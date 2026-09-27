@@ -17,6 +17,7 @@ from 프로세스_복구 import ProcessRecovery
 from 포스트그레스_복구 import GROUPS
 from 수신결과_흐름 import wait_until
 from 실행 import metric
+from 검증_근거 import verify_evidence
 
 
 def verify_owned_dynamo(item, project):
@@ -26,16 +27,7 @@ def verify_owned_dynamo(item, project):
 
 
 def verify_blocked(before, during, calls, failure):
-    assert during['dynamo']['status'] == 'exited' and not during['dynamo']['running']
-    assert during['applicationPids'] == before['applicationPids']
-    assert during['metrics'][failure] > before['metrics'][failure]
-    assert during['provider'] == [{'calls': calls, 'effects': calls}, {'calls': 0, 'effects': 0}]
-    assert during['historyRows'] == during['customerResults'] == 0
-    assert during['completedRedisTtl'] == -2
-    if calls == 0:
-        old = {p['partition']: max(0, p['committed']) for p in before['dispatchOffsets']}
-        new = {p['partition']: max(0, p['committed']) for p in during['dispatchOffsets']}
-        assert old == new and sum(p['lag'] for p in during['dispatchOffsets']) > 0
+    verify_evidence('dynamo-blocked', {'before': before, 'during': during, 'calls': calls, 'failure': failure})
 
 
 class DynamoRecovery(ProcessRecovery):
