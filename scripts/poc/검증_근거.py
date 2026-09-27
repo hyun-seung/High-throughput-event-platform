@@ -48,6 +48,11 @@ def verify_evidence(name, evidence):
         raise AssertionError(result.stderr.strip() or name + ' evidence mismatch')
 
 
+def stop_owned_process(pid, action):
+    subprocess.run(_java_command('stop-owned-process', pid, action), check=True,
+                   stdout=subprocess.DEVNULL)
+
+
 def reconcile(starts, results, tenant, records, items, provider):
     payload = {'starts': starts, 'results': results, 'tenant': tenant, 'records': records,
                'items': [{'pk': pk, 'sk': sk, 'item': item} for (pk, sk), item in items.items()],
