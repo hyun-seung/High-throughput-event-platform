@@ -21,6 +21,11 @@ scrape_configs:
     static_configs:
       - targets: ['dispatch:19082']
         labels: {service: dispatch, zone: local}
+  - job_name: result
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['result:19085']
+        labels: {service: result, zone: local}
   - job_name: simulator
     metrics_path: /actuator/prometheus
     static_configs:

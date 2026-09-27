@@ -41,6 +41,7 @@ public class CleanupWorker implements AutoCloseable {
         workers = Executors.newFixedThreadPool(concurrency, Thread.ofPlatform().daemon().name("cleanup-work-", 0).factory());
         meters.gauge("delivery.cleanup.active", active);
         meters.gauge("delivery.cleanup.recovery.delay", backoff, FailureBackoff::remainingSeconds);
+        meters.counter("delivery.cleanup.events", "outcome", "retained");
     }
     @Scheduled(fixedDelayString = "${cleanup.poll-ms:1000}", scheduler = "cleanupTaskScheduler")
     public synchronized void tick() {

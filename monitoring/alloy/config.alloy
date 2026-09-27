@@ -4,6 +4,7 @@ local.file_match "apps" {
     {"__path__" = "/logs/api.log", "service" = "api", "zone" = "local"},
     {"__path__" = "/logs/ingress.log", "service" = "ingress", "zone" = "local"},
     {"__path__" = "/logs/dispatch.log", "service" = "dispatch", "zone" = "local"},
+    {"__path__" = "/logs/result.log", "service" = "result", "zone" = "local"},
   ]
 }
 loki.source.file "apps" {
