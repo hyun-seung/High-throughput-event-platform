@@ -76,6 +76,32 @@ class RedisRecovery(ProcessRecovery):
             self.write('rejections.json', self.rejections)
         else: raise AssertionError('Limit should have rejected ' + label)
 
+    def wait_for_restored_policy(self):
+        # Admission runs before JSON parsing. A bypassed probe fails parsing without
+        # creating a delivery; a restored limiter rejects it on the old quota.
+        attempts = []
+        def probe():
+            self.alive()
+            request = urllib.request.Request(
+                f'http://localhost:{self.ports["api"]}/api/v1/deliveries', data=b'{', method='POST',
+                headers={'Authorization': 'Bearer ' + self.token, 'Content-Type': 'application/json',
+                         'Idempotency-Key': self.run_id + '-restored-policy-probe'})
+            try:
+                with HTTP.open(request, timeout=5) as response:
+                    status, body = response.status, response.read().decode()
+            except urllib.error.HTTPError as error:
+                status, body = error.code, error.read().decode()
+            attempts.append({'status': status, 'body': body})
+            self.write('restored-policy-probes.json', attempts)
+            if status == 429:
+                result = json.loads(body)
+                assert result['data']['code'] == 3002, result
+                return True
+            assert status == 400, (status, body)
+            return False
+        wait_until(probe, 60)
+        return attempts
+
     def blocked_policies(self, prefix):
         self.redis('HSET', self.policy, 'tpsEnabled', 'false', 'quotaEnabled', 'true', 'monthlyLimit', '1')
         self.redis('SET', self.quota, '1')
@@ -160,11 +186,13 @@ class RedisRecovery(ProcessRecovery):
             except (OSError, ValueError): return False
         wait_until(api_ready, 30)
         # Require the old exhausted policy to apply before changing any restored key.
+        probes = self.wait_for_restored_policy()
         self.reject('restored-policy-quota', 3002)
         missing = {key: int(self.redis('TTL', 'delivery:completed:' + key)) for key in (normal, expiry)}
         assert all(ttl == -2 for ttl in missing.values())
         assert self.redis('GET', self.quota) == '1'  # Bypassed usage is not retroactively reconstructed.
-        self.write('restored.json', {'redis': restored, 'missingCompletionTtls': missing, 'quotaUsage': 1})
+        self.write('restored.json', {'redis': restored, 'missingCompletionTtls': missing,
+                                     'quotaUsage': 1, 'policyProbeAttempts': len(probes)})
         self.blocked_policies('after')
         self.redis('HSET', self.policy, 'requestsPerSecond', '2000', 'burstCapacity', '2000', 'monthlyLimit', '1000000')
         self.redis('DEL', self.bucket)
