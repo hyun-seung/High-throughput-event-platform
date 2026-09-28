@@ -73,6 +73,9 @@ cleanup:
   batch-size: ${DELIVERY_CLEANUP_BATCH_SIZE:20}
 
 resolution:
+  audit:
+    monitor:
+      poll-ms: ${DELIVERY_RESOLUTION_AUDIT_MONITOR_POLL_MS:30000}
   recovery:
     enabled: ${DELIVERY_RESOLUTION_RECOVERY_ENABLED:false}
     poll-ms: ${DELIVERY_RESOLUTION_RECOVERY_POLL_MS:30000}
