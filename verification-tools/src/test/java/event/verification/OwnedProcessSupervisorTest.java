@@ -77,6 +77,19 @@ class OwnedProcessSupervisorTest {
         }
     }
 
+    @Test void suspendsResumesAndClosesOwnedChild(@TempDir Path directory) throws Exception {
+        try (var harness = new Harness(new OwnedProcessSupervisor(directory.resolve("child.log"),
+                List.of("sleep", "30")))) {
+            long pid = harness.read().path("pid").asLong();
+            assertEquals("suspended", harness.command("suspend").path("event").asText());
+            assertTrue(harness.command("status").path("alive").asBoolean());
+            assertEquals("resumed", harness.command("resume").path("event").asText());
+            assertEquals("suspended", harness.command("suspend").path("event").asText());
+            assertEquals("closed", harness.command("close").path("event").asText());
+            assertFalse(ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false));
+        }
+    }
+
     private static final class Harness implements AutoCloseable {
         private final PipedOutputStream input = new PipedOutputStream();
         private final PipedInputStream childInput;
