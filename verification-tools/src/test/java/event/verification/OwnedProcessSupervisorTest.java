@@ -53,6 +53,11 @@ class OwnedProcessSupervisorTest {
             long third = recovered.path("pid").asLong();
             assertNotEquals(second, third);
 
+            var stopped = harness.command("stop 2");
+            assertEquals("stopped", stopped.path("event").asText());
+            assertFalse(stopped.path("alive").asBoolean());
+            assertFalse(ProcessHandle.of(third).map(ProcessHandle::isAlive).orElse(false));
+
             var closed = harness.command("close");
             assertEquals("closed", closed.path("event").asText());
             assertFalse(closed.path("alive").asBoolean());

@@ -15,7 +15,7 @@ class GracefulInflightRecovery(ProcessRecovery):
         assert process.poll() is None
         self.stopped_commands[name] = process.args
         started = time.monotonic()
-        process.terminate()
+        process.terminate(75)
         code = process.wait(timeout=75)
         duration = time.monotonic() - started
         del self.apps[name]
@@ -26,6 +26,7 @@ class GracefulInflightRecovery(ProcessRecovery):
                                  'at': datetime.now(timezone.utc).isoformat()})
         self.write('process-transitions.json', self.transitions)
         assert code in (0, 143) and graceful, (code, graceful)
+        self.stopped_processes[name] = process
 
     def suite(self):
         request_key = self.submit(self.run_id + '-dispatch-inflight',

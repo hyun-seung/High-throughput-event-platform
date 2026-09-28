@@ -5,12 +5,12 @@ from datetime import datetime, timezone
 import json
 import re
 import socket
-import subprocess
 import time
 
 from 전체_흐름 import ROOT, http
 from 카프카_복구 import KafkaRecovery
 from 수신결과_흐름 import wait_until
+from 검증_근거 import SupervisedProcess
 
 
 ATTEMPT = re.compile(r'^([^ ]+) .*org\.apache\.kafka\.clients\.NetworkClient.*Connection to node .*could not be established', re.M)
@@ -42,8 +42,7 @@ class KafkaReconnectReplicas(KafkaRecovery):
                    for arg in command]
         path = self.directory / (clone + '.log')
         log = path.open('w'); self.logs.append(log)
-        self.apps[clone] = subprocess.Popen(command, cwd=ROOT, env=self.application_env,
-                                            stdout=log, stderr=subprocess.STDOUT)
+        self.apps[clone] = SupervisedProcess(command, path, ROOT, self.application_env, log)
 
         def ready():
             self.alive()

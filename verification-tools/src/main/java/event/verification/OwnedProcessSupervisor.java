@@ -60,7 +60,12 @@ final class OwnedProcessSupervisor {
                         return;
                     }
                     default -> {
-                        if (line.startsWith("restart ") && line.length() > 8) {
+                        if (line.startsWith("stop ") && line.length() > 5) {
+                            int grace = Integer.parseInt(line.substring(5));
+                            if (grace < 1 || grace > 120) throw new IllegalArgumentException("Invalid stop grace seconds");
+                            stop(grace);
+                            output.println(response("stopped"));
+                        } else if (line.startsWith("restart ") && line.length() > 8) {
                             stop();
                             log = Path.of(line.substring(8));
                             start();
@@ -81,9 +86,13 @@ final class OwnedProcessSupervisor {
     }
 
     private synchronized void stop() {
+        stop(15);
+    }
+
+    private synchronized void stop(int graceSeconds) {
         if (child == null || !child.isAlive()) return;
         child.destroy();
-        awaitExit(15);
+        awaitExit(graceSeconds);
         if (child.isAlive()) {
             child.destroyForcibly();
             awaitExit(5);

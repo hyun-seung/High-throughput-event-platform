@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import signal
 import subprocess
+import time
 import uuid
 
 REQUESTED = 'delivery.requested.v1'
@@ -66,6 +67,7 @@ class SupervisedProcess:
             if started.get('event') != 'started' or not started.get('alive'):
                 raise RuntimeError('Java supervisor did not start its child')
             self.pid = started['pid']
+            self._exit_code = None
         except Exception:
             self.supervisor.stdin.close()
             self.supervisor.wait(timeout=5)
@@ -88,20 +90,45 @@ class SupervisedProcess:
 
     def poll(self):
         state = self._request('status')
-        return None if state['alive'] else state['exitCode']
+        return None if state['alive'] else self._python_exit_code(state['exitCode'])
+
+    @staticmethod
+    def _python_exit_code(code):
+        return -signal.SIGKILL if code == 128 + signal.SIGKILL else code
+
+    def terminate(self, grace_seconds=15):
+        state = self._request('stop ' + str(grace_seconds))
+        if state.get('event') != 'stopped' or state.get('alive'):
+            raise RuntimeError('Java supervisor did not stop its child')
+        self._exit_code = self._python_exit_code(state['exitCode'])
+
+    def kill(self):
+        state = self._request('kill')
+        if state.get('event') != 'killed' or state.get('alive'):
+            raise RuntimeError('Java supervisor did not kill its child')
+        self._exit_code = self._python_exit_code(state['exitCode'])
+
+    def wait(self, timeout=None):
+        if self._exit_code is not None: return self._exit_code
+        until = None if timeout is None else time.monotonic() + timeout
+        while (code := self.poll()) is None:
+            if until is not None and time.monotonic() >= until:
+                raise subprocess.TimeoutExpired(self.args, timeout)
+            time.sleep(.05)
+        self._exit_code = code
+        return code
 
     def restart(self, log_path):
         state = self._request('restart ' + str(log_path))
         if state.get('event') != 'restarted' or not state.get('alive'):
             raise RuntimeError('Java supervisor did not restart its child')
         self.pid = state['pid']
+        self._exit_code = None
         return self
 
     def stop_child(self):
-        state = self._request('stop')
-        if state.get('event') != 'stopped' or state.get('alive'):
-            raise RuntimeError('Java supervisor did not stop its child')
-        return state['exitCode']
+        self.terminate()
+        return self._exit_code
 
     def close(self):
         try:
