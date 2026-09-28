@@ -20,6 +20,7 @@ public final class ResolutionOperations {
     }
     public record Pending(UUID actionId, UUID requestKey, UUID deliveryId, UUID attemptId, long expectedVersion,
                           String decision, String actor, Instant createdAt) { }
+    public record DueAction(long tenantId, UUID actionId) { }
     private final JdbcTemplate sql;
     private final TransactionTemplate tx;
     private final ManualResolution resolution;
@@ -53,6 +54,22 @@ public final class ResolutionOperations {
         var rows = sql.queryForList("SELECT * FROM delivery_resolution_action WHERE tenant_id=? AND action_id=?", tenant, actionId);
         if (rows.isEmpty()) throw new IllegalArgumentException("Action not found for tenant");
         return resolve(request(rows.getFirst()));
+    }
+    /** Claim only an existing intent; a crash after this SQL update merely delays its next check. */
+    public Optional<DueAction> claimDue() {
+        var rows = sql.query("""
+                WITH candidate AS (
+                    SELECT action_id FROM delivery_resolution_action
+                    WHERE status='PENDING' AND created_at <= clock_timestamp() - interval '30 seconds'
+                      AND next_check_at <= clock_timestamp()
+                    ORDER BY next_check_at, action_id LIMIT 1 FOR UPDATE SKIP LOCKED
+                )
+                UPDATE delivery_resolution_action AS action
+                SET next_check_at = clock_timestamp() + interval '30 seconds', check_count = check_count + 1
+                FROM candidate WHERE action.action_id = candidate.action_id
+                RETURNING action.tenant_id, action.action_id
+                """, (rs, row) -> new DueAction(rs.getLong(1), rs.getObject(2, UUID.class)));
+        return rows.stream().findFirst();
     }
     public DeliveryOperations.Page<Pending> pending(long tenant, UUID after, int limit) {
         if (tenant <= 0 || limit < 1 || limit > 100) throw new IllegalArgumentException("Tenant > 0 and limit 1..100 required");

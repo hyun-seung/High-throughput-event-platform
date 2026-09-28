@@ -72,6 +72,14 @@ cleanup:
   concurrency: ${DELIVERY_CLEANUP_CONCURRENCY:4}
   batch-size: ${DELIVERY_CLEANUP_BATCH_SIZE:20}
 
+resolution:
+  recovery:
+    enabled: ${DELIVERY_RESOLUTION_RECOVERY_ENABLED:false}
+    poll-ms: ${DELIVERY_RESOLUTION_RECOVERY_POLL_MS:30000}
+    batch-size: ${DELIVERY_RESOLUTION_RECOVERY_BATCH_SIZE:5}
+    failure-initial-delay: ${DELIVERY_RESOLUTION_RECOVERY_FAILURE_INITIAL_DELAY:1s}
+    failure-max-delay: ${DELIVERY_RESOLUTION_RECOVERY_FAILURE_MAX_DELAY:30s}
+
 delivery:
   completed-retention: ${DELIVERY_COMPLETED_RETENTION:24h}
   dynamodb:
