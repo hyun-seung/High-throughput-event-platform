@@ -6,12 +6,11 @@ import hashlib
 import json
 from pathlib import Path
 import signal
-import subprocess
 import threading
 import time
 
 from confluent_kafka import Consumer, TopicPartition
-from 전체_흐름 import FullFlow, ROOT, http, verify_delivery
+from 전체_흐름 import FullFlow, http, verify_delivery
 from 수신결과_흐름 import Run, wait_until
 from 검증_근거 import verify_evidence
 
@@ -28,6 +27,7 @@ class ProcessRecovery(FullFlow):
     def __init__(self, args):
         super().__init__(args)
         self.stopped_commands = {}
+        self.stopped_processes = {}
         self.restarts = {}; self.transitions = []; self.readers = {}
         self.block_next_callback = False
         self.customer_received = threading.Event(); self.release_response = threading.Event()
@@ -66,6 +66,7 @@ class ProcessRecovery(FullFlow):
         self.stopped_commands[name] = process.args
         process.kill(); code = process.wait(timeout=5)
         assert code == -signal.SIGKILL, (name, code)
+        self.stopped_processes[name] = process
         del self.apps[name]  # Only this deliberately killed child is exempt from alive().
         self.transitions.append({'application': name, 'action': 'SIGKILL', 'pid': process.pid,
                                  'exitCode': code, 'at': datetime.now(timezone.utc).isoformat()})
@@ -76,8 +77,10 @@ class ProcessRecovery(FullFlow):
         number = self.restarts.get(name, 0) + 1; self.restarts[name] = number
         path = self.directory / f'{name}-restart-{number}.log'
         log = path.open('w'); self.logs.append(log)
-        process = subprocess.Popen(self.stopped_commands.pop(name), cwd=ROOT, env=self.application_env,
-                                   stdout=log, stderr=subprocess.STDOUT)
+        process = self.stopped_processes[name]
+        process.restart(path)
+        del self.stopped_processes[name]
+        self.stopped_commands.pop(name)
         self.apps[name] = process
         self.transitions.append({'application': name, 'action': 'restart', 'pid': process.pid,
                                  'at': datetime.now(timezone.utc).isoformat()})
@@ -228,6 +231,7 @@ class ProcessRecovery(FullFlow):
     def close(self):
         self.release_response.set()
         for reader in self.readers.values(): reader.close()
+        for process in self.stopped_processes.values(): process.close()
         super().close()
 
 

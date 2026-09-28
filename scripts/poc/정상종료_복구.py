@@ -3,11 +3,10 @@
 import argparse
 from datetime import datetime, timezone
 import json
-import subprocess
 import time
 import urllib.error
 
-from 전체_흐름 import ROOT, http
+from 전체_흐름 import http
 from 카프카_복구 import KafkaRecovery
 from 수신결과_흐름 import wait_until
 
@@ -32,10 +31,9 @@ class GracefulRecovery(KafkaRecovery):
         before = self.submit(self.run_id + '-before', {}, False)
         self.finish_case('SIGTERM 전 결과 인계', before, 'DELIVERED', {})
         process = self.apps['dispatch']
-        command = process.args
         old_pid = process.pid
         started = time.monotonic()
-        process.terminate()
+        process.terminate(35)
         exit_code = process.wait(timeout=35)
         shutdown_seconds = time.monotonic() - started
         del self.apps['dispatch']
@@ -46,8 +44,7 @@ class GracefulRecovery(KafkaRecovery):
         assert exit_code in (0, 143) and graceful, (exit_code, graceful)
         log_path = self.directory / 'dispatch-restarted.log'
         log = log_path.open('w'); self.logs.append(log)
-        replacement = subprocess.Popen(command, cwd=ROOT, env=self.application_env,
-                                       stdout=log, stderr=subprocess.STDOUT)
+        replacement = process.restart(log_path)
         self.apps['dispatch'] = replacement
         assert replacement.pid != old_pid
 

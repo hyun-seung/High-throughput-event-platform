@@ -21,7 +21,7 @@ import uuid
 import boto3
 from confluent_kafka import Consumer, TopicPartition
 from 수신결과_흐름 import ROOT, Run, stop, wait_until
-from 검증_근거 import verify_evidence
+from 검증_근거 import SupervisedProcess, verify_evidence
 
 HTTP = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 MODULES = {'provider': 'external-api-simulator', 'receipt': 'receipt-api',
@@ -219,8 +219,8 @@ class FullFlow:
                 opts += [f'--notification.customers.{tenant}.url=http://127.0.0.1:{self.server.server_port}/results',
                          f'--notification.customers.{tenant}.token={token}']
             log = (self.directory / (name + '.log')).open('w'); self.logs.append(log)
-            self.apps[name] = subprocess.Popen([self.java, '-Xms64m', '-Xmx256m', '-jar', str(jars[name])] + opts,
-                cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT)
+            self.apps[name] = SupervisedProcess([self.java, '-Xms64m', '-Xmx256m', '-jar', str(jars[name])] + opts,
+                self.directory / (name + '.log'), ROOT, env, log)
             def ready():
                 self.alive()
                 try:
