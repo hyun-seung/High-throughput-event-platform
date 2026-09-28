@@ -8,6 +8,7 @@ import event.delivery.result.notification.*;
 import event.delivery.result.operations.DeliveryOperations;
 import event.delivery.result.operations.CleanupOperations;
 import event.delivery.result.operations.ResolutionOperations;
+import event.delivery.result.operations.ResolutionRecoveryWorker;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.*;
@@ -270,11 +271,17 @@ class CleanupPostgresDynamoDbTest {
             throw software.amazon.awssdk.core.exception.SdkClientException.create("request outcome unknown");
         }).when(delayed).transactWriteItems(any(software.amazon.awssdk.services.dynamodb.model.TransactWriteItemsRequest.class));
         assertThrows(software.amazon.awssdk.core.exception.SdkClientException.class, () -> resolutions(delayed, now).resolve(request));
-        assertEquals(ResolutionOperations.Outcome.PENDING_RECONCILIATION, resolutions(db, now.plusSeconds(100)).resume(42, request.target().actionId()));
+        jdbc.update("UPDATE delivery_resolution_action SET created_at=clock_timestamp()-interval '1 minute'");
+        var operations = resolutions(db, now.plusSeconds(100));
+        assertEquals(request.target().actionId(), operations.claimDue().orElseThrow().actionId());
+        assertEquals(ResolutionOperations.Outcome.PENDING_RECONCILIATION, operations.resume(42, request.target().actionId()));
+        assertTrue(operations.claimDue().isEmpty());
         assertEquals("PENDING", jdbc.queryForObject("SELECT status FROM delivery_resolution_action", String.class));
         // A delayed server commit may use the decision time captured before the deadline; it must never contradict a REJECTED audit.
         db.transactWriteItems(captured.get());
-        assertEquals(ResolutionOperations.Outcome.ALREADY_APPLIED, resolutions(db, now.plusSeconds(100)).resume(42, request.target().actionId()));
+        jdbc.update("UPDATE delivery_resolution_action SET next_check_at=clock_timestamp()-interval '1 second'");
+        assertEquals(request.target().actionId(), operations.claimDue().orElseThrow().actionId());
+        assertEquals(ResolutionOperations.Outcome.ALREADY_APPLIED, operations.resume(42, request.target().actionId()));
         assertEquals("APPLIED", jdbc.queryForObject("SELECT status FROM delivery_resolution_action", String.class));
     }
 
@@ -290,6 +297,28 @@ class CleanupPostgresDynamoDbTest {
         assertThrows(IllegalArgumentException.class, () -> operations.resume(43, page.records().getFirst().actionId()));
         assertEquals(ResolutionOperations.Outcome.APPLIED, operations.resume(42, page.records().getFirst().actionId()));
         assertEquals(1, operations.pending(42, null, 100).records().size());
+    }
+
+    @Test void recoveryClaimsCommittedIntentOnceAndUsesItsOriginalDecision() {
+        Instant now = Instant.now(); var e = unresolved(now);
+        var request = resolutionRequest(e, 2, ManualResolution.Decision.FAILED);
+        var down = mock(DynamoDbClient.class);
+        when(down.getItem(any(java.util.function.Consumer.class)))
+                .thenThrow(software.amazon.awssdk.core.exception.SdkClientException.create("DynamoDB unavailable"));
+        assertThrows(software.amazon.awssdk.core.exception.SdkClientException.class,
+                () -> resolutions(down, now).resolve(request));
+        jdbc.update("UPDATE delivery_resolution_action SET created_at=clock_timestamp()-interval '1 minute'");
+        var operations = resolutions(db, now);
+        var worker = new ResolutionRecoveryWorker(operations, meters,
+                new event.common.recovery.FailureBackoff(Duration.ofSeconds(1), Duration.ofSeconds(30)), 5);
+        worker.tick();
+        assertEquals("APPLIED", jdbc.queryForObject("SELECT status FROM delivery_resolution_action", String.class));
+        assertEquals(1, jdbc.queryForObject("SELECT check_count FROM delivery_resolution_action", Integer.class));
+        assertEquals(request.target().actionId().toString(), step(e).get("operator_action_id").s());
+        assertEquals("FAILED", step(e).get("operator_decision").s());
+        assertTrue(operations.claimDue().isEmpty());
+        worker.tick();
+        assertEquals(1, jdbc.queryForObject("SELECT check_count FROM delivery_resolution_action", Integer.class));
     }
 
     @Test void concurrentResolutionsOnSameVersionHaveOneDurableWinner() throws Exception {

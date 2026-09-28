@@ -1,0 +1,30 @@
+{
+  "date": "2026-09-28",
+  "purpose": "PENDING 감사 제한 재확인과 기존 조치 ID·DynamoDB 결과 불명 보존 검증",
+  "command": "JAVA_HOME=/Users/hyunseung/Library/Java/JavaVirtualMachines/temurin-21.0.7/Contents/Home bash scripts/test-java.sh integration",
+  "baseCommit": "288aa41",
+  "evidence": ".poc-results/java-test-20260928040343-38108",
+  "tools": {
+    "assertions": "Java/JUnit",
+    "runner": "Maven Wrapper",
+    "orchestration": "Bash + Docker Compose",
+    "stores": ["Kafka", "Redis", "PostgreSQL", "DynamoDB Local"]
+  },
+  "result": {
+    "suites": 69,
+    "executed": 488,
+    "skipped": 0,
+    "failures": 0,
+    "errors": 0
+  },
+  "cleanup": {
+    "containersStopped": true,
+    "containersRemoved": true,
+    "networkRemoved": true,
+    "volumesRetained": true
+  },
+  "limits": [
+    "자동 재확인은 기본 비활성이고 실제 result-worker 다중 Pod 운영 시험은 포함하지 않음",
+    "지속 Pod 성능이나 전체 10000 TPS를 측정하지 않음"
+  ]
+}
