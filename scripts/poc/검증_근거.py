@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import signal
 import subprocess
 import uuid
 
@@ -51,6 +52,75 @@ def verify_evidence(name, evidence):
 def stop_owned_process(pid, action):
     subprocess.run(_java_command('stop-owned-process', pid, action), check=True,
                    stdout=subprocess.DEVNULL)
+
+
+class SupervisedProcess:
+    """Keep a Java supervisor alive while it owns and reaps one application child."""
+    def __init__(self, command, log_path, cwd, env, stderr):
+        self.args = command
+        self.supervisor = subprocess.Popen(_java_command('supervise-process', log_path, *command),
+            cwd=cwd, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=stderr,
+            text=True, bufsize=1, start_new_session=True)
+        try:
+            started = self._read()
+            if started.get('event') != 'started' or not started.get('alive'):
+                raise RuntimeError('Java supervisor did not start its child')
+            self.pid = started['pid']
+        except Exception:
+            self.supervisor.stdin.close()
+            self.supervisor.wait(timeout=5)
+            self.supervisor.stdout.close()
+            raise
+
+    def _read(self):
+        line = self.supervisor.stdout.readline()
+        if not line: raise RuntimeError('Java supervisor stopped unexpectedly')
+        response = json.loads(line)
+        if 'error' in response: raise RuntimeError(response['error'])
+        return response
+
+    def _request(self, action):
+        if self.supervisor.poll() is not None:
+            raise RuntimeError('Java supervisor stopped unexpectedly')
+        self.supervisor.stdin.write(action + '\n')
+        self.supervisor.stdin.flush()
+        return self._read()
+
+    def poll(self):
+        state = self._request('status')
+        return None if state['alive'] else state['exitCode']
+
+    def restart(self, log_path):
+        state = self._request('restart ' + str(log_path))
+        if state.get('event') != 'restarted' or not state.get('alive'):
+            raise RuntimeError('Java supervisor did not restart its child')
+        self.pid = state['pid']
+        return self
+
+    def stop_child(self):
+        state = self._request('stop')
+        if state.get('event') != 'stopped' or state.get('alive'):
+            raise RuntimeError('Java supervisor did not stop its child')
+        return state['exitCode']
+
+    def close(self):
+        try:
+            if self.supervisor.poll() is None:
+                state = self._request('close')
+                if state.get('event') != 'closed' or state.get('alive'):
+                    raise RuntimeError('Java supervisor did not stop its child')
+                if self.supervisor.wait(timeout=5):
+                    raise RuntimeError('Java supervisor exited with an error')
+            else:
+                try:
+                    if os.getpgid(self.pid) != self.supervisor.pid:
+                        raise RuntimeError('Refusing to clean up a child outside its owned process group')
+                    os.killpg(self.supervisor.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+        finally:
+            self.supervisor.stdin.close()
+            self.supervisor.stdout.close()
 
 
 def reconcile(starts, results, tenant, records, items, provider):

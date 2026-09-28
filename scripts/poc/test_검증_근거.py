@@ -1,11 +1,13 @@
 import json
 import io
+import os
 from pathlib import Path
 import tempfile
+import time
 import unittest
 from unittest.mock import MagicMock, patch
 
-from 검증_근거 import REQUESTED, DISPATCH, DLT, KafkaProbe, attempt_id, complete_input, delivery_id, read_manifest, reconcile
+from 검증_근거 import REQUESTED, DISPATCH, DLT, KafkaProbe, SupervisedProcess, attempt_id, complete_input, delivery_id, read_manifest, reconcile
 
 
 class ReconciliationTest(unittest.TestCase):
@@ -115,6 +117,25 @@ class ReconciliationTest(unittest.TestCase):
             self.assertEqual([{'op': 'snapshot', 'oldest': False}], [json.loads(row) for row in sent])
             probe.close()
             start.assert_called_once()
+
+    def test_killed_supervisor_cleans_only_its_owned_child_group(self):
+        with tempfile.TemporaryDirectory() as directory:
+            log_path = Path(directory) / 'child.log'
+            with log_path.open('w') as log:
+                child = SupervisedProcess(['sleep', '30'], log_path, directory, os.environ.copy(), log)
+                pid = child.pid
+                try:
+                    self.assertEqual(child.supervisor.pid, os.getpgid(pid))
+                    child.supervisor.kill()
+                    child.supervisor.wait(timeout=5)
+                    child.close()
+                    for _ in range(50):
+                        try: os.kill(pid, 0)
+                        except ProcessLookupError: break
+                        time.sleep(.05)
+                    else: self.fail('Supervised child remained after owner cleanup')
+                finally:
+                    if child.supervisor.poll() is None: child.close()
 
 
 if __name__ == '__main__':

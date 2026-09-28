@@ -17,7 +17,7 @@ import java.util.concurrent.TimeUnit;
 /** Own a child process across start, restart, and shutdown over a line protocol. */
 final class OwnedProcessSupervisor {
     private static final JsonMapper JSON = JsonMapper.builder().build();
-    private final Path log;
+    private Path log;
     private final List<String> command;
     private Process child;
 
@@ -59,7 +59,14 @@ final class OwnedProcessSupervisor {
                         output.println(response("closed"));
                         return;
                     }
-                    default -> output.println("{\"error\":\"unknown command\"}");
+                    default -> {
+                        if (line.startsWith("restart ") && line.length() > 8) {
+                            stop();
+                            log = Path.of(line.substring(8));
+                            start();
+                            output.println(response("restarted"));
+                        } else output.println("{\"error\":\"unknown command\"}");
+                    }
                 }
             }
         } finally {
