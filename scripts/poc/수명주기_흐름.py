@@ -12,7 +12,7 @@ from urllib.error import HTTPError
 
 from confluent_kafka import Consumer, TopicPartition
 from confluent_kafka.admin import ConfigResource, ResourceType, NewTopic
-from 수신결과_흐름 import Run, ROOT, TABLE, ORIGIN, request, wait_until, stop
+from 수신결과_흐름 import Run, ROOT, TABLE, ORIGIN, request, wait_until
 from 검증_근거 import verify_evidence
 
 
@@ -130,11 +130,10 @@ class LifecycleRun(Run):
         pending = self.final(delivery, 'PENDING')
         wait_until(lambda: f'Lifecycle work retained. deliveryId={delivery},' in (self.directory / 'dispatch.log').read_text())
         self.write('pending-before-restart.json', pending)
-        command = self.apps['dispatch'].args
-        stop(self.apps['dispatch'])
+        self.apps['dispatch'].stop_child()
         self.topic_max_bytes(1048588)
         log = (self.directory / 'dispatch-restarted.log').open('w'); self.files.append(log)
-        self.apps['dispatch'] = subprocess.Popen(command, cwd=ROOT, env=self.child_env, stdout=log, stderr=subprocess.STDOUT)
+        self.apps['dispatch'].restart(self.directory / 'dispatch-restarted.log')
         result = self.check_final('Kafka 발행 거절·JVM 재시작 후 동일 최종 결과 복구', delivery, 'DELIVERED', 1, 1)
         assert result == json.loads(pending['result_event']['S'])
 

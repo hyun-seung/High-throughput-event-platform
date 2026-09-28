@@ -19,7 +19,7 @@ import uuid
 import boto3
 from confluent_kafka import Consumer, Producer, TopicPartition
 from confluent_kafka.admin import AdminClient, NewTopic
-from 검증_근거 import java_id, stop_owned_process
+from 검증_근거 import SupervisedProcess, java_id, stop_owned_process
 
 ROOT = Path(__file__).resolve().parents[2]
 HTTP = urllib.request.build_opener(urllib.request.ProxyHandler({}))
@@ -47,6 +47,9 @@ def wait_until(check, seconds=25):
 
 
 def stop(process):
+    if isinstance(process, SupervisedProcess):
+        process.close()
+        return
     if process.poll() is None:
         stop_owned_process(process.pid, 'terminate')
         try: process.wait(timeout=15)
@@ -114,8 +117,8 @@ class Run:
             if name == 'dispatch': opts += [f'--dispatch.requests.topic={self.topic}', f'--dispatch.requests.group={self.group}',
                                            f'--dispatch.receipts.topic={self.receipts}', f'--dispatch.receipts.group={self.receipt_group}']
             opts += self.extra_options(name)
-            self.apps[name] = subprocess.Popen([java, '-Xms64m', '-Xmx256m', '-jar', str(jar)] + opts,
-                                              cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT)
+            self.apps[name] = SupervisedProcess([java, '-Xms64m', '-Xmx256m', '-jar', str(jar)] + opts,
+                                                self.directory / (name + '.log'), ROOT, env, log)
         self.write('environment.json', {'runId': self.run_id, 'ports': self.ports, 'kafka': self.args.kafka,
             'dynamo': self.args.dynamo, 'topics': self.created_topics, 'groups': [self.group, self.receipt_group],
             'primaryTtlSeconds': 20, 'secondaryTtlSeconds': 30, 'providerDeduplicate': False,

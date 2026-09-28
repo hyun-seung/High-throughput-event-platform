@@ -49,7 +49,7 @@ class OwnedProcessSupervisorTest {
             assertFalse(killed.path("alive").asBoolean());
             assertFalse(ProcessHandle.of(second).map(ProcessHandle::isAlive).orElse(false));
 
-            var recovered = harness.command("restart");
+            var recovered = harness.command("restart " + directory.resolve("restarted.log"));
             long third = recovered.path("pid").asLong();
             assertNotEquals(second, third);
 
@@ -59,6 +59,7 @@ class OwnedProcessSupervisorTest {
             assertFalse(ProcessHandle.of(third).map(ProcessHandle::isAlive).orElse(false));
         }
         assertTrue(java.nio.file.Files.readString(log).contains("started"));
+        assertTrue(java.nio.file.Files.exists(directory.resolve("restarted.log")));
     }
 
     @Test void inputClosureStopsOwnedChild(@TempDir Path directory) throws Exception {
