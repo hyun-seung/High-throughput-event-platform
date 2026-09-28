@@ -1,0 +1,59 @@
+{
+  "scope": "로컬 JVM·Docker 인프라에서 정상 1차 발송의 k6 5초 입력과 전체 고객 수신·정리 대조. Pod당 지속 성능 또는 10000 TPS 증거가 아님",
+  "baseCommit": "83a306e",
+  "settings": {
+    "k6": "1.8.1",
+    "workerConcurrency": 3,
+    "cleanupConcurrency": 4,
+    "messageBytesApprox": 960,
+    "providerDeduplicate": false,
+    "durationSeconds": 5
+  },
+  "measurements": [
+    {
+      "runId": "full-flow-cf9235f193e3",
+      "targetTps": 10,
+      "accepted": 50,
+      "droppedIterations": 0,
+      "apiP95Millis": 939.08,
+      "customerReceivedP95Millis": 3701.78,
+      "cleanupP95Millis": 4370.25,
+      "inputAndDrainSeconds": 8.80,
+      "completionTpsIncludingDrain": 5.68,
+      "maxRequestedTopicLag": 4,
+      "allAcceptedReconciled": true
+    },
+    {
+      "runId": "full-flow-95c7833bac16",
+      "targetTps": 50,
+      "accepted": 251,
+      "droppedIterations": 0,
+      "apiP95Millis": 1112.05,
+      "customerReceivedP95Millis": 11697.91,
+      "cleanupP95Millis": 12592.01,
+      "inputAndDrainSeconds": 19.42,
+      "completionTpsIncludingDrain": 12.92,
+      "maxRequestedTopicLag": 128,
+      "allAcceptedReconciled": true
+    },
+    {
+      "runId": "full-flow-dd19b2ce5c1d",
+      "targetTps": 100,
+      "accepted": 501,
+      "droppedIterations": 0,
+      "apiP95Millis": 1024.36,
+      "customerReceivedP95Millis": 19595.29,
+      "cleanupP95Millis": 20779.93,
+      "inputAndDrainSeconds": 27.58,
+      "completionTpsIncludingDrain": 18.17,
+      "maxRequestedTopicLag": 441,
+      "allAcceptedReconciled": true
+    }
+  ],
+  "invalidRuns": [
+    {"runId": "full-flow-a3a5ed537fb3", "targetTps": 50, "accepted": 236, "droppedIterations": 15, "reason": "k6 입력 누락; 완료 대조 전 실행 중단"},
+    {"runId": "full-flow-2fd47390a61e", "targetTps": 50, "accepted": 243, "droppedIterations": 8, "allAcceptedReconciled": true, "reason": "k6 입력 누락으로 측정 무효"}
+  ],
+  "finding": "초기 k6 VU를 목표 TPS의 1배에서 2배로 늘린 뒤 짧은 50·100 TPS 입력 누락이 없어졌다. 입력 중 적체가 증가하고 100 TPS의 고객 수신 p95가 약 19.6초이므로 지속 처리 용량은 이 결과로 판단할 수 없다.",
+  "next": "남은 운영·복구·배포 기준을 마무리하고 자원 한도·시나리오·SLO를 정한 뒤 워밍업과 반복을 포함한 지속 부하를 측정한다."
+}
