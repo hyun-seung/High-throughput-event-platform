@@ -9,6 +9,7 @@ import event.delivery.result.operations.DeliveryOperations;
 import event.delivery.result.operations.CleanupOperations;
 import event.delivery.result.operations.ResolutionOperations;
 import event.delivery.result.operations.ResolutionRecoveryWorker;
+import event.delivery.result.operations.ResolutionAuditMonitor;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.*;
@@ -319,6 +320,26 @@ class CleanupPostgresDynamoDbTest {
         assertTrue(operations.claimDue().isEmpty());
         worker.tick();
         assertEquals(1, jdbc.queryForObject("SELECT check_count FROM delivery_resolution_action", Integer.class));
+    }
+
+    @Test void auditMonitorCountsPendingAgeAndClearsAfterResolution() {
+        Instant now = Instant.now(); var e = unresolved(now);
+        var request = resolutionRequest(e, 2, ManualResolution.Decision.SUCCEEDED);
+        var down = mock(DynamoDbClient.class);
+        when(down.getItem(any(java.util.function.Consumer.class)))
+                .thenThrow(software.amazon.awssdk.core.exception.SdkClientException.create("DynamoDB unavailable"));
+        assertThrows(software.amazon.awssdk.core.exception.SdkClientException.class,
+                () -> resolutions(down, now).resolve(request));
+        jdbc.update("UPDATE delivery_resolution_action SET created_at=clock_timestamp()-interval '10 minutes'");
+        var monitor = new ResolutionAuditMonitor(jdbc, meters, Clock.systemUTC());
+        monitor.tick();
+        assertEquals(1, meters.get("delivery.resolution.pending").gauge().value());
+        assertTrue(meters.get("delivery.resolution.pending.oldest.age").gauge().value() >= 590);
+        assertTrue(meters.get("delivery.resolution.audit.scan.last.success").gauge().value() > 0);
+        assertEquals(ResolutionOperations.Outcome.APPLIED, resolutions(db, now).resume(42, request.target().actionId()));
+        monitor.tick();
+        assertEquals(0, meters.get("delivery.resolution.pending").gauge().value());
+        assertEquals(0, meters.get("delivery.resolution.pending.oldest.age").gauge().value());
     }
 
     @Test void concurrentResolutionsOnSameVersionHaveOneDurableWinner() throws Exception {

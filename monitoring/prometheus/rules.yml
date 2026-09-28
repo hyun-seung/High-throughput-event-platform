@@ -45,6 +45,18 @@ groups:
         labels: {severity: warning}
         annotations:
           summary: 정리 작업 실패로 예약 보존 (원인과 적체 확인 필요)
+      - alert: ResolutionAuditPendingTooLong
+        expr: max(delivery_resolution_pending_oldest_age{application="delivery-result-worker"}) > 300
+        for: 1m
+        labels: {severity: warning}
+        annotations:
+          summary: 결과 불명 조치의 미확정 감사가 5분 넘게 남음
+      - alert: ResolutionAuditScanStale
+        expr: max(time() - delivery_resolution_audit_scan_last_success{application="delivery-result-worker"}) > 90
+        for: 1m
+        labels: {severity: warning}
+        annotations:
+          summary: 결과 worker의 미확정 감사 SQL 조회가 90초 넘게 갱신되지 않음
       - alert: DeliveryDynamoDbErrors
         expr: sum(increase(delivery_dynamodb_duration_seconds_count{result="failure"}[5m])) > 0
         labels: {severity: warning}
