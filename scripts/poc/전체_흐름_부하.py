@@ -121,16 +121,21 @@ class LoadRun(FullFlow):
                 if time.monotonic() - start > self.args.seconds + 60: raise TimeoutError('k6 did not finish')
                 time.sleep(2)
                 samples.append(self.snapshot(path, len(samples)))
-            assert self.load.returncode == 0, 'k6 checks/thresholds failed'
         starts, responses = read_manifest(path / 'requests.jsonl')
         summary = json.loads((path / 'k6-summary.json').read_text())
         metrics = summary['metrics']
         # k6 handleSummary uses values nested under metrics.
         value = lambda key, stat: metrics.get(key, {}).get('values', {}).get(stat, 0)
-        assert complete_input(rate * self.args.seconds, len(starts), len(responses),
-                              int(value('iterations', 'count')), int(value('dropped_iterations', 'count')))
+        input_evidence = {'planned': rate * self.args.seconds, 'started': len(starts),
+                          'answered': len(responses), 'accepted': sum(r['status'] == 202 for r in responses.values()),
+                          'iterations': int(value('iterations', 'count')),
+                          'droppedIterations': int(value('dropped_iterations', 'count')),
+                          'k6ExitCode': self.load.returncode}
+        input_evidence['complete'] = complete_input(input_evidence['planned'], input_evidence['started'],
+            input_evidence['answered'], input_evidence['iterations'], input_evidence['droppedIterations'])
+        self.write(label + '/input-evidence.json', input_evidence)
         deadline = time.monotonic() + self.args.drain_timeout
-        target = before['history'] + len(starts)
+        target = before['history'] + input_evidence['accepted']
         while samples[-1]['cleaned'] != target or samples[-1]['notified'] != target or any(samples[-1]['kafkaLag'].values()):
             if time.monotonic() > deadline: raise TimeoutError('Full-flow drain exceeded budget; retain backlog evidence')
             time.sleep(2)
@@ -155,12 +160,16 @@ class LoadRun(FullFlow):
         report = {'rate': rate, 'inputSeconds': self.args.seconds, 'requests': len(starts),
                   'apiLatencyMillis': metrics['http_req_duration']['values'],
                   'latencyFromClientStartMillis': latencies, 'inputAndDrainSeconds': elapsed,
-                  'completionTpsIncludingDrain': len(starts) / elapsed,
+                  'completionTpsIncludingDrain': len(starts) / elapsed if input_evidence['complete'] and self.load.returncode == 0 else None,
                   'maxKafkaLag': {topic: max(s['kafkaLag'][topic] for s in samples) for topic in GROUPS},
                   'maxRedisDue': max(s['redisDue'] for s in samples), 'allRequestsReconciled': True,
                   'providerCallsExactlyOnce': True, 'originAndStepsAbsent': True,
-                  'sampleCount': len(samples), 'baselineCounts': before, 'finalCounts': samples[-1]}
+                  'sampleCount': len(samples), 'baselineCounts': before, 'finalCounts': samples[-1],
+                  'inputEvidence': input_evidence, 'validMeasurement': input_evidence['complete'] and self.load.returncode == 0}
         self.phases.append(report); self.write('load-summary.json', self.phases)
+        if not report['validMeasurement']:
+            raise AssertionError(f'Incomplete load: k6 exit {self.load.returncode}, '
+                f'{input_evidence["droppedIterations"]} dropped, {input_evidence["accepted"]}/{input_evidence["planned"]} accepted')
         print('PASS', label, 'requests', len(starts), 'completion TPS', round(report['completionTpsIncludingDrain'], 2), flush=True)
 
     def suite(self):

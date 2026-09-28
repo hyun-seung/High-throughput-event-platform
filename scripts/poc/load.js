@@ -5,7 +5,7 @@ import execution from 'k6/execution';
 const rate = Number(__ENV.POC_RATE);
 const seconds = Number(__ENV.POC_SECONDS);
 // Load generation is k6; external Python runners only arrange services and reconcile results.
-const preAllocatedVUs = Number(__ENV.POC_PREALLOCATED_VUS || Math.min(1000, Math.max(20, rate)));
+const preAllocatedVUs = Number(__ENV.POC_PREALLOCATED_VUS || Math.min(1000, Math.max(20, rate * 2)));
 const maxVUs = Number(__ENV.POC_MAX_VUS || Math.max(preAllocatedVUs, Math.min(1000, Math.max(100, rate * 5))));
 if (![rate, seconds, preAllocatedVUs, maxVUs].every(n => Number.isSafeInteger(n) && n > 0)
     || maxVUs < preAllocatedVUs) {
