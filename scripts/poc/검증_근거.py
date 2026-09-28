@@ -108,6 +108,14 @@ class SupervisedProcess:
             raise RuntimeError('Java supervisor did not kill its child')
         self._exit_code = self._python_exit_code(state['exitCode'])
 
+    def send_signal(self, sig):
+        if sig not in (signal.SIGSTOP, signal.SIGCONT):
+            raise ValueError('Only child suspend and resume are supported')
+        action = 'suspend' if sig == signal.SIGSTOP else 'resume'
+        state = self._request(action)
+        if state.get('event') != ('suspended' if sig == signal.SIGSTOP else 'resumed') or not state.get('alive'):
+            raise RuntimeError('Java supervisor did not signal its child')
+
     def wait(self, timeout=None):
         if self._exit_code is not None: return self._exit_code
         until = None if timeout is None else time.monotonic() + timeout

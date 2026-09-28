@@ -20,6 +20,7 @@ final class OwnedProcessSupervisor {
     private Path log;
     private final List<String> command;
     private Process child;
+    private boolean suspended;
 
     OwnedProcessSupervisor(Path log, List<String> command) {
         this.log = log;
@@ -49,6 +50,8 @@ final class OwnedProcessSupervisor {
                     case "status" -> output.println(response("status"));
                     case "stop" -> { stop(); output.println(response("stopped")); }
                     case "kill" -> { kill(); output.println(response("killed")); }
+                    case "suspend" -> { signal(true); output.println(response("suspended")); }
+                    case "resume" -> { signal(false); output.println(response("resumed")); }
                     case "restart" -> {
                         stop();
                         start();
@@ -83,6 +86,22 @@ final class OwnedProcessSupervisor {
         if (child != null && child.isAlive()) throw new IllegalStateException("Child is already running");
         child = new ProcessBuilder(command).redirectErrorStream(true)
                 .redirectOutput(ProcessBuilder.Redirect.appendTo(log.toFile())).start();
+        suspended = false;
+    }
+
+    private synchronized void signal(boolean suspend) throws IOException {
+        if (child == null || !child.isAlive() || suspended == suspend)
+            throw new IllegalStateException("Invalid supervised child signal state");
+        try {
+            var command = new ProcessBuilder("/bin/kill", suspend ? "-STOP" : "-CONT",
+                    Long.toString(child.pid())).start();
+            if (!command.waitFor(5, TimeUnit.SECONDS) || command.exitValue() != 0)
+                throw new IOException("Could not signal supervised child: " + child.pid());
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Interrupted while signaling supervised child", interrupted);
+        }
+        suspended = suspend;
     }
 
     private synchronized void stop() {
@@ -91,6 +110,10 @@ final class OwnedProcessSupervisor {
 
     private synchronized void stop(int graceSeconds) {
         if (child == null || !child.isAlive()) return;
+        if (suspended) {
+            try { signal(false); }
+            catch (IOException failure) { throw new IllegalStateException("Could not resume supervised child", failure); }
+        }
         child.destroy();
         awaitExit(graceSeconds);
         if (child.isAlive()) {
@@ -102,6 +125,10 @@ final class OwnedProcessSupervisor {
 
     private synchronized void kill() {
         if (child == null || !child.isAlive()) return;
+        if (suspended) {
+            try { signal(false); }
+            catch (IOException failure) { throw new IllegalStateException("Could not resume supervised child", failure); }
+        }
         child.destroyForcibly();
         awaitExit(5);
         if (child.isAlive()) throw new IllegalStateException("Supervised child did not stop: " + child.pid());
