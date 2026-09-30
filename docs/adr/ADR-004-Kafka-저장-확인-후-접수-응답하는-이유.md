@@ -1,6 +1,6 @@
 # ADR-004 Kafka 저장 확인 후 접수 응답하는 이유
 
-- Status: Accepted
+- Status: Superseded — 최초 고객 접수는 [ADR-023](ADR-023-ORIGIN-선접수와-Streams-Kafka-발행.md)으로 대체. 아래는 현재 Kafka-first 구현의 결정 이력
 - Date: 2026-09-22
 
 ## 문제
