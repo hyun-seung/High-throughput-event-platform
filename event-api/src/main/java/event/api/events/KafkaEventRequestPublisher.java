@@ -17,6 +17,6 @@ public class KafkaEventRequestPublisher implements EventRequestPublisher {
 
     @Override
     public CompletableFuture<?> publish(EventSubmission event) {
-        return kafka.send(EventTopics.HTTP_REQUESTED, event.executionId(), event);
+        return kafka.send(EventTopics.RECEIVED, event.executionId(), event);
     }
 }

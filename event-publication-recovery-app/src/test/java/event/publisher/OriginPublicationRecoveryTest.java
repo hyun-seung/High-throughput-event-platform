@@ -41,12 +41,12 @@ class OriginPublicationRecoveryTest {
         var origin = EventOriginCodec.encode(event, mapper);
         when(db.getItem(any(GetItemRequest.class))).thenReturn(GetItemResponse.builder().item(origin).build());
         when(db.query(any(QueryRequest.class))).thenReturn(QueryResponse.builder().build());
-        when(kafka.send(EventTopics.HTTP_REQUESTED, event.executionId(), event))
+        when(kafka.send(EventTopics.RECEIVED, event.executionId(), event))
                 .thenReturn(CompletableFuture.completedFuture(null));
 
         recovery.recover(EventOriginCodec.key(event.executionId()));
 
-        verify(kafka).send(EventTopics.HTTP_REQUESTED, event.executionId(), event);
+        verify(kafka).send(EventTopics.RECEIVED, event.executionId(), event);
         verify(db, never()).updateItem(any(UpdateItemRequest.class));
     }
 
