@@ -1,6 +1,5 @@
 package event.common.events;
 
-import event.common.lifecycle.LifecycleIndex;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -37,7 +36,6 @@ public final class EventOriginCodec {
         item.put("created_at", AttributeValue.fromS(event.receivedAt().toString()));
         item.put("updated_at", AttributeValue.fromS(event.receivedAt().toString()));
         item.put("status", AttributeValue.fromS(STATUS_RECEIVED));
-        LifecycleIndex.add(item, event.executionId(), 0);
         return item;
     }
 

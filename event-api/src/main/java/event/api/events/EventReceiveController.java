@@ -3,6 +3,7 @@ package event.api.events;
 import event.api.security.principal.AuthenticatedUser;
 import event.common.core.response.ApiResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -12,6 +13,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
+@ConditionalOnProperty(prefix = "events.admission", name = "enabled", havingValue = "true")
 @RequestMapping("/api/v1/events")
 @RequiredArgsConstructor
 public class EventReceiveController {
