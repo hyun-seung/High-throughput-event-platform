@@ -2,6 +2,7 @@ package event.common.dynamodb.config;
 
 import lombok.RequiredArgsConstructor;
 import event.common.lifecycle.LifecycleIndex;
+import event.common.events.EventPublicationIndex;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
@@ -9,6 +10,8 @@ import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeDefinition;
 import software.amazon.awssdk.services.dynamodb.model.BillingMode;
 import software.amazon.awssdk.services.dynamodb.model.CreateTableRequest;
+import software.amazon.awssdk.services.dynamodb.model.CreateGlobalSecondaryIndexAction;
+import software.amazon.awssdk.services.dynamodb.model.GlobalSecondaryIndexUpdate;
 import software.amazon.awssdk.services.dynamodb.model.KeySchemaElement;
 import software.amazon.awssdk.services.dynamodb.model.KeyType;
 import software.amazon.awssdk.services.dynamodb.model.ResourceNotFoundException;
@@ -33,24 +36,33 @@ public class DynamoDbTableInitializer implements ApplicationRunner {
 
     private void createIfMissing(String table) {
         if (tableExists(table)) {
-            if (ORIGIN.equals(table)) enableOriginStreamIfMissing();
+            if (ORIGIN.equals(table)) {
+                enableOriginStreamIfMissing();
+                createPublicationIndexIfMissing();
+            }
             log.debug("DynamoDB table already exists. table={}", table);
             return;
         }
 
+        var definitions = new java.util.ArrayList<>(java.util.List.of(
+                AttributeDefinition.builder().attributeName(PK).attributeType(ScalarAttributeType.S).build(),
+                AttributeDefinition.builder().attributeName(SK).attributeType(ScalarAttributeType.S).build(),
+                AttributeDefinition.builder().attributeName(LifecycleIndex.BUCKET).attributeType(ScalarAttributeType.S).build(),
+                AttributeDefinition.builder().attributeName(LifecycleIndex.DUE).attributeType(ScalarAttributeType.N).build()));
+        var indexes = new java.util.ArrayList<>(java.util.List.of(LifecycleIndex.definition()));
+        if (ORIGIN.equals(table)) {
+            definitions.add(AttributeDefinition.builder().attributeName(EventPublicationIndex.BUCKET).attributeType(ScalarAttributeType.S).build());
+            definitions.add(AttributeDefinition.builder().attributeName(EventPublicationIndex.DUE).attributeType(ScalarAttributeType.N).build());
+            indexes.add(EventPublicationIndex.definition());
+        }
         var requestBuilder = CreateTableRequest.builder()
                 .tableName(table)
-                .attributeDefinitions(
-                        AttributeDefinition.builder().attributeName(PK).attributeType(ScalarAttributeType.S).build(),
-                        AttributeDefinition.builder().attributeName(SK).attributeType(ScalarAttributeType.S).build(),
-                        AttributeDefinition.builder().attributeName(LifecycleIndex.BUCKET).attributeType(ScalarAttributeType.S).build(),
-                        AttributeDefinition.builder().attributeName(LifecycleIndex.DUE).attributeType(ScalarAttributeType.N).build()
-                )
+                .attributeDefinitions(definitions)
                 .keySchema(
                         KeySchemaElement.builder().attributeName(PK).keyType(KeyType.HASH).build(),
                         KeySchemaElement.builder().attributeName(SK).keyType(KeyType.RANGE).build()
                 )
-                .globalSecondaryIndexes(LifecycleIndex.definition())
+                .globalSecondaryIndexes(indexes)
                 .billingMode(BillingMode.PAY_PER_REQUEST);
         if (ORIGIN.equals(table)) requestBuilder.streamSpecification(StreamSpecification.builder()
                 .streamEnabled(true).streamViewType(StreamViewType.NEW_IMAGE).build());
@@ -73,6 +85,21 @@ public class DynamoDbTableInitializer implements ApplicationRunner {
         dynamoDbClient.updateTable(builder -> builder.tableName(ORIGIN)
                 .streamSpecification(StreamSpecification.builder().streamEnabled(true)
                         .streamViewType(StreamViewType.NEW_IMAGE).build()));
+        dynamoDbClient.waiter().waitUntilTableExists(builder -> builder.tableName(ORIGIN));
+    }
+
+    private void createPublicationIndexIfMissing() {
+        var description = dynamoDbClient.describeTable(builder -> builder.tableName(ORIGIN)).table();
+        if (description.globalSecondaryIndexes().stream().anyMatch(index -> EventPublicationIndex.NAME.equals(index.indexName()))) return;
+        dynamoDbClient.updateTable(builder -> builder.tableName(ORIGIN)
+                .attributeDefinitions(
+                        AttributeDefinition.builder().attributeName(EventPublicationIndex.BUCKET).attributeType(ScalarAttributeType.S).build(),
+                        AttributeDefinition.builder().attributeName(EventPublicationIndex.DUE).attributeType(ScalarAttributeType.N).build())
+                .globalSecondaryIndexUpdates(GlobalSecondaryIndexUpdate.builder()
+                        .create(CreateGlobalSecondaryIndexAction.builder()
+                                .indexName(EventPublicationIndex.NAME)
+                                .keySchema(EventPublicationIndex.definition().keySchema())
+                                .projection(EventPublicationIndex.definition().projection()).build()).build()));
         dynamoDbClient.waiter().waitUntilTableExists(builder -> builder.tableName(ORIGIN));
     }
 

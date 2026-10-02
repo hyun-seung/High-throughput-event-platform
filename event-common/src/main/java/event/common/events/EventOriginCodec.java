@@ -36,6 +36,7 @@ public final class EventOriginCodec {
         item.put("created_at", AttributeValue.fromS(event.receivedAt().toString()));
         item.put("updated_at", AttributeValue.fromS(event.receivedAt().toString()));
         item.put("status", AttributeValue.fromS(STATUS_RECEIVED));
+        EventPublicationIndex.add(item, event);
         return item;
     }
 

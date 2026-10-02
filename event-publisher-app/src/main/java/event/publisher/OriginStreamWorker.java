@@ -4,6 +4,7 @@ import com.amazonaws.services.dynamodbv2.streamsadapter.StreamsSchedulerFactory;
 import com.amazonaws.services.dynamodbv2.streamsadapter.polling.DynamoDBStreamsPollingConfig;
 import event.common.dynamodb.config.DynamoDbProperties;
 import event.common.events.EventSubmission;
+import event.common.events.EventPublicationIndex;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.DisposableBean;
 import org.springframework.boot.ApplicationArguments;
@@ -55,8 +56,13 @@ public class OriginStreamWorker implements ApplicationRunner, DisposableBean {
 
     @Override
     public void run(ApplicationArguments arguments) {
-        String arn = db.describeTable(builder -> builder.tableName(ORIGIN)).table().latestStreamArn();
+        var table = db.describeTable(builder -> builder.tableName(ORIGIN)).table();
+        String arn = table.latestStreamArn();
         if (arn == null || arn.isBlank()) throw new IllegalStateException("ORIGIN DynamoDB Stream is required");
+        if (table.globalSecondaryIndexes().stream().noneMatch(index ->
+                EventPublicationIndex.NAME.equals(index.indexName()) && "ACTIVE".equals(index.indexStatusAsString()))) {
+            throw new IllegalStateException("Active ORIGIN publication recovery index is required");
+        }
         Region region = Region.of(properties.getRegion());
         var credentials = properties.getEndpoint() == null || properties.getEndpoint().isBlank()
                 ? DefaultCredentialsProvider.create()

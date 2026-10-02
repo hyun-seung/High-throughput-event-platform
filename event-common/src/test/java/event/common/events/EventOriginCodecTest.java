@@ -19,6 +19,9 @@ class EventOriginCodecTest {
         var item = EventOriginCodec.encode(original, mapper);
         assertEquals("RECEIVED", item.get("status").s());
         assertEquals("DELIVERY#" + original.executionId(), item.get("pk").s());
+        assertEquals(EventPublicationIndex.bucket(original.executionId()), item.get(EventPublicationIndex.BUCKET).s());
+        assertEquals(Long.toString(original.receivedAt().plusSeconds(60).toEpochMilli()),
+                item.get(EventPublicationIndex.DUE).n());
         assertEquals(original, EventOriginCodec.decode(item, mapper));
     }
 }
