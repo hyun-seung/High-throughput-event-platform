@@ -1,6 +1,6 @@
 # ADR-023 ORIGIN 선접수와 Streams 기반 Kafka 발행
 
-- Status: Accepted
+- Status: Superseded by [ADR-025](ADR-025-API-직접-Kafka-발행과-계약-조회-제거.md)
 - Date: 2026-09-30
 - 적용 상태: 설계 결정, 구현·부하 검증 전.
 - 대체 범위: ADR-004의 최초 접수 완료 기준과 ORIGIN 저장 위치, ADR-005·ADR-022의 신규 인입 식별자·고객 중복 정책, 최초 Kafka 이벤트의 별도 ingress·dispatch 인계. 기존 Kafka-first 구현과 검증 기록은 이관 전 사실로 보존한다. 업체 웹훅의 Kafka 접수와 발송 이후 결과 인계 정책은 변경하지 않는다.
