@@ -15,16 +15,16 @@ import static org.mockito.Mockito.*;
 
 class KafkaEventRequestPublisherTest {
     @Test
-    void sendsOriginalExecutionToHttpRequestTopic() {
+    void sendsOriginalExecutionToReceivedTopic() {
         @SuppressWarnings("unchecked")
         KafkaTemplate<String, EventSubmission> kafka = mock(KafkaTemplate.class);
         var event = new EventSubmission("00000000-0000-0000-0000-000000000001", 42,
                 "client-event-1", "01012345678", EventType.GENERAL, Map.of("message", "hello"), false,
                 Instant.parse("2026-10-02T00:00:00Z"));
         var send = CompletableFuture.completedFuture((org.springframework.kafka.support.SendResult<String, EventSubmission>) null);
-        when(kafka.send(EventTopics.HTTP_REQUESTED, event.executionId(), event)).thenReturn(send);
+        when(kafka.send(EventTopics.RECEIVED, event.executionId(), event)).thenReturn(send);
 
         assertSame(send, new KafkaEventRequestPublisher(kafka).publish(event));
-        verify(kafka).send(EventTopics.HTTP_REQUESTED, event.executionId(), event);
+        verify(kafka).send(EventTopics.RECEIVED, event.executionId(), event);
     }
 }

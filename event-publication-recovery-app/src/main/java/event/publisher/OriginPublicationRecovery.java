@@ -92,7 +92,7 @@ public class OriginPublicationRecovery {
         }
         var event = EventOriginCodec.decode(current, mapper);
         try {
-            kafka.send(EventTopics.HTTP_REQUESTED, event.executionId(), event).get();
+            kafka.send(EventTopics.RECEIVED, event.executionId(), event).get();
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("ORIGIN recovery publication interrupted", interrupted);
