@@ -1,6 +1,7 @@
 package event.api.common.exception;
 
 import event.api.delivery.service.DeliveryAcceptanceException;
+import event.api.events.EventAdmissionException;
 import event.common.core.exception.CommonErrorCode;
 import event.common.core.response.ApiError;
 import event.common.core.response.ApiResponse;
@@ -18,6 +19,13 @@ import org.springframework.web.context.request.async.AsyncRequestTimeoutExceptio
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(EventAdmissionException.class)
+    public ResponseEntity<ApiResponse<ApiError>> handleEventAdmission(EventAdmissionException failure) {
+        HttpStatus status = failure.status();
+        return ResponseEntity.status(status).body(ApiResponse.error(
+                status.value(), 7000 + status.value(), failure.getMessage()));
+    }
 
     @ExceptionHandler({DeliveryAcceptanceException.class, AsyncRequestTimeoutException.class})
     public ResponseEntity<ApiResponse<ApiError>> handleAcceptanceFailure(
