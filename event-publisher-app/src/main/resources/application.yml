@@ -1,0 +1,18 @@
+spring:
+  application:
+    name: event-publisher-app
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      acks: all
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JacksonJsonSerializer
+      properties:
+        "[enable.idempotence]": true
+        "[spring.json.add.type.headers]": false
+delivery:
+  dynamodb:
+    enabled: true
+    region: ${AWS_REGION:ap-northeast-2}
+    endpoint: ${DYNAMODB_ENDPOINT:http://localhost:8000}
+    initialize-tables: false
