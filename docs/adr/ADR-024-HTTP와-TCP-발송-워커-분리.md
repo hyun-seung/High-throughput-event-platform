@@ -1,6 +1,6 @@
 # ADR-024 HTTP·TCP 발송 워커와 결과 판단 분리
 
-- Status: Accepted
+- Status: Partially superseded by [ADR-026](ADR-026-EVENT-RECEIVED와-통신사별-HTTP-발송-분리.md) — 1차 HTTP sender의 Pod·토픽과 발송 선점 방식
 - Date: 2026-10-02
 - 적용 상태: 목표 설계, 구현·부하 검증 전.
 - 관련 결정: [ADR-025 API 직접 발행](ADR-025-API-직접-Kafka-발행과-계약-조회-제거.md). 현재 단일 `dispatch-worker` 구현과 검증 기록은 이관 전 사실로 보존한다.
