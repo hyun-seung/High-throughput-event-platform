@@ -3,13 +3,13 @@
 - Status: Accepted
 - Date: 2026-10-02
 - 적용 상태: 목표 설계, 구현·부하 검증 전.
-- 관련 결정: [ADR-023 ORIGIN 선접수와 Streams 발행](ADR-023-ORIGIN-선접수와-Streams-Kafka-발행.md). 현재 단일 `dispatch-worker` 구현과 검증 기록은 이관 전 사실로 보존한다.
+- 관련 결정: [ADR-025 API 직접 발행](ADR-025-API-직접-Kafka-발행과-계약-조회-제거.md). 현재 단일 `dispatch-worker` 구현과 검증 기록은 이관 전 사실로 보존한다.
 
 ## 결정
 
 목표 구조에서 단일 `event-sender`를 두지 않는다. `event-http-sender`는 1차 HTTP, `event-tcp-sender`는 2차 TCP 업체 호출만 맡는다. 두 sender는 같은 실행의 ORIGIN·STEP을 사용하지만 각자 자기 단계의 조건부 선점 뒤에만 업체를 호출한다. 재시도·2차 전환·최종 성공/실패/만료 판단은 별도 `EVENT-RESULT-MANAGER` 한 곳에서 수행한다. 현재 `dispatch-worker`의 발송·결과·Lifecycle 로직을 세 역할로 이관해야 하며 단순 서비스 이름 변경으로 완료되지 않는다.
 
-`EVENT-PUBLISHER-APP`는 최초 실행을 `event.http.requested.v1`에 발행한다. 각 sender는 자기 요청/재시도 토픽을 소비하고, 호출 전 STEP을 선점하며, 업체의 즉시 접수·거절·무응답을 STEP에 기록한다. 업체 접수는 최종 성공이 아니다. 기록된 호출 결과를 단계별 `event.http.outcome.v1` 또는 `event.tcp.outcome.v1`에 발행한다. STEP 저장 후 Kafka 결과 발행이 실패·불명확하면 같은 결과를 재발행한다. 외부 호출 후 STEP 결과를 기록하기 전에 종료됐다면 업체 효과를 알 수 없으므로 자동 재호출하지 않고 기존 운영 확인·기한 정책을 따른다.
+`EVENT-RECEIVE-API`는 ORIGIN 저장 직후 최초 실행을 `event.http.requested.v1`에 발행한다. 각 sender는 자기 요청/재시도 토픽을 소비하고, 호출 전 STEP을 선점하며, 업체의 즉시 접수·거절·무응답을 STEP에 기록한다. 업체 접수는 최종 성공이 아니다. 기록된 호출 결과를 단계별 `event.http.outcome.v1` 또는 `event.tcp.outcome.v1`에 발행한다. STEP 저장 후 Kafka 결과 발행이 실패·불명확하면 같은 결과를 재발행한다. 외부 호출 후 STEP 결과를 기록하기 전에 종료됐다면 업체 효과를 알 수 없으므로 자동 재호출하지 않고 기존 운영 확인·기한 정책을 따른다.
 
 `receipt-api`는 인증·형식 검증 후 웹훅의 단계/업체 정보를 대조해 1차 결과를 `event.http.outcome.v1`, 2차 결과를 `event.tcp.outcome.v1`에 발행한다. `EVENT-RESULT-MANAGER`만 두 단계의 결과 토픽을 소비하고 STEP의 실행·단계 ID·회차·version·deadline을 조건부로 확인한다. 업체의 즉시 응답과 나중의 웹훅은 종류를 구분해 기록하며, 웹훅이 먼저 보이거나 중복·늦게 와도 이미 확정된 판단을 덮지 않는다. Manager가 Redis 일정과 DDB 복구 조회를 통해 1차·2차 만료도 판단한다.
 
@@ -23,7 +23,7 @@ Manager는 1차 결과를 판단해 같은 단계 재시도가 필요하면 `eve
 
 | 토픽 | 생산 → 소비 | 용도 |
 |---|---|---|
-| `event.http.requested.v1` | EVENT-PUBLISHER-APP → event-http-sender | 최초 1차 발송 |
+| `event.http.requested.v1` | EVENT-RECEIVE-API·발행 복구 앱 → event-http-sender | 최초 1차 발송 |
 | `event.http.outcome.v1` | event-http-sender·receipt-api → EVENT-RESULT-MANAGER | 1차 즉시 응답·웹훅 |
 | `event.http.retry.v1` | EVENT-RESULT-MANAGER → event-http-sender | 1차 지연 재시도 |
 | `event.tcp.requested.v1` | EVENT-RESULT-MANAGER → event-tcp-sender | 조건을 통과한 2차 전환 |
@@ -38,4 +38,4 @@ Manager는 1차 결과를 판단해 같은 단계 재시도가 필요하면 `eve
 - HTTP 최종 성공이면 TCP 요청은 0건이고, 대체 허용·사유가 모두 맞을 때만 Manager가 TCP 요청을 발행한다.
 - sender의 STEP 결과 저장 후 outcome 발행 실패, Manager의 1차 판단 저장 후 중단, TCP 발행 ack 유실과 중복 TCP 이벤트 소비를 각각 주입한다.
 - 1차 늦은 웹훅과 2차 결과가 경합해도 Manager가 전체 최종 결과를 하나로 수렴시킨다.
-- HTTP·TCP 각 단계의 재시도 최대 3회, 원래 deadline, 운영 확인, Streams·Kafka·Redis 장애 복구를 별도 Pod 배치에서 다시 검증한다.
+- HTTP·TCP 각 단계의 재시도 최대 3회, 원래 deadline, 운영 확인, Kafka·Redis 장애 복구를 별도 Pod 배치에서 다시 검증한다.
