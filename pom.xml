@@ -23,6 +23,7 @@
         <module>common-core</module>
         <module>auth-module</module>
         <module>event-api</module>
+        <module>event-publisher-app</module>
         <module>common-security</module>
         <module>event-common</module>
         <module>delivery-ingress-worker</module>
