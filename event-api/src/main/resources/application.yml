@@ -6,7 +6,7 @@ spring:
   lifecycle:
     timeout-per-shutdown-phase: 30s
   application:
-    name: delivery-api
+    name: event-receive-api
 
   profiles:
     active: ${SPRING_PROFILES_ACTIVE:local}
@@ -62,6 +62,12 @@ spring:
 jwt:
   access-token-expiration: 3600
   secret: ${JWT_SECRET}
+
+delivery:
+  dynamodb:
+    enabled: true
+    endpoint: ${DYNAMODB_ENDPOINT:http://localhost:8000}
+    initialize-tables: ${DYNAMODB_INITIALIZE_TABLES:false}
 
 management:
   endpoint:
