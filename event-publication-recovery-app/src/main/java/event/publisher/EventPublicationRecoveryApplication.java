@@ -6,8 +6,8 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 
 @SpringBootApplication(scanBasePackages = "event.publisher")
 @EnableScheduling
-public class EventPublisherApplication {
+public class EventPublicationRecoveryApplication {
     public static void main(String[] args) {
-        SpringApplication.run(EventPublisherApplication.class, args);
+        SpringApplication.run(EventPublicationRecoveryApplication.class, args);
     }
 }

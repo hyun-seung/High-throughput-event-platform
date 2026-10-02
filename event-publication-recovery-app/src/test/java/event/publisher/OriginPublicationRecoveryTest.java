@@ -2,8 +2,10 @@ package event.publisher;
 
 import event.common.events.EventOriginCodec;
 import event.common.events.EventSubmission;
+import event.common.events.EventTopics;
 import event.common.events.EventType;
 import org.junit.jupiter.api.Test;
+import org.springframework.kafka.core.KafkaTemplate;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.services.dynamodb.model.GetItemRequest;
@@ -18,15 +20,17 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 class OriginPublicationRecoveryTest {
     private final DynamoDbClient db = mock(DynamoDbClient.class);
-    private final OriginStreamProcessor publisher = mock(OriginStreamProcessor.class);
+    @SuppressWarnings("unchecked")
+    private final KafkaTemplate<String, EventSubmission> kafka = mock(KafkaTemplate.class);
     private final JsonMapper mapper = JsonMapper.builder().build();
-    private final OriginPublicationRecovery recovery = new OriginPublicationRecovery(db, publisher, mapper,
+    private final OriginPublicationRecovery recovery = new OriginPublicationRecovery(db, kafka, mapper,
             Clock.fixed(Instant.parse("2026-10-02T00:02:00Z"), ZoneOffset.UTC), 10);
     private final EventSubmission event = new EventSubmission("00000000-0000-0000-0000-000000000001", 42,
             "client-1", "01012345678", EventType.GENERAL, Map.of("message", "hello"), false,
@@ -37,10 +41,12 @@ class OriginPublicationRecoveryTest {
         var origin = EventOriginCodec.encode(event, mapper);
         when(db.getItem(any(GetItemRequest.class))).thenReturn(GetItemResponse.builder().item(origin).build());
         when(db.query(any(QueryRequest.class))).thenReturn(QueryResponse.builder().build());
+        when(kafka.send(EventTopics.HTTP_REQUESTED, event.executionId(), event))
+                .thenReturn(CompletableFuture.completedFuture(null));
 
         recovery.recover(EventOriginCodec.key(event.executionId()));
 
-        verify(publisher).publishIfActive(event);
+        verify(kafka).send(EventTopics.HTTP_REQUESTED, event.executionId(), event);
         verify(db, never()).updateItem(any(UpdateItemRequest.class));
     }
 
@@ -53,7 +59,7 @@ class OriginPublicationRecoveryTest {
 
         recovery.recover(EventOriginCodec.key(event.executionId()));
 
-        verifyNoInteractions(publisher);
+        verifyNoInteractions(kafka);
         verify(db).updateItem(any(UpdateItemRequest.class));
     }
 
@@ -65,7 +71,7 @@ class OriginPublicationRecoveryTest {
 
         recovery.recover(EventOriginCodec.key(event.executionId()));
 
-        verifyNoInteractions(publisher);
+        verifyNoInteractions(kafka);
         verify(db, never()).query(any(QueryRequest.class));
     }
 }
