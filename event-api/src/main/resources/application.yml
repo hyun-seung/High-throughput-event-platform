@@ -69,6 +69,10 @@ delivery:
     endpoint: ${DYNAMODB_ENDPOINT:http://localhost:8000}
     initialize-tables: ${DYNAMODB_INITIALIZE_TABLES:false}
 
+events:
+  admission:
+    enabled: ${EVENT_ADMISSION_ENABLED:false}
+
 management:
   endpoint:
     health:
