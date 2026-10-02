@@ -1,6 +1,8 @@
 package event.api.events;
 
 import event.common.events.EventSubmission;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.services.dynamodb.model.ConditionalCheckFailedException;
@@ -10,21 +12,24 @@ import java.util.Optional;
 import java.util.UUID;
 
 @Service
+@Slf4j
 public class EventReceiveService {
-    private final EventUsageLimiter usage;
     private final EventDuplicateGuard duplicates;
     private final EventOriginStore origins;
+    private final EventRequestPublisher publisher;
     private final Clock clock;
 
-    public EventReceiveService(EventUsageLimiter usage, EventDuplicateGuard duplicates, EventOriginStore origins) {
-        this(usage, duplicates, origins, Clock.systemUTC());
+    @Autowired
+    public EventReceiveService(EventDuplicateGuard duplicates, EventOriginStore origins,
+                               EventRequestPublisher publisher) {
+        this(duplicates, origins, publisher, Clock.systemUTC());
     }
 
-    EventReceiveService(EventUsageLimiter usage, EventDuplicateGuard duplicates,
-                        EventOriginStore origins, Clock clock) {
-        this.usage = usage;
+    EventReceiveService(EventDuplicateGuard duplicates,
+                        EventOriginStore origins, EventRequestPublisher publisher, Clock clock) {
         this.duplicates = duplicates;
         this.origins = origins;
+        this.publisher = publisher;
         this.clock = clock;
     }
 
@@ -32,7 +37,6 @@ public class EventReceiveService {
         if (request == null || request.eventType() == null) {
             throw new EventAdmissionException(HttpStatus.BAD_REQUEST, "eventType is required");
         }
-        usage.charge(clientId, request.eventType());
         validate(request);
         String proposedExecutionId = UUID.randomUUID().toString();
         EventDuplicateGuard.Claim claim = duplicates.claim(clientId, request, proposedExecutionId);
@@ -52,7 +56,7 @@ public class EventReceiveService {
                     || !existing.recipientNumber().equals(request.recipientNumber())) {
                 throw new EventAdmissionException(HttpStatus.CONFLICT, "Duplicate key no longer matches ORIGIN");
             }
-            return new EventReceiveResponse(existing.executionId(), "RECEIVED");
+            return accepted(existing);
         }
 
         EventSubmission event = new EventSubmission(claim.executionId(), clientId, request.eventId(),
@@ -60,7 +64,6 @@ public class EventReceiveService {
                 request.allowFallback(), clock.instant());
         try {
             origins.save(event);
-            return new EventReceiveResponse(event.executionId(), "RECEIVED");
         } catch (ConditionalCheckFailedException definitiveFailure) {
             duplicates.release(claim);
             throw new EventAdmissionException(HttpStatus.CONFLICT, "Execution ID already exists", definitiveFailure);
@@ -70,7 +73,7 @@ public class EventReceiveService {
             try {
                 Optional<EventSubmission> stored = lookup(event.executionId());
                 if (stored.isPresent() && sameAdmission(stored.get(), event)) {
-                    return new EventReceiveResponse(event.executionId(), "RECEIVED");
+                    return accepted(stored.get());
                 }
             } catch (RuntimeException stillUncertain) {
                 uncertain.addSuppressed(stillUncertain);
@@ -78,6 +81,20 @@ public class EventReceiveService {
             throw new EventAdmissionException(HttpStatus.SERVICE_UNAVAILABLE,
                     "Origin admission was not confirmed", uncertain);
         }
+        return accepted(event);
+    }
+
+    private EventReceiveResponse accepted(EventSubmission event) {
+        // ORIGIN is the durable admission proof. Recovery republishes the same execution when
+        // Kafka send fails, its ack is lost, or this process exits before the send.
+        try {
+            publisher.publish(event).whenComplete((ignored, failure) -> {
+                if (failure != null) log.warn("Initial Kafka publication unconfirmed: executionId={}", event.executionId());
+            });
+        } catch (RuntimeException unconfirmed) {
+            log.warn("Initial Kafka publication could not start: executionId={}", event.executionId());
+        }
+        return new EventReceiveResponse(event.executionId(), "RECEIVED");
     }
 
     private Optional<EventSubmission> lookup(String executionId) { return origins.find(executionId); }

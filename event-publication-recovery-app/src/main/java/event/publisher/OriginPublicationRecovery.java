@@ -3,7 +3,9 @@ package event.publisher;
 import event.common.events.EventOriginCodec;
 import event.common.events.EventPublicationIndex;
 import event.common.events.EventSubmission;
+import event.common.events.EventTopics;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -23,28 +25,29 @@ import java.util.Map;
 import static event.common.dynamodb.DynamoDbTableNames.ORIGIN;
 import static event.common.dynamodb.DynamoDbTableNames.STEP;
 
-/** Replays origins whose Stream record was lost or aged out, using the original execution ID. */
+/** Replays origins left behind by an unconfirmed API Kafka send, using the original execution ID. */
 @Slf4j
 @Component
 public class OriginPublicationRecovery {
     private final DynamoDbClient db;
     private final JsonMapper mapper;
-    private final OriginStreamProcessor publisher;
+    private final KafkaTemplate<String, EventSubmission> kafka;
     private final Clock clock;
     private final int pageSize;
     private final Map<Integer, Map<String, AttributeValue>> cursors = new HashMap<>();
 
+    @Autowired
     public OriginPublicationRecovery(DynamoDbClient db, KafkaTemplate<String, EventSubmission> kafka,
                                      JsonMapper mapper,
                                      @Value("${event.publisher.recovery.page-size:100}") int pageSize) {
-        this(db, new OriginStreamProcessor(db, kafka, mapper), mapper, Clock.systemUTC(), pageSize);
+        this(db, kafka, mapper, Clock.systemUTC(), pageSize);
     }
 
-    OriginPublicationRecovery(DynamoDbClient db, OriginStreamProcessor publisher, JsonMapper mapper,
+    OriginPublicationRecovery(DynamoDbClient db, KafkaTemplate<String, EventSubmission> kafka, JsonMapper mapper,
                               Clock clock, int pageSize) {
         if (pageSize < 1 || pageSize > 1000) throw new IllegalArgumentException("Recovery page size must be 1..1000");
         this.db = db;
-        this.publisher = publisher;
+        this.kafka = kafka;
         this.mapper = mapper;
         this.clock = clock;
         this.pageSize = pageSize;
@@ -87,7 +90,15 @@ public class OriginPublicationRecovery {
             clearRecoveryIndex(executionId);
             return;
         }
-        publisher.publishIfActive(EventOriginCodec.decode(current, mapper));
+        var event = EventOriginCodec.decode(current, mapper);
+        try {
+            kafka.send(EventTopics.HTTP_REQUESTED, event.executionId(), event).get();
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("ORIGIN recovery publication interrupted", interrupted);
+        } catch (Exception unconfirmed) {
+            throw new IllegalStateException("ORIGIN recovery publication not confirmed", unconfirmed);
+        }
         log.info("ORIGIN publication recovery sent: executionId={}", executionId);
     }
 

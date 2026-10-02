@@ -16,8 +16,6 @@ import software.amazon.awssdk.services.dynamodb.model.KeySchemaElement;
 import software.amazon.awssdk.services.dynamodb.model.KeyType;
 import software.amazon.awssdk.services.dynamodb.model.ResourceNotFoundException;
 import software.amazon.awssdk.services.dynamodb.model.ScalarAttributeType;
-import software.amazon.awssdk.services.dynamodb.model.StreamSpecification;
-import software.amazon.awssdk.services.dynamodb.model.StreamViewType;
 
 import static event.common.dynamodb.DynamoDbAttributeNames.PK;
 import static event.common.dynamodb.DynamoDbAttributeNames.SK;
@@ -36,10 +34,7 @@ public class DynamoDbTableInitializer implements ApplicationRunner {
 
     private void createIfMissing(String table) {
         if (tableExists(table)) {
-            if (ORIGIN.equals(table)) {
-                enableOriginStreamIfMissing();
-                createPublicationIndexIfMissing();
-            }
+            if (ORIGIN.equals(table)) createPublicationIndexIfMissing();
             log.debug("DynamoDB table already exists. table={}", table);
             return;
         }
@@ -64,28 +59,12 @@ public class DynamoDbTableInitializer implements ApplicationRunner {
                 )
                 .globalSecondaryIndexes(indexes)
                 .billingMode(BillingMode.PAY_PER_REQUEST);
-        if (ORIGIN.equals(table)) requestBuilder.streamSpecification(StreamSpecification.builder()
-                .streamEnabled(true).streamViewType(StreamViewType.NEW_IMAGE).build());
         CreateTableRequest request = requestBuilder.build();
 
         dynamoDbClient.createTable(request);
         dynamoDbClient.waiter().waitUntilTableExists(builder -> builder.tableName(table));
 
         log.info("DynamoDB table created. table={}", table);
-    }
-
-    private void enableOriginStreamIfMissing() {
-        var description = dynamoDbClient.describeTable(builder -> builder.tableName(ORIGIN)).table();
-        if (description.streamSpecification() != null
-                && Boolean.TRUE.equals(description.streamSpecification().streamEnabled())) {
-            if (description.streamSpecification().streamViewType() != StreamViewType.NEW_IMAGE)
-                throw new IllegalStateException("ORIGIN stream must use NEW_IMAGE");
-            return;
-        }
-        dynamoDbClient.updateTable(builder -> builder.tableName(ORIGIN)
-                .streamSpecification(StreamSpecification.builder().streamEnabled(true)
-                        .streamViewType(StreamViewType.NEW_IMAGE).build()));
-        dynamoDbClient.waiter().waitUntilTableExists(builder -> builder.tableName(ORIGIN));
     }
 
     private void createPublicationIndexIfMissing() {
