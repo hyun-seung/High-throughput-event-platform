@@ -1,6 +1,6 @@
 # ADR-025 API 직접 Kafka 발행과 계약 조회 제거
 
-- Status: Accepted
+- Status: Partially superseded by [ADR-026](ADR-026-EVENT-RECEIVED와-통신사별-HTTP-발송-분리.md) — API의 발행 대상과 1차 발송 선점 방식
 - Date: 2026-10-02
 - 대체 범위: ADR-023의 DynamoDB Streams·별도 최초 발행 앱과 접수 시 PostgreSQL 계약별 TPS·월 Quota 조회. ORIGIN 선접수·실행별 중복 보호와 ADR-024의 발송 역할 분리는 유지한다.
 
