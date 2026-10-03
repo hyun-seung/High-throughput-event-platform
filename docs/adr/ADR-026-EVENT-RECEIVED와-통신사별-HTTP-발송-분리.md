@@ -23,4 +23,5 @@
 
 - 번호→통신사 Redis 키가 없거나 CDC 반영 전일 때 PostgreSQL을 직접 조회할지, 발송을 보류·재시도할지는 미정이다. 최초 발송에서 선택한 통신사는 해당 시도의 재처리 동안 바꾸지 않는다.
 - Redis 선점의 TTL·진행 중 중복 처리·발송 후 DynamoDB 기록 실패 복구, 업체별 동일 `attemptId` 중복 처리 계약은 sender 구현 전에 구체화해야 한다.
-- 현재 코드는 API·ORIGIN 복구 앱의 `event.received.v1` 발행과 통신사별 토픽·공통 전문 타입까지 반영했다. `PRE-SEND-MANAGER`, CDC·계약/번호 조회, 통신사별 소비 Pod, Redis 발송 중복 제어, 발송 후 DynamoDB 기록은 아직 구현하지 않았다. 기존 `event-http-sender`는 이전 `event.http.requested.v1`과 발송 전 STEP 선점 모델의 코드이며 신규 경로의 소비자가 아니다. 신규 `/api/v1/events`는 기본 비활성화다.
+- 현재 코드는 API·ORIGIN 복구 앱의 `event.received.v1` 발행, 통신사별 토픽·공통 전문 타입, 로컬 CDC 소비와 Redis 투영까지 반영했다. `PRE-SEND-MANAGER`의 계약·번호 조회, 통신사별 소비 Pod, Redis 발송 중복 제어, 발송 후 DynamoDB 기록은 아직 구현하지 않았다. 기존 `event-http-sender`는 이전 `event.http.requested.v1`과 발송 전 STEP 선점 모델의 코드이며 신규 경로의 소비자가 아니다. 신규 `/api/v1/events`는 기본 비활성화다.
+- PostgreSQL 논리 복제·Debezium·Redis 투영의 로컬 준비는 [계약·번호 CDC 캐시](../52-계약과-번호-통신사-CDC-캐시.md)에 기록한다. `PRE-SEND-MANAGER`의 실제 캐시 조회와 발송 판단은 이 준비와 별도 구현이다.
