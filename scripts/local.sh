@@ -23,7 +23,11 @@ case "${1:-help}" in
     for pair in blocked:false tpsEnabled:true requestsPerSecond:100 burstCapacity:100 quotaEnabled:true monthlyLimit:100000; do
       docker compose exec -T redis redis-cli -n "${REDIS_DATABASE:-0}" HSETNX "$policy_key" "${pair%%:*}" "${pair#*:}" > /dev/null
     done
-    echo "Local request policy initialized for user $user_id."
+    event_usage_key="event:usage:{client:$user_id}:policy"
+    for pair in tpsLimit:100 quotaGENERAL:100000 quotaNOTI:100000 quotaADV:100000 quotaALERT:100000; do
+      docker compose exec -T redis redis-cli -n "${REDIS_DATABASE:-0}" HSETNX "$event_usage_key" "${pair%%:*}" "${pair#*:}" > /dev/null
+    done
+    echo "Local request and event usage policies initialized for user $user_id."
     ;;
   cdc)
     # The local connector captures only the reference tables used by PRE-SEND-MANAGER.

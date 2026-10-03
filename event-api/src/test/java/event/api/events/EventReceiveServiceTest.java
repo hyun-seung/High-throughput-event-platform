@@ -19,10 +19,11 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class EventReceiveServiceTest {
+    private final EventUsageLimiter usage = mock(EventUsageLimiter.class);
     private final EventDuplicateGuard duplicates = mock(EventDuplicateGuard.class);
     private final EventOriginStore origins = mock(EventOriginStore.class);
     private final EventRequestPublisher publisher = mock(EventRequestPublisher.class);
-    private final EventReceiveService service = new EventReceiveService(duplicates, origins, publisher,
+    private final EventReceiveService service = new EventReceiveService(usage, duplicates, origins, publisher,
             Clock.fixed(Instant.parse("2026-10-02T00:00:00Z"), ZoneOffset.UTC));
     private final EventReceiveRequest request = new EventReceiveRequest("customer-1", "01012345678",
             EventType.GENERAL, Map.of("message", "hello"), true);
@@ -42,7 +43,8 @@ class EventReceiveServiceTest {
         EventReceiveResponse response = service.receive(42L, request);
 
         assertEquals(id, response.executionId());
-        var order = inOrder(duplicates, origins, publisher);
+        var order = inOrder(usage, duplicates, origins, publisher);
+        order.verify(usage).charge(42L, EventType.GENERAL);
         order.verify(duplicates).claim(eq(42L), eq(request), anyString());
         order.verify(origins).find(id);
         order.verify(publisher).publish(any(EventSubmission.class));
@@ -75,14 +77,27 @@ class EventReceiveServiceTest {
     }
 
     @Test
-    void invalidRecipientNeverClaimsDuplicateOrSavesOrigin() {
+    void invalidRecipientIsCountedButNeverClaimsDuplicateOrSavesOrigin() {
         var invalid = new EventReceiveRequest("customer-1", "+821012345678", EventType.GENERAL,
                 request.payload(), true);
         EventAdmissionException failure = assertThrows(EventAdmissionException.class,
                 () -> service.receive(42L, invalid));
         assertEquals(HttpStatus.BAD_REQUEST, failure.status());
+        verify(usage).charge(42L, EventType.GENERAL);
         verifyNoInteractions(duplicates, origins);
         verifyNoInteractions(publisher);
+    }
+
+    @Test
+    void usageLimitRejectsBeforeDuplicateClaimOrOriginSave() {
+        doThrow(new EventAdmissionException(HttpStatus.TOO_MANY_REQUESTS, "quota exceeded"))
+                .when(usage).charge(42L, EventType.GENERAL);
+
+        EventAdmissionException failure = assertThrows(EventAdmissionException.class,
+                () -> service.receive(42L, request));
+
+        assertEquals(HttpStatus.TOO_MANY_REQUESTS, failure.status());
+        verifyNoInteractions(duplicates, origins, publisher);
     }
 
     @Test
