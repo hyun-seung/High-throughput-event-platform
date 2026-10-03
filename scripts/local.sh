@@ -25,6 +25,18 @@ case "${1:-help}" in
     done
     echo "Local request policy initialized for user $user_id."
     ;;
+  cdc)
+    # The local connector captures only the reference tables used by PRE-SEND-MANAGER.
+    docker compose up -d --wait --wait-timeout 180 postgres kafka redis
+    docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U delivery -d delivery < scripts/cdc/init.sql
+    docker compose --profile cdc up -d --wait --wait-timeout 180 debezium-connect
+    connect_url="http://127.0.0.1:${DEBEZIUM_HOST_PORT:-18083}"
+    curl --fail --silent --show-error --max-time 5 --retry 20 --retry-delay 2 --retry-connrefused "$connect_url/connectors" > /dev/null
+    curl --fail --silent --show-error --request PUT --header 'Content-Type: application/json' \
+      --data-binary @scripts/cdc/connector-config.json \
+      "$connect_url/connectors/event-reference-postgres/config" > /dev/null
+    echo "Local reference CDC connector registered."
+    ;;
   smoke)
     shift
     exec bash scripts/검증-실행.sh 로컬-점검 "$@"
@@ -35,8 +47,8 @@ case "${1:-help}" in
   run)
     module="${2:-}"
     case "$module" in
-      event-api|event-publication-recovery-app|event-http-sender|delivery-ingress-worker|dispatch-worker|external-api-simulator|receipt-api|delivery-result-worker) ;;
-      *) echo 'Usage: bash scripts/local.sh run <event-api|event-publication-recovery-app|event-http-sender|delivery-ingress-worker|dispatch-worker|external-api-simulator|receipt-api|delivery-result-worker>' >&2; exit 2 ;;
+      event-api|event-publication-recovery-app|event-reference-cache|event-http-sender|delivery-ingress-worker|dispatch-worker|external-api-simulator|receipt-api|delivery-result-worker) ;;
+      *) echo 'Usage: bash scripts/local.sh run <event-api|event-publication-recovery-app|event-reference-cache|event-http-sender|delivery-ingress-worker|dispatch-worker|external-api-simulator|receipt-api|delivery-result-worker>' >&2; exit 2 ;;
     esac
     export SPRING_PROFILES_ACTIVE=dev
     export KAFKA_BOOTSTRAP_SERVERS="localhost:${KAFKA_HOST_PORT:-9092}"
@@ -54,6 +66,7 @@ case "${1:-help}" in
       receipt-api) export SERVER_PORT="${RECEIPT_API_PORT:-8094}" ;;
       delivery-result-worker) export SERVER_PORT="${RESULT_HTTP_PORT:-8095}" ;;
       event-publication-recovery-app) export SERVER_PORT="${PUBLISHER_HTTP_PORT:-8096}" ;;
+      event-reference-cache) export SERVER_PORT="${EVENT_REFERENCE_CACHE_PORT:-8098}" ;;
       event-http-sender) export SERVER_PORT="${EVENT_HTTP_SENDER_PORT:-8097}" ;;
     esac
     if [[ "$module" == event-api ]]; then
@@ -74,6 +87,6 @@ case "${1:-help}" in
     docker compose down
     ;;
   *)
-    echo 'Usage: bash scripts/local.sh <infra|init-db|init-policy|build|run MODULE|smoke|status|down>'
+    echo 'Usage: bash scripts/local.sh <infra|init-db|init-policy|cdc|build|run MODULE|smoke|status|down>'
     ;;
 esac

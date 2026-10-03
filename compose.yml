@@ -47,6 +47,7 @@ services:
 
   postgres:
     image: postgres:17-alpine
+    command: ["postgres", "-c", "wal_level=logical", "-c", "max_replication_slots=8", "-c", "max_wal_senders=8"]
     ports:
       - "127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432"
     environment:
@@ -61,6 +62,26 @@ services:
       timeout: 3s
       retries: 10
       start_period: 10s
+
+  debezium-connect:
+    profiles: ["cdc"]
+    image: quay.io/debezium/connect:3.7
+    ports:
+      - "127.0.0.1:${DEBEZIUM_HOST_PORT:-18083}:8083"
+    environment:
+      BOOTSTRAP_SERVERS: kafka:29092
+      GROUP_ID: event-reference-connect
+      CONFIG_STORAGE_TOPIC: event-reference-connect-configs
+      OFFSET_STORAGE_TOPIC: event-reference-connect-offsets
+      STATUS_STORAGE_TOPIC: event-reference-connect-status
+      CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: 1
+    depends_on:
+      kafka:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
 
   dynamodb-data-init:
     image: amazon/dynamodb-local:2.6.1
