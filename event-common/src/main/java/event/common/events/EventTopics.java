@@ -6,6 +6,8 @@ public final class EventTopics {
     public static final String SKT_HTTP_SEND = "event.skt.http.send.v1";
     public static final String KT_HTTP_SEND = "event.kt.http.send.v1";
     public static final String LGU_HTTP_SEND = "event.lgu.http.send.v1";
+    /** Unified immediate-response and webhook result topic for the new send path. */
+    public static final String MSG_RESULT = "MSG_RESULT";
 
     public static String httpSend(HttpCarrier carrier) {
         return switch (carrier) {
