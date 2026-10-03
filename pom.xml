@@ -24,6 +24,7 @@
         <module>auth-module</module>
         <module>event-api</module>
         <module>event-publication-recovery-app</module>
+        <module>event-reference-cache</module>
         <module>event-http-sender</module>
         <module>common-security</module>
         <module>event-common</module>
