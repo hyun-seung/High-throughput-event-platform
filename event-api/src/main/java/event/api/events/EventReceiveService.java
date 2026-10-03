@@ -14,19 +14,21 @@ import java.util.UUID;
 @Service
 @Slf4j
 public class EventReceiveService {
+    private final EventUsageLimiter usage;
     private final EventDuplicateGuard duplicates;
     private final EventOriginStore origins;
     private final EventRequestPublisher publisher;
     private final Clock clock;
 
     @Autowired
-    public EventReceiveService(EventDuplicateGuard duplicates, EventOriginStore origins,
+    public EventReceiveService(EventUsageLimiter usage, EventDuplicateGuard duplicates, EventOriginStore origins,
                                EventRequestPublisher publisher) {
-        this(duplicates, origins, publisher, Clock.systemUTC());
+        this(usage, duplicates, origins, publisher, Clock.systemUTC());
     }
 
-    EventReceiveService(EventDuplicateGuard duplicates,
+    EventReceiveService(EventUsageLimiter usage, EventDuplicateGuard duplicates,
                         EventOriginStore origins, EventRequestPublisher publisher, Clock clock) {
+        this.usage = usage;
         this.duplicates = duplicates;
         this.origins = origins;
         this.publisher = publisher;
@@ -37,6 +39,7 @@ public class EventReceiveService {
         if (request == null || request.eventType() == null) {
             throw new EventAdmissionException(HttpStatus.BAD_REQUEST, "eventType is required");
         }
+        usage.charge(clientId, request.eventType());
         validate(request);
         String proposedExecutionId = UUID.randomUUID().toString();
         EventDuplicateGuard.Claim claim = duplicates.claim(clientId, request, proposedExecutionId);
