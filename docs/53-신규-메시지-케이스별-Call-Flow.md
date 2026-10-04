@@ -19,7 +19,7 @@
 
 현재 확정한 새 경로의 토픽은 `event.received.v1`(API → PRE-SEND-MANAGER), `event.skt.http.send.v1`·`event.kt.http.send.v1`·`event.lgu.http.send.v1`(Manager → 통신사별 sender), `MSG_RESULT`(1차 즉시 응답·웹훅 → EVENT-RESULT-MANAGER)다. 최종 결과 토픽은 기존 목표의 `event.finalized.v1`을 사용한다. **2차 발송은 아직 기존 목표명** `event.tcp.requested.v1`/`event-tcp-sender`로 표기한다. 제안된 `event.tcp.send.v1` 이름은 확정되지 않았다. 1차 재시도 토픽·명령 방식과 2차 결과를 `MSG_RESULT`에 합칠지도 미정이다.
 
-메시지 처리용 Kafka 레코드의 key는 `executionId`를 사용한다. CDC 참조 데이터 토픽은 별개다. `attemptId`는 1차 HTTP의 통신사별 시도를 식별하고, 동일 통신사 재시도 회차(`invocation`)·버전은 별도로 구분한다. 다른 토픽 사이의 도착 순서는 보장되지 않으므로 최종 판단은 DynamoDB의 조건부 상태 전이로 수렴시킨다.
+메시지 처리용 Kafka 레코드의 key는 `executionId`를 사용한다. 고객 `messageId`는 현재 API에서 `eventId`라는 이름으로 받는다. CDC 참조 데이터 토픽은 별개다. `attemptId`는 1차 HTTP의 통신사별 시도를 식별하고, 동일 통신사 재시도 회차(`invocation`)·버전은 별도로 구분한다. Sender에 전달할 개별 호출 명령의 ID는 `sendRequestId`로 부른다. 같은 명령의 재전달에는 고정하고 새 재시도 회차·다음 통신사에는 새로 발급한다. 이 필드는 아직 신규 명령 전문에 구현되지 않았다. 다른 토픽 사이의 도착 순서는 보장되지 않으므로 최종 판단은 DynamoDB의 조건부 상태 전이로 수렴시킨다.
 
 ## 1. 1차 정상 성공
 
@@ -160,7 +160,7 @@ flowchart LR
     R3 -->|통신사 불일치| U[다음 정책 미정]
 ```
 
-실행 `executionId`와 고객 메시지는 그대로 두고 통신사 시도마다 별도 `attemptId`를 사용한다. 같은 시도의 Kafka 재전달은 같은 `attemptId`로 중복 제어하지만, 다음 통신사로 이동할 때는 앞 통신사 시도의 중복키를 재사용하지 않는다. 먼저 온 즉시 응답과 뒤따른 웹훅이 모두 불일치여도 이동은 한 번만 저장·발행한다. 이전 통신사의 늦은 결과가 새 통신사 시도나 최종 결과를 덮지 않도록 회차·통신사·상태를 조건부로 확인한다.
+실행 `executionId`와 고객 `messageId`는 그대로 두고 통신사 시도마다 별도 `attemptId`를 사용한다. 같은 발송 명령의 Kafka 재전달은 같은 `attemptId`·`sendRequestId`로 중복 제어하지만, 다음 통신사로 이동할 때는 새 ID를 부여한다. 먼저 온 즉시 응답과 뒤따른 웹훅이 모두 불일치여도 이동은 한 번만 저장·발행한다. 이전 통신사의 늦은 결과가 새 통신사 시도나 최종 결과를 덮지 않도록 회차·통신사·상태를 조건부로 확인한다.
 
 업체별 실제 불일치 코드를 공통 결과로 정규화하는 계약, 다음 통신사 명령을 누가 어떤 원본에서 생성할지, 매핑이 *있는* 번호에서 불일치가 왔을 때의 탐색 순서, LGU+도 불일치일 때의 최종 정책은 아직 결정되지 않았다. 발견한 통신사를 PostgreSQL 원본에 반영할지도 별도 결정이다.
 
@@ -252,7 +252,7 @@ sequenceDiagram
 
 웹훅이 즉시 응답의 Kafka 결과보다 먼저 도착하거나 중복·늦게 와도 이미 확정한 판단을 덮지 않는다. sender의 늦은 `ACCEPTED` 기록도 웹훅 실패·재시도 판단을 되돌려서는 안 된다. 재시도 회차를 웹훅과 함께 돌려받아 이전 회차의 늦은 실패를 구분해야 한다.
 
-**재시도 멱등키는 추가 결정이 필요하다.** 현재 이전 `event-http-sender`는 HTTP `Idempotency-Key`에 고정 `attemptId`를 쓰며 시뮬레이터는 같은 키의 두 번째 접수 성공을 중복으로 처리한다. 이를 신규 경로에 그대로 적용하면 실패 웹훅 뒤 `invocation=2`를 보내도 새 발송 효과가 없을 수 있다. 논리적 `attemptId`는 유지하되 호출 회차별 업체 멱등키를 구분하고, *같은 회차의 Kafka 재전달*은 같은 키로 재사용하는 방안을 업체 계약과 함께 확정해야 한다.
+**재시도 멱등키는 추가 결정이 필요하다.** 현재 이전 `event-http-sender`는 HTTP `Idempotency-Key`에 고정 `attemptId`를 쓰며 시뮬레이터는 같은 키의 두 번째 접수 성공을 중복으로 처리한다. 이를 신규 경로에 그대로 적용하면 실패 웹훅 뒤 `invocation=2`를 보내도 새 발송 효과가 없을 수 있다. 논리적 `attemptId`는 유지하되 새 회차에 새 `sendRequestId`를 부여하고, *같은 회차의 Kafka 재전달*은 같은 ID를 재사용한다. 이 ID를 업체 멱등키·웹훅 상관 ID로 사용할 수 있는지는 업체 계약과 함께 확정해야 한다.
 
 ## 6. 웹훅 미수신과 1차 만료
 
@@ -353,8 +353,8 @@ flowchart TD
 
 ## 구현 전에 확정할 인터페이스
 
-- `MSG_RESULT`의 통합 전문: 즉시 응답과 웹훅의 구별, 통신사·단계·`attemptId`·`invocation`·업체 코드·발생 시각·중복 식별자.
-- 업체 재시도용 회차별 멱등키와 웹훅 회차 회신 계약. 기존 `Idempotency-Key: attemptId`를 그대로 쓰면 실패 웹훅 뒤의 새 발송이 업체 중복 처리에 막힐 수 있다.
+- `MSG_RESULT`의 통합 전문: 즉시 응답과 웹훅의 구별, 통신사·단계·`attemptId`·`invocation`·`sendRequestId`·업체 코드·발생 시각·중복 식별자.
+- Sender 명령에 회차별 `sendRequestId`를 추가하고 업체 멱등키·웹훅 회신 계약을 확정. 기존 `Idempotency-Key: attemptId`를 그대로 쓰면 실패 웹훅 뒤의 새 발송이 업체 중복 처리에 막힐 수 있다.
 - 신규 1차 deadline의 Redis 후보 등록 시점과 재시도 명령의 통신사별 라우팅·지연 예약 방식. 기존 단일 sender용 `event.http.retry.v1`을 그대로 신규 경로로 읽지 않는다.
 - 매핑이 있는 번호의 통신사 불일치 시 탐색 순서, 세 통신사가 모두 불일치일 때의 처리, 확인된 통신사의 PostgreSQL 반영 여부. 매핑이 없을 때는 SKT → KT → LGU+ 순서로 1차 HTTP 발송한다.
 - 통신사 불일치의 업체별 코드 정규화, 중복·늦은 즉시 결과와 웹훅에 대한 단일 이동 판단, 다음 통신사 명령의 저장 원본·발행 주체.
