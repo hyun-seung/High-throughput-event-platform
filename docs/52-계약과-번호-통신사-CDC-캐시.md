@@ -34,7 +34,7 @@ VALUES (<client_id>, true, 100, 100000, 100000, 100000, 100000)
 ON CONFLICT (client_id) DO UPDATE SET enabled = EXCLUDED.enabled, updated_at = now();
 ```
 
-현재 `PRE-SEND-MANAGER`는 아직 구현 전이다. 계약 캐시 누락 시 PostgreSQL 조회·보충은 합의된 후속 경로다. 번호→통신사 캐시 누락 시 PostgreSQL 조회 여부 또는 발송 보류 정책은 아직 결정되지 않았다. CDC가 늦게 반영된 *기존* Redis 값은 단순 캐시 미스로 감지되지 않으므로, 실제 발송 전문에는 선택한 통신사와 시도 ID를 고정해 재처리 중 경로가 바뀌지 않게 해야 한다.
+현재 `PRE-SEND-MANAGER`는 아직 구현 전이다. 계약 캐시 누락 시 PostgreSQL 조회·보충은 합의된 후속 경로다. 번호→통신사 캐시가 누락되면 **인라인 PostgreSQL 조회 대신 SKT를 첫 1차 HTTP 통신사로 선택**한다. 이 경로에서 업체가 즉시 응답이나 웹훅으로 "우리 통신사 아님"을 알리면 KT, 이어 LGU+로 이동한다. CDC가 늦게 반영된 *기존* Redis 값은 단순 캐시 미스로 감지되지 않는다. 이미 발행한 시도의 통신사와 시도 ID는 재처리 중 바꾸지 않고, 다음 통신사로 이동할 때 새 시도를 만든다. 찾은 통신사 정보를 PostgreSQL 원본에 반영할지와 기존 매핑의 불일치 처리 범위는 아직 정하지 않았다.
 
 Redis 데이터 전체가 소실되어도 이미 커밋한 Kafka 소비 오프셋은 자동으로 되감기지 않는다. 이때는 캐시 앱을 멈추고 이 앱이 소유한 두 키 공간을 비운 뒤, `event-reference-cache` 소비 그룹을 CDC 토픽의 earliest로 재설정해 다시 투영해야 한다. 운영용 자동 재구축·정합성 대조는 아직 구현 전이다.
 
