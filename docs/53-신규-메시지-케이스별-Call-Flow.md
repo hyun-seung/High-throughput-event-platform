@@ -1,6 +1,6 @@
 # 메시지 접수부터 최종 결과까지: 케이스별 Call Flow
 
-기준: 2026-10-04. **신규 `/api/v1/events` 경로의 목표 설계**를 한곳에서 읽기 위한 문서다. 정상 흐름과 실패·복구 분기를 함께 그린다. 현재 구현은 API 접수·ORIGIN 저장·`event.received.v1` 발행, 공통 전문·통신사별 토픽, CDC 캐시 준비까지다. `PRE-SEND-MANAGER`, 통신사별 sender, `MSG_RESULT` 생산·소비, 신규 결과 판단 경로는 아직 연결되지 않았다. 이관 전 `delivery.*` 및 `event.http.requested.v1` 구현·검증을 신규 경로의 완료로 읽지 않는다. 구현 상태는 [01 현재 상태](01-현재-구현-상태와-남은-작업.md), 결정 근거는 [ADR-026](adr/ADR-026-EVENT-RECEIVED와-통신사별-HTTP-발송-분리.md)·[ADR-027](adr/ADR-027-접수-API-Redis-TPS와-유형별-월-Quota.md)을 따른다.
+기준: 2026-10-04. **신규 `/api/v1/messages` 경로의 목표 설계**를 한곳에서 읽기 위한 문서다. 정상 흐름과 실패·복구 분기를 함께 그린다. 현재 구현은 API 접수·ORIGIN 저장·`message.received.v1` 발행, 공통 전문·통신사별 토픽, CDC 캐시 준비까지다. `PRE-SEND-MANAGER`, 통신사별 sender, `MSG_RESULT` 생산·소비, 신규 결과 판단 경로는 아직 연결되지 않았다. 이관 전 `delivery.*` 및 `message.http.requested.v1` 구현·검증을 신규 경로의 완료로 읽지 않는다. 구현 상태는 [01 현재 상태](01-현재-구현-상태와-남은-작업.md), 결정 근거는 [ADR-026](adr/ADR-026-MESSAGE-RECEIVED와-통신사별-HTTP-발송-분리.md)·[ADR-027](adr/ADR-027-접수-API-Redis-TPS와-유형별-월-Quota.md)을 따른다.
 
 ## 읽는 순서와 경계
 
@@ -17,9 +17,9 @@
 | 고객 통지 실패·정리 | [8](#8-최종-결과-이후-고객-통지와-정리) | SQL 기준 독립 재개 |
 | 중간 종료·저장소 장애 | [9](#9-중간-종료와-저장소-장애) | 저장된 원본·판단 기준 재개 |
 
-현재 확정한 새 경로의 토픽은 `event.received.v1`(API → PRE-SEND-MANAGER), `event.skt.http.send.v1`·`event.kt.http.send.v1`·`event.lgu.http.send.v1`(Manager → 통신사별 sender), `MSG_RESULT`(1차 즉시 응답·웹훅 → EVENT-RESULT-MANAGER)다. 최종 결과 토픽은 기존 목표의 `event.finalized.v1`을 사용한다. **2차 발송은 아직 기존 목표명** `event.tcp.requested.v1`/`event-tcp-sender`로 표기한다. 제안된 `event.tcp.send.v1` 이름은 확정되지 않았다. 1차 재시도 토픽·명령 방식과 2차 결과를 `MSG_RESULT`에 합칠지도 미정이다.
+현재 확정한 새 경로의 토픽은 `message.received.v1`(API → PRE-SEND-MANAGER), `message.skt.http.send.v1`·`message.kt.http.send.v1`·`message.lgu.http.send.v1`(Manager → 통신사별 sender), `MSG_RESULT`(1차 즉시 응답·웹훅 → MESSAGE-RESULT-MANAGER)다. 최종 결과 토픽은 기존 목표의 `message.finalized.v1`을 사용한다. **2차 발송은 아직 기존 목표명** `message.tcp.requested.v1`/`messaging-tcp-sender`로 표기한다. 제안된 `message.tcp.send.v1` 이름은 확정되지 않았다. 1차 재시도 토픽·명령 방식과 2차 결과를 `MSG_RESULT`에 합칠지도 미정이다.
 
-메시지 처리용 Kafka 레코드의 key는 `executionId`를 사용한다. 고객 `messageId`는 현재 API에서 `eventId`라는 이름으로 받는다. CDC 참조 데이터 토픽은 별개다. `attemptId`는 1차 HTTP의 통신사별 시도를 식별하고, 동일 통신사 재시도 회차(`invocation`)·버전은 별도로 구분한다. Sender에 전달할 개별 호출 명령의 ID는 `sendRequestId`로 부른다. 같은 명령의 재전달에는 고정하고 새 재시도 회차·다음 통신사에는 새로 발급한다. 이 필드는 아직 신규 명령 전문에 구현되지 않았다. 다른 토픽 사이의 도착 순서는 보장되지 않으므로 최종 판단은 DynamoDB의 조건부 상태 전이로 수렴시킨다.
+메시지 처리용 Kafka 레코드의 key는 `executionId`를 사용한다. 고객 ID는 API의 `messageId`다. CDC 참조 데이터 토픽은 별개다. `attemptId`는 1차 HTTP의 통신사별 시도를 식별하고, 동일 통신사 재시도 회차(`invocation`)·버전은 별도로 구분한다. Sender에 전달할 개별 호출 명령의 ID는 `sendRequestId`다. 같은 명령의 재전달에는 고정하고 새 재시도 회차·다음 통신사에는 새로 발급한다. 공통 `HttpSendCommand`에 필드를 추가했으며 실제 Manager 생산·Sender 소비는 아직 구현 전이다. 다른 토픽 사이의 도착 순서는 보장되지 않으므로 최종 판단은 DynamoDB의 조건부 상태 전이로 수렴시킨다.
 
 ## 1. 1차 정상 성공
 
@@ -29,26 +29,26 @@
 sequenceDiagram
     autonumber
     actor C as 고객
-    participant A as EVENT-RECEIVE-API
+    participant A as MESSAGE-RECEIVE-API
     participant R as Redis
     participant D as DynamoDB
     participant K as Kafka
     participant M as PRE-SEND-MANAGER
     participant S as 통신사별 HTTP-SENDER
     participant P as 통신사 업체
-    C->>A: POST /api/v1/events + JWT
+    C->>A: POST /api/v1/messages + JWT
     A->>A: JWT에서 clientId 확인
     A->>R: 10초 TPS·유형별 월 Quota 원자 증가·판정
     A->>A: 본문 상세 검증
     A->>R: 고객 중복키 확인·선점
     A->>D: ORIGIN RECEIVED 조건부 저장
     D-->>A: 저장 확인
-    A->>K: event.received.v1 발행 시작
+    A->>K: message.received.v1 발행 시작
     A-->>C: 202 + executionId
     K->>M: 불변 접수 원문
     M->>R: 계약·번호별 통신사 조회
     M->>M: 발송 조건 확인, 전문·attemptId 고정
-    M->>K: 해당 통신사의 event.<carrier>.http.send.v1
+    M->>K: 해당 통신사의 message.<carrier>.http.send.v1
     K->>S: HttpSendCommand
     S->>R: attemptId 발송 중복 확인
     S->>P: HTTP 발송 + attemptId
@@ -66,7 +66,7 @@ sequenceDiagram
     participant P as 통신사 업체
     participant W as receipt-api
     participant K as Kafka
-    participant M as EVENT-RESULT-MANAGER
+    participant M as MESSAGE-RESULT-MANAGER
     participant D as DynamoDB
     participant R as Redis
     participant H as delivery-result-worker
@@ -80,7 +80,7 @@ sequenceDiagram
     W-->>P: 웹훅 접수 응답
     K->>M: 성공 웹훅
     M->>D: 실행·단계·회차 확인 후 최종 성공 조건부 저장
-    M->>K: event.finalized.v1 발행
+    M->>K: message.finalized.v1 발행
     M->>R: deadline 후보 제거
     K->>H: 최종 결과
     H->>Q: 이력·통지 예약·정리 예약 원자 commit
@@ -99,11 +99,11 @@ sequenceDiagram
 
 ## 2. 접수 거절·중복·최초 발행 불명확
 
-정상 접수 순서는 `JWT → Redis TPS·유형별 월 Quota 증가·판정 → 본문 상세 검증 → 고객 중복 확인 → ORIGIN 저장 → Kafka send 시작 → 202`다. API는 계약 PostgreSQL을 조회하지 않는다. `eventType`을 확인할 수 있는 잘못된 본문과 고객 중복 요청도 사용량에 포함된다.
+정상 접수 순서는 `JWT → Redis TPS·분류별 월 Quota 증가·판정 → 본문 상세 검증 → 고객 중복 확인 → ORIGIN 저장 → Kafka send 시작 → 202`다. API는 계약 PostgreSQL을 조회하지 않는다. `messageCategory`를 확인할 수 있는 잘못된 본문과 고객 중복 요청도 사용량에 포함된다.
 
 | 발생 지점 | 흐름 | 고객 응답·후속 |
 |---|---|---|
-| JWT 거절 또는 `eventType` 누락 | 사용량 증가 전 중단 | 접수하지 않음 |
+| JWT 거절 또는 `messageCategory` 누락 | 사용량 증가 전 중단 | 접수하지 않음 |
 | TPS·월 Quota 초과 | Redis에서 증가와 판정이 한 번에 이뤄짐 | 429, ORIGIN·Kafka 없음. 초과분도 사용량에 포함 |
 | 정책 키 누락·형식 오류 | 접수 제어 정책을 판정할 수 없음 | 503, ORIGIN·Kafka 없음 |
 | Redis 사용량 검사 연결 실패·타임아웃 | 제한 검사를 우회하는 가용성 정책 | 이후 검증·접수 계속. 이 기간 사용량 누락 가능 |
@@ -114,11 +114,11 @@ sequenceDiagram
 
 ```mermaid
 flowchart LR
-    A[ORIGIN RECEIVED 저장 확인] --> P[API가 event.received.v1 발행 시도]
+    A[ORIGIN RECEIVED 저장 확인] --> P[API가 message.received.v1 발행 시도]
     P --> U{발행 확인 여부}
     U -->|확인| M[PRE-SEND-MANAGER 소비]
     U -->|실패·불명확| G[ORIGIN 발행 복구 조회]
-    G --> K[같은 executionId로 event.received.v1 재발행]
+    G --> K[같은 executionId로 message.received.v1 재발행]
     K --> M
 ```
 
@@ -126,7 +126,7 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    E[event.received.v1 소비] --> C[Redis 계약 조회]
+    E[message.received.v1 소비] --> C[Redis 계약 조회]
     C -->|누락| P[PostgreSQL 계약 조회]
     C -->|있음| V[계약·발송 조건 확인]
     P --> V
@@ -142,17 +142,17 @@ flowchart TD
 
 ### 3.1 번호 매핑 누락과 통신사 이동
 
-SKT의 즉시 응답 또는 나중의 웹훅이 "우리 통신사 아님"이면 `MSG_RESULT`를 받은 `EVENT-RESULT-MANAGER`가 해당 통신사 시도를 조건부로 닫고 **같은 실행의 새로운 KT 시도**를 인계한다. KT에서도 같은 결과면 LGU+로 이동한다. 이 세 통신사는 모두 **1차 HTTP 단계 안의 경로**이며, 2차 TCP 발송이나 동일 통신사의 재시도 회차가 아니다.
+SKT의 즉시 응답 또는 나중의 웹훅이 "우리 통신사 아님"이면 `MSG_RESULT`를 받은 `MESSAGE-RESULT-MANAGER`가 해당 통신사 시도를 조건부로 닫고 **같은 실행의 새로운 KT 시도**를 인계한다. KT에서도 같은 결과면 LGU+로 이동한다. 이 세 통신사는 모두 **1차 HTTP 단계 안의 경로**이며, 2차 TCP 발송이나 동일 통신사의 재시도 회차가 아니다.
 
 ```mermaid
 flowchart LR
-    N[번호→통신사 Redis 매핑 없음] --> S[event.skt.http.send.v1]
+    N[번호→통신사 Redis 매핑 없음] --> S[message.skt.http.send.v1]
     S --> R1{SKT 결과}
     R1 -->|통신사 불일치: 즉시 응답·웹훅| M1[Manager가 SKT 시도 종료·KT 시도 고정]
-    M1 --> K[event.kt.http.send.v1]
+    M1 --> K[message.kt.http.send.v1]
     K --> R2{KT 결과}
     R2 -->|통신사 불일치: 즉시 응답·웹훅| M2[Manager가 KT 시도 종료·LGU+ 시도 고정]
-    M2 --> L[event.lgu.http.send.v1]
+    M2 --> L[message.lgu.http.send.v1]
     L --> R3{LGU+ 결과}
     R1 -->|접수 또는 다른 결과| J[해당 통신사의 일반 결과 판단]
     R2 -->|접수 또는 다른 결과| J
@@ -176,7 +176,7 @@ sequenceDiagram
     participant D as DynamoDB
     participant K as MSG_RESULT
     participant T as 후속 Kafka Topic
-    participant M as EVENT-RESULT-MANAGER
+    participant M as MESSAGE-RESULT-MANAGER
     S->>P: HTTP 발송
     P-->>S: 즉시 실패 코드 또는 무응답
     S->>D: 호출 시각·응답·관찰 결과 기록
@@ -192,10 +192,10 @@ sequenceDiagram
         Note over M,S: 신규 재시도 토픽·스케줄 방식 미정
     else 대체 대상 사유이고 fallbackAllowed
         M->>D: 1차 판단·2차 바인딩 고정
-        M->>T: event.tcp.requested.v1 발행
+        M->>T: message.tcp.requested.v1 발행
     else 확정 가능한 영구 실패
         M->>D: 최종 실패 저장
-        M->>T: event.finalized.v1 발행
+        M->>T: message.finalized.v1 발행
     else 결과가 불명확한 상태
         M->>D: 운영 확인·원래 기한 유지
     end
@@ -214,7 +214,7 @@ sequenceDiagram
     participant P as 통신사 업체
     participant W as receipt-api
     participant K as MSG_RESULT
-    participant M as EVENT-RESULT-MANAGER
+    participant M as MESSAGE-RESULT-MANAGER
     participant D as DynamoDB
     participant T as 후속 Kafka Topic
     S->>P: HTTP 발송(attemptId·invocation=1)
@@ -237,10 +237,10 @@ sequenceDiagram
         M->>T: 같은 통신사 재발송 명령(신규 토픽 미정)
     else 유효한 대체 대상 코드·fallbackAllowed
         M->>D: 1차 종료·2차 바인딩 고정
-        M->>T: event.tcp.requested.v1 발행
+        M->>T: message.tcp.requested.v1 발행
     else 유효한 영구 실패
         M->>D: 최종 실패 고정
-        M->>T: event.finalized.v1 발행
+        M->>T: message.finalized.v1 발행
     else 유효하지만 코드 미분류
         M->>D: REVIEW_REQUIRED·운영 확인 저장
     else 중복·지난 회차·이미 최종화
@@ -252,7 +252,7 @@ sequenceDiagram
 
 웹훅이 즉시 응답의 Kafka 결과보다 먼저 도착하거나 중복·늦게 와도 이미 확정한 판단을 덮지 않는다. sender의 늦은 `ACCEPTED` 기록도 웹훅 실패·재시도 판단을 되돌려서는 안 된다. 재시도 회차를 웹훅과 함께 돌려받아 이전 회차의 늦은 실패를 구분해야 한다.
 
-**재시도 멱등키는 추가 결정이 필요하다.** 현재 이전 `event-http-sender`는 HTTP `Idempotency-Key`에 고정 `attemptId`를 쓰며 시뮬레이터는 같은 키의 두 번째 접수 성공을 중복으로 처리한다. 이를 신규 경로에 그대로 적용하면 실패 웹훅 뒤 `invocation=2`를 보내도 새 발송 효과가 없을 수 있다. 논리적 `attemptId`는 유지하되 새 회차에 새 `sendRequestId`를 부여하고, *같은 회차의 Kafka 재전달*은 같은 ID를 재사용한다. 이 ID를 업체 멱등키·웹훅 상관 ID로 사용할 수 있는지는 업체 계약과 함께 확정해야 한다.
+**재시도 멱등키는 추가 결정이 필요하다.** 현재 이전 `messaging-http-sender`는 HTTP `Idempotency-Key`에 고정 `attemptId`를 쓰며 시뮬레이터는 같은 키의 두 번째 접수 성공을 중복으로 처리한다. 이를 신규 경로에 그대로 적용하면 실패 웹훅 뒤 `invocation=2`를 보내도 새 발송 효과가 없을 수 있다. 논리적 `attemptId`는 유지하되 새 회차에 새 `sendRequestId`를 부여하고, *같은 회차의 Kafka 재전달*은 같은 ID를 재사용한다. 이 ID를 업체 멱등키·웹훅 상관 ID로 사용할 수 있는지는 업체 계약과 함께 확정해야 한다.
 
 ## 6. 웹훅 미수신과 1차 만료
 
@@ -262,7 +262,7 @@ sequenceDiagram
 flowchart TD
     A[ACCEPTED 후 웹훅 대기] --> R[Redis deadline 후보]
     A --> G[DynamoDB 복구 인덱스]
-    R --> M[EVENT-RESULT-MANAGER]
+    R --> M[MESSAGE-RESULT-MANAGER]
     G --> M
     M --> D{원래 1차 deadline 경과·미완료?}
     D -->|아니오| W[남은 기한까지 대기]
@@ -276,42 +276,42 @@ Redis 일정이 유실돼도 DynamoDB 조회로 누락을 찾는다. 늦게 온 
 
 ## 7. 2차 TCP 발송
 
-2차는 모든 1차 실패의 기본 경로가 아니다. 기존 목표의 대체 사유는 `FALLBACK_REQUIRED`, `PRIMARY_EXPIRED`, `RETRY_EXHAUSTED_NO_RESPONSE`이며 최초 요청의 `fallbackAllowed`가 참이어야 한다. 현재 목표 이름은 `event.tcp.requested.v1` → `event-tcp-sender`다. 2차 결과 토픽은 기존 목표의 `event.tcp.outcome.v1`을 표기하며, `MSG_RESULT`로 통합할지는 아직 결정되지 않았다.
+2차는 모든 1차 실패의 기본 경로가 아니다. 기존 목표의 대체 사유는 `FALLBACK_REQUIRED`, `PRIMARY_EXPIRED`, `RETRY_EXHAUSTED_NO_RESPONSE`이며 최초 요청의 `fallbackAllowed`가 참이어야 한다. 현재 목표 이름은 `message.tcp.requested.v1` → `messaging-tcp-sender`다. 2차 결과 토픽은 기존 목표의 `message.tcp.outcome.v1`을 표기하며, `MSG_RESULT`로 통합할지는 아직 결정되지 않았다.
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant M as EVENT-RESULT-MANAGER
+    participant M as MESSAGE-RESULT-MANAGER
     participant D as DynamoDB
     participant K as Kafka
-    participant T as event-tcp-sender
+    participant T as messaging-tcp-sender
     participant P as TCP 2차 업체
     participant W as receipt-api
     M->>D: 1차 판단 시각·사유·2차 attemptId·deadline 고정
-    M->>K: event.tcp.requested.v1 발행
+    M->>K: message.tcp.requested.v1 발행
     K->>T: 2차 명령
     T->>D: 1차 판단·2차 바인딩과 미완료 상태 확인
     T->>P: TCP 발송
     P-->>T: 즉시 접수 응답
     T->>D: 2차 호출 결과 기록
-    T->>K: event.tcp.outcome.v1 / 즉시 결과
+    T->>K: message.tcp.outcome.v1 / 즉시 결과
     K->>M: 2차 즉시 결과
     P->>W: 2차 최종 결과 웹훅
-    W->>K: event.tcp.outcome.v1 / 웹훅
+    W->>K: message.tcp.outcome.v1 / 웹훅
     K->>M: 2차 최종 결과
     M->>D: 유효 회차·기한 확인 후 최종 결과 고정
-    M->>K: event.finalized.v1 발행
+    M->>K: message.finalized.v1 발행
 ```
 
 2차도 코드별 최대 3회 재시도와 웹훅 대기를 적용한다. 기존 목표의 2차 deadline은 **1차 결과 판단 시각 +4시간**이고, 실패·만료 뒤 세 번째 업체로 넘어가지 않는다. 2차 결과가 성공이든 실패든 최종 결과 확정 이후에는 [8번](#8-최종-결과-이후-고객-통지와-정리)으로 합류한다. 이 다이어그램은 이전 DDB 선점 모델을 포함한 목표 기록이며, 신규 1차의 Redis 중복 제어와 2차 발송 보호를 어떻게 맞출지는 구현 전에 확정해야 한다.
 
 ## 8. 최종 결과 이후 고객 통지와 정리
 
-`EVENT-RESULT-MANAGER`가 최종 결과를 DynamoDB에 고정한 뒤 `event.finalized.v1`로 인계한다. `delivery-result-worker`는 PostgreSQL에 **최종 이력·고객 통지 예약·정리 예약을 단일 트랜잭션**으로 저장한다. SQL commit 전에는 ORIGIN·STEP을 삭제하지 않는다.
+`MESSAGE-RESULT-MANAGER`가 최종 결과를 DynamoDB에 고정한 뒤 `message.finalized.v1`로 인계한다. `delivery-result-worker`는 PostgreSQL에 **최종 이력·고객 통지 예약·정리 예약을 단일 트랜잭션**으로 저장한다. SQL commit 전에는 ORIGIN·STEP을 삭제하지 않는다.
 
 ```mermaid
 flowchart TD
-    F[event.finalized.v1] --> Q[PostgreSQL 이력·통지·정리 예약 commit]
+    F[message.finalized.v1] --> Q[PostgreSQL 이력·통지·정리 예약 commit]
     Q --> N[고객 HTTP 결과 통지]
     Q --> C[발송 데이터 정리]
     N --> A{204 수신?}
@@ -338,7 +338,7 @@ flowchart TD
 
 | 중단 위치 | 재개 근거와 지켜야 할 경계 |
 |---|---|
-| ORIGIN 저장 직후 API 종료·최초 Kafka ack 불명확 | 발행 복구 앱이 ORIGIN의 동일 원문·`executionId`로 `event.received.v1` 재발행. Kafka 중복 가능 |
+| ORIGIN 저장 직후 API 종료·최초 Kafka ack 불명확 | 발행 복구 앱이 ORIGIN의 동일 원문·`executionId`로 `message.received.v1` 재발행. Kafka 중복 가능 |
 | PRE-SEND-MANAGER의 통신사 토픽 발행 ack 불명확 | 같은 통신사·전문·`attemptId`로 재인계. 업체 호출 중복은 sender의 Redis 제어와 업체의 `attemptId` 처리 범위에 의존 |
 | Redis 발송 중복 정보 유실 | 내부 중복 제어가 약해진다. 동일 `attemptId`를 업체에 전달하지만 업체 중복 처리 계약과 실제 보장은 별도 확인 필요 |
 | 업체 호출 뒤 sender의 DynamoDB 결과 기록 전 종료 | 업체 효과가 불명확하다. 무조건 새 호출하지 않고 저장 조회·운영 확인·원래 deadline 정책이 필요. 신규 복구 절차 미정 |
@@ -346,7 +346,7 @@ flowchart TD
 | `MSG_RESULT` 소비 후 Manager 판단 저장·후속 Kafka 발행 사이 종료 | DynamoDB에 고정한 판단·명령을 같은 ID로 재발행. 먼저 저장되지 않았다면 원본 결과를 재처리 |
 | 웹훅의 Kafka 저장 실패·ack 불명확 | `receipt-api`가 성공 접수로 확정하지 않고 동일 웹훅 재전달을 수용. 중복 결과는 Manager가 조건부 상태로 수렴 |
 | Redis deadline 일정 유실 | DynamoDB 복구 인덱스로 만료 후보 재발견. Redis 비어 있음 여부에만 의존하지 않음 |
-| 최종 DDB 저장 뒤 `event.finalized.v1` 발행 실패 | DDB의 불변 최종 결과로 같은 최종 결과 레코드 재인계 |
+| 최종 DDB 저장 뒤 `message.finalized.v1` 발행 실패 | DDB의 불변 최종 결과로 같은 최종 결과 레코드 재인계 |
 | PostgreSQL commit 뒤 고객 통지·DDB 정리 전 종료 | SQL의 통지·정리 예약으로 각각 재개. 고객 통지 완료와 정리는 독립 |
 
 이 표의 *목표 복구 경계*와 *현재 코드에서 검증된 복구*는 다르다. 신규 sender·Manager·`MSG_RESULT` 경로의 장애 주입 시험은 아직 수행하지 않았다.
@@ -354,8 +354,8 @@ flowchart TD
 ## 구현 전에 확정할 인터페이스
 
 - `MSG_RESULT`의 통합 전문: 즉시 응답과 웹훅의 구별, 통신사·단계·`attemptId`·`invocation`·`sendRequestId`·업체 코드·발생 시각·중복 식별자.
-- Sender 명령에 회차별 `sendRequestId`를 추가하고 업체 멱등키·웹훅 회신 계약을 확정. 기존 `Idempotency-Key: attemptId`를 그대로 쓰면 실패 웹훅 뒤의 새 발송이 업체 중복 처리에 막힐 수 있다.
-- 신규 1차 deadline의 Redis 후보 등록 시점과 재시도 명령의 통신사별 라우팅·지연 예약 방식. 기존 단일 sender용 `event.http.retry.v1`을 그대로 신규 경로로 읽지 않는다.
+- Manager가 회차별 `sendRequestId`를 생성하고 신규 Sender가 이를 중복 제어에 사용하도록 연결한 뒤 업체 멱등키·웹훅 회신 계약을 확정. 공통 명령 타입의 필드는 추가됐지만 생산·소비 경로는 아직 없다. 기존 `Idempotency-Key: attemptId`를 그대로 쓰면 실패 웹훅 뒤의 새 발송이 업체 중복 처리에 막힐 수 있다.
+- 신규 1차 deadline의 Redis 후보 등록 시점과 재시도 명령의 통신사별 라우팅·지연 예약 방식. 기존 단일 sender용 `message.http.retry.v1`을 그대로 신규 경로로 읽지 않는다.
 - 매핑이 있는 번호의 통신사 불일치 시 탐색 순서, 세 통신사가 모두 불일치일 때의 처리, 확인된 통신사의 PostgreSQL 반영 여부. 매핑이 없을 때는 SKT → KT → LGU+ 순서로 1차 HTTP 발송한다.
 - 통신사 불일치의 업체별 코드 정규화, 중복·늦은 즉시 결과와 웹훅에 대한 단일 이동 판단, 다음 통신사 명령의 저장 원본·발행 주체.
 - 계약상 발송 불가 결과의 인계 전문·토픽, 계약·발송 설정 스키마.

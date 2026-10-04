@@ -9,13 +9,13 @@
 
 Kafka broker가 기록을 저장했지만 최초 producer가 ack를 받지 못할 수 있다. 기존 Kafka-first 경로에서는 API가 오류를 반환하는 동안 ingress가 그 기록을 소비해 업체 발송을 시작할 수 있다. 고객 접수의 내구성 기준과 업체 발송 허가 기준을 분리한다.
 
-`EVENT-RECEIVE-API`는 Kafka에 직접 발행하지 않는다. 신규 실행의 ORIGIN을 `RECEIVED`로 조건부 저장한 사실을 확인한 뒤 `202 Accepted`를 반환한다. `202`는 원본의 영속 접수이며 Kafka 발행·업체 접수·최종 발송 성공을 뜻하지 않는다. ORIGIN 저장 실패 또는 결과 불명 시 성공으로 응답하지 않는다. 저장 결과가 불명확하면 같은 `executionId`로 원본을 조회·대조해 수렴해야 한다.
+`MESSAGE-RECEIVE-API`는 Kafka에 직접 발행하지 않는다. 신규 실행의 ORIGIN을 `RECEIVED`로 조건부 저장한 사실을 확인한 뒤 `202 Accepted`를 반환한다. `202`는 원본의 영속 접수이며 Kafka 발행·업체 접수·최종 발송 성공을 뜻하지 않는다. ORIGIN 저장 실패 또는 결과 불명 시 성공으로 응답하지 않는다. 저장 결과가 불명확하면 같은 `executionId`로 원본을 조회·대조해 수렴해야 한다.
 
-DynamoDB Streams는 신규 ORIGIN 기록의 빠른 트리거다. 별도의 Java `EVENT-PUBLISHER-APP`가 Streams를 읽고 동일 `executionId`로 최초 HTTP 요청 Kafka 토픽에 발행한다. Lambda는 필수가 아니다. 발행 앱은 Kafka ack가 확인되면 Streams 체크포인트를 진행하고, 실패하거나 결과가 불명확하면 같은 실행으로 재시도한다. ORIGIN에 별도의 발행 완료 상태를 쓰지 않는다. 목표 구조에서 `event-http-sender`가 최초 Kafka 레코드를 직접 소비하며, 실제 업체 호출은 ORIGIN 상태 확인과 기존 STEP 선점 조건을 통과해야 한다. 현재 `delivery-ingress-worker`가 맡는 ORIGIN 최초 저장은 API로 이동하므로 별도 ingress 워커는 두지 않는다. 1차·2차 발송과 `EVENT-RESULT-MANAGER`의 판단·토픽 분리는 [ADR-024](ADR-024-HTTP와-TCP-발송-워커-분리.md)를 따른다.
+DynamoDB Streams는 신규 ORIGIN 기록의 빠른 트리거다. 별도의 Java `EVENT-PUBLISHER-APP`가 Streams를 읽고 동일 `executionId`로 최초 HTTP 요청 Kafka 토픽에 발행한다. Lambda는 필수가 아니다. 발행 앱은 Kafka ack가 확인되면 Streams 체크포인트를 진행하고, 실패하거나 결과가 불명확하면 같은 실행으로 재시도한다. ORIGIN에 별도의 발행 완료 상태를 쓰지 않는다. 목표 구조에서 `messaging-http-sender`가 최초 Kafka 레코드를 직접 소비하며, 실제 업체 호출은 ORIGIN 상태 확인과 기존 STEP 선점 조건을 통과해야 한다. 현재 `delivery-ingress-worker`가 맡는 ORIGIN 최초 저장은 API로 이동하므로 별도 ingress 워커는 두지 않는다. 1차·2차 발송과 `MESSAGE-RESULT-MANAGER`의 판단·토픽 분리는 [ADR-024](ADR-024-HTTP와-TCP-발송-워커-분리.md)를 따른다.
 
 ## 인입 계약과 중복
 
-- 고객 접수 API의 목표 이름은 `EVENT-RECEIVE-API`, 경로는 `POST /api/v1/events`다. 현재 코드의 `POST /api/v1/deliveries`와 구분한다.
+- 고객 접수 API의 목표 이름은 `MESSAGE-RECEIVE-API`, 경로는 `POST /api/v1/messages`다. 현재 코드의 `POST /api/v1/deliveries`와 구분한다.
 - `clientId`는 인증된 JWT에서 얻는다. 요청 본문에 `eventId`, `recipientNumber`, `eventType`, `payload`, `fallbackAllowed`를 둔다. `Idempotency-Key` 헤더는 신규 접수에 사용하지 않는다.
 - `recipientNumber`는 `01012345678`처럼 하이픈 없는 `010` 시작 11자리만 허용한다. `+82`나 하이픈 입력을 변환하지 않는다.
 - `eventType`은 `GENERAL`, `NOTI`, `ADV`, `ALERT`이며 유형별 우선순위는 없다.
@@ -30,7 +30,7 @@ DynamoDB Streams는 신규 ORIGIN 기록의 빠른 트리거다. 별도의 Java 
 1. API는 ORIGIN을 `RECEIVED`로 저장한다. Streams 기록이 먼저 도착하거나 API의 HTTP 응답이 유실되어도 원본을 기준으로 처리한다. `RECEIVED`는 최초 접수 사실이며 Kafka 발행 완료를 뜻하지 않는다.
 2. 발행 앱은 신규 ORIGIN의 `INSERT` 기록만 발행 대상으로 사용한다. 후속 갱신·최종 정리의 `MODIFY`·`REMOVE` 기록은 재발행 트리거에서 제외한다. 원본이 이미 최종화·정리됐다면 재발행하지 않는다.
 3. Kafka producer는 `acks=all`과 멱등성을 사용한다. ack 확인 전에는 Streams 체크포인트를 진행하지 않는다. 발행 실패·ack 불명확 시 동일 `executionId`와 원문으로 재시도한다. ack 유실 전에 저장된 레코드를 Kafka 소비자가 먼저 볼 수도 있으며, 그 자체가 발행 사실의 증거다.
-4. `event-http-sender`가 최초 Kafka 레코드를 직접 소비하고 HTTP 1차 호출 전에 ORIGIN·STEP의 최신 상태와 조건부 선점을 확인한다. 즉시 응답·웹훅·기한을 `EVENT-RESULT-MANAGER`가 판단해 허용된 2차 전환을 Kafka로 인계하며 `event-tcp-sender`가 별도 2차 STEP을 선점한다. 현재 구현은 단일 `dispatch-worker`다. ORIGIN이 없거나 완료·취소·만료된 실행은 새 발송을 허용하지 않는다. 별도의 ingress 워커·`DispatchRequested` 인계·`READY` 게이트는 두지 않는다.
+4. `messaging-http-sender`가 최초 Kafka 레코드를 직접 소비하고 HTTP 1차 호출 전에 ORIGIN·STEP의 최신 상태와 조건부 선점을 확인한다. 즉시 응답·웹훅·기한을 `MESSAGE-RESULT-MANAGER`가 판단해 허용된 2차 전환을 Kafka로 인계하며 `messaging-tcp-sender`가 별도 2차 STEP을 선점한다. 현재 구현은 단일 `dispatch-worker`다. ORIGIN이 없거나 완료·취소·만료된 실행은 새 발송을 허용하지 않는다. 별도의 ingress 워커·`DispatchRequested` 인계·`READY` 게이트는 두지 않는다.
 5. Streams 소비 실패·24시간 초과 중단에도 대비해 아직 후속 진행 증거가 없는 ORIGIN을 주기적으로 찾아 원본과 STEP·최종 이력을 대조한 뒤 재발행한다. 발행 재시도는 같은 `executionId`와 본문을 사용한다. 애플리케이션 수준 재발행은 Kafka record를 중복 생성할 수 있으므로 발송 선점·최종 이력은 실행 기준으로 멱등하게 처리한다.
 6. Kafka를 발행할 수 없는 동안에도 API는 ORIGIN 저장에 성공한 요청에 `202`를 반환할 수 있다. 적체가 허용 용량·원래 업무 기한을 위협하면 접수 제한이나 최종 실패·만료 정책을 적용하며, `RECEIVED`를 성공 발송으로 해석하지 않는다.
 

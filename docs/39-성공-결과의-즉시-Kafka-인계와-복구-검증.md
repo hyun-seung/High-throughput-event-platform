@@ -56,7 +56,7 @@ DYNAMODB_TEST_ENDPOINT=http://localhost:18000 ./mvnw -pl dispatch-worker -am tes
 
 ## 4. 검증 결과
 
-event-common 11개, dispatch-worker 147개 시험 통과(실패·오류 0). 별도 Kafka/Redis 환경 변수가 필요한 기존 시험 4개는 미실행이며 이 수에 포함하지 않았다. 새 실제 DB 시험 3개는 모두 실행했다. 상위 시험 클래스의 DB 환경 조건이 하위 v2 클래스에 적용되지 않던 부분도 명시적으로 수정했다. 전체 모듈 패키징을 통과했다.
+messaging-common 11개, dispatch-worker 147개 시험 통과(실패·오류 0). 별도 Kafka/Redis 환경 변수가 필요한 기존 시험 4개는 미실행이며 이 수에 포함하지 않았다. 새 실제 DB 시험 3개는 모두 실행했다. 상위 시험 클래스의 DB 환경 조건이 하위 v2 클래스에 적용되지 않던 부분도 명시적으로 수정했다. 전체 모듈 패키징을 통과했다.
 
 전체 기능 실행 `full-flow-bbc2aebdc4bf`는 6개 시나리오를 모두 통과했다. 성공 4건은 즉시 인계 지표로, 만료 2건은 기존 Lifecycle 발행 지표로 관찰됐다. 고객 503 후 재전송·완료 중복 차단·Redis 일정 유실·대체 발송·원래 deadline 만료와 데이터 정리를 확인했다.
 
