@@ -71,7 +71,7 @@ sequenceDiagram
     participant H as delivery-result-worker
     participant Q as PostgreSQL
     K->>M: MSG_RESULT / 즉시 접수 성공
-    M->>R: 1차 deadline 후보 등록
+    Note over M,R: 접수 성공은 최종 성공이 아님. 원래 deadline까지 웹훅 대기
     P->>W: DELIVERED 웹훅 + executionId·attemptId
     W->>W: 업체 인증·전문 검증
     W->>K: MSG_RESULT / 성공 웹훅
@@ -204,7 +204,7 @@ sequenceDiagram
 
 ## 6. 웹훅 미수신과 1차 만료
 
-즉시 `ACCEPTED` 뒤 웹훅이 오지 않으면 접수 성공만으로 최종 성공을 만들지 않는다. 이전 목표의 1차 deadline은 **최초 인입 +3시간**이며, Redis는 만료 후보 일정이고 DynamoDB는 최종 판단·복구의 기준이다.
+즉시 `ACCEPTED` 뒤 웹훅이 오지 않으면 접수 성공만으로 최종 성공을 만들지 않는다. 이전 목표의 1차 deadline은 **최초 인입 +3시간**이며, Redis는 빠른 만료 후보 일정이고 DynamoDB는 최종 판단·복구의 기준이다. deadline은 `ACCEPTED` 시점에 새로 시작하지 않는다. Redis 후보를 언제 등록할지는 신규 경로에서 미정이며, `ACCEPTED` 결과를 소비한 뒤에만 등록하는 방식은 사전 처리·발송 전에 멈춘 실행을 놓칠 수 있다.
 
 ```mermaid
 flowchart TD
@@ -302,7 +302,7 @@ flowchart TD
 ## 구현 전에 확정할 인터페이스
 
 - `MSG_RESULT`의 통합 전문: 즉시 응답과 웹훅의 구별, 통신사·단계·`attemptId`·`invocation`·업체 코드·발생 시각·중복 식별자.
-- 신규 1차 재시도 명령의 통신사별 라우팅·지연 예약 방식. 기존 단일 sender용 `event.http.retry.v1`을 그대로 신규 경로로 읽지 않는다.
+- 신규 1차 deadline의 Redis 후보 등록 시점과 재시도 명령의 통신사별 라우팅·지연 예약 방식. 기존 단일 sender용 `event.http.retry.v1`을 그대로 신규 경로로 읽지 않는다.
 - 번호→통신사 Redis 캐시 누락 정책, 계약상 발송 불가 결과의 인계 전문·토픽, 계약·발송 설정 스키마.
 - sender Redis 선점 TTL·진행 중 중복 처리·DynamoDB 기록 실패 복구, 업체별 동일 `attemptId` 보장 범위.
 - 2차 토픽·Pod 최종 이름과 2차 즉시 응답·웹훅의 `MSG_RESULT` 통합 여부.
