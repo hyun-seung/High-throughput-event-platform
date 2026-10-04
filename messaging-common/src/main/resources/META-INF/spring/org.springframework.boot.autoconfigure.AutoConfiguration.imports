@@ -1,0 +1,3 @@
+messaging.common.dynamodb.config.DynamoDbAutoConfiguration
+messaging.common.metrics.DeliveryMetricsAutoConfiguration
+messaging.common.redis.DeliveryCacheAutoConfiguration

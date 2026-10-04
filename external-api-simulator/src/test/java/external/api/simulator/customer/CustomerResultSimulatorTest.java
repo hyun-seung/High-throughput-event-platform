@@ -1,7 +1,7 @@
 package external.api.simulator.customer;
 
-import event.common.lifecycle.DeliveryFinalized;
-import event.common.notification.CustomerResultBatch;
+import messaging.common.lifecycle.DeliveryFinalized;
+import messaging.common.notification.CustomerResultBatch;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
 import tools.jackson.databind.json.JsonMapper;

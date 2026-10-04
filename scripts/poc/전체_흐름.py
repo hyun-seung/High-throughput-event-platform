@@ -25,7 +25,7 @@ from 검증_근거 import SupervisedProcess, verify_evidence
 
 HTTP = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 MODULES = {'provider': 'external-api-simulator', 'receipt': 'receipt-api',
-           'ingress': 'delivery-ingress-worker', 'api': 'event-api',
+           'ingress': 'delivery-ingress-worker', 'api': 'messaging-api',
            'dispatch': 'dispatch-worker', 'result': 'delivery-result-worker'}
 
 

@@ -31,8 +31,8 @@ spring:
       properties:
         "[spring.deserializer.key.delegate.class]": org.apache.kafka.common.serialization.StringDeserializer
         "[spring.deserializer.value.delegate.class]": org.springframework.kafka.support.serializer.JacksonJsonDeserializer
-        "[spring.json.value.default.type]": event.common.delivery.DeliveryEvent
-        "[spring.json.trusted.packages]": event.common.delivery
+        "[spring.json.value.default.type]": messaging.common.delivery.DeliveryEvent
+        "[spring.json.trusted.packages]": messaging.common.delivery
     producer:
       acks: all
       properties:

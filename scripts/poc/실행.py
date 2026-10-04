@@ -33,7 +33,7 @@ PORTS = {'KAFKA_HOST_PORT': '29092', 'REDIS_HOST_PORT': '26379', 'POSTGRES_HOST_
          'DELIVERY_API_METRICS_PORT': '29080', 'INGRESS_METRICS_PORT': '29081',
          'DISPATCH_METRICS_PORT': '29082', 'SIMULATOR_METRICS_PORT': '29090'}
 MANAGEMENT = {'api': 29080, 'ingress': 29081, 'dispatch': 29082, 'simulator': 29090}
-MODULES = {'api': 'event-api', 'ingress': 'delivery-ingress-worker', 'dispatch': 'dispatch-worker', 'simulator': 'external-api-simulator'}
+MODULES = {'api': 'messaging-api', 'ingress': 'delivery-ingress-worker', 'dispatch': 'dispatch-worker', 'simulator': 'external-api-simulator'}
 POLICY = {'blocked': 'false', 'tpsEnabled': 'true', 'requestsPerSecond': '2000', 'burstCapacity': '2000',
           'quotaEnabled': 'true', 'monthlyLimit': '1000000'}
 

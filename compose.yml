@@ -1,4 +1,4 @@
-name: reliable-event-platform
+name: reliable-messaging-service
 
 services:
   kafka:
@@ -70,10 +70,10 @@ services:
       - "127.0.0.1:${DEBEZIUM_HOST_PORT:-18083}:8083"
     environment:
       BOOTSTRAP_SERVERS: kafka:29092
-      GROUP_ID: event-reference-connect
-      CONFIG_STORAGE_TOPIC: event-reference-connect-configs
-      OFFSET_STORAGE_TOPIC: event-reference-connect-offsets
-      STATUS_STORAGE_TOPIC: event-reference-connect-status
+      GROUP_ID: messaging-reference-connect
+      CONFIG_STORAGE_TOPIC: messaging-reference-connect-configs
+      OFFSET_STORAGE_TOPIC: messaging-reference-connect-offsets
+      STATUS_STORAGE_TOPIC: messaging-reference-connect-status
       CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: 1
       CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: 1
       CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: 1

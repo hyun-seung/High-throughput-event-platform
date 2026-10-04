@@ -1,6 +1,6 @@
 package external.api.simulator.customer;
 
-import event.common.notification.CustomerResultBatch;
+import messaging.common.notification.CustomerResultBatch;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;

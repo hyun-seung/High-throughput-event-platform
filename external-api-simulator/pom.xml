@@ -5,7 +5,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>org.side.project.event</groupId>
+        <groupId>org.side.project.messaging</groupId>
         <artifactId>platform</artifactId>
         <version>1.0-SNAPSHOT</version>
     </parent>
@@ -14,8 +14,8 @@
 
     <dependencies>
         <dependency>
-            <groupId>org.side.project.event</groupId>
-            <artifactId>event-common</artifactId>
+            <groupId>org.side.project.messaging</groupId>
+            <artifactId>messaging-common</artifactId>
             <version>${project.version}</version>
         </dependency>
         <dependency>

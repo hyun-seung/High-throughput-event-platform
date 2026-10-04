@@ -1,2 +1,2 @@
-event.auth.module.auth.config.AuthModuleAutoConfiguration
-event.auth.module.auth.config.AuthTokenSecurityAutoConfiguration
+messaging.auth.module.auth.config.AuthModuleAutoConfiguration
+messaging.auth.module.auth.config.AuthTokenSecurityAutoConfiguration

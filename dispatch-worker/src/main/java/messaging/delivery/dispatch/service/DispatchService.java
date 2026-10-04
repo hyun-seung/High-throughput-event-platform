@@ -1,0 +1,168 @@
+package messaging.delivery.dispatch.service;
+
+import messaging.common.delivery.DeliveryEvent;
+import messaging.common.delivery.DeliveryIds;
+import messaging.common.metrics.DeliveryMetrics;
+import messaging.common.metrics.DeliveryAudit;
+import messaging.delivery.dispatch.config.DispatchProperties;
+import messaging.delivery.dispatch.external.dto.ProviderDispatchResponse;
+import messaging.delivery.dispatch.external.client.ProviderFailureException;
+import messaging.delivery.dispatch.model.DispatchClaim;
+import messaging.delivery.dispatch.model.DispatchFailureDecision;
+import messaging.delivery.dispatch.port.DeliveryProviderClient;
+import messaging.delivery.dispatch.port.DispatchAttemptStore;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.event.ContextClosedEvent;
+import org.springframework.context.event.EventListener;
+import org.springframework.stereotype.Service;
+
+import java.time.Clock;
+import java.time.Instant;
+
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class DispatchService {
+
+    private static final int INITIAL_ROUTE_ORDER = 1;
+    private static final int INITIAL_ATTEMPT_NUMBER = 1;
+
+    private final DispatchAttemptStore dispatchAttemptStore;
+    private final DeliveryProviderClient deliveryProviderClient;
+    private final DispatchProperties dispatchProperties;
+    private final Clock dispatchClock;
+    private final DeliveryMetrics metrics;
+    private final SecondaryDispatchService secondaryDispatch;
+    private volatile boolean shuttingDown;
+
+    @EventListener(ContextClosedEvent.class)
+    public void onContextClosed() { shuttingDown = true; }
+
+    private messaging.delivery.dispatch.retry.RetryPublisher retries;
+    @org.springframework.beans.factory.annotation.Autowired
+    public void retryPublisher(messaging.delivery.dispatch.retry.RetryPublisher retries) { this.retries = retries; }
+    public void invokeRetry(DeliveryEvent event, DispatchClaim claim) { invokeProvider(event, claim, claim.attempt().attemptId()); }
+
+    public void dispatch(DeliveryEvent event) {
+        metrics.measure(DeliveryMetrics.Stage.DISPATCH_PROCESS, () -> process(event));
+    }
+
+    private void process(DeliveryEvent event) {
+        String attemptId = DeliveryIds.attemptId(
+                event.deliveryId(),
+                dispatchProperties.provider(),
+                INITIAL_ROUTE_ORDER,
+                INITIAL_ATTEMPT_NUMBER
+        );
+        Instant now = dispatchClock.instant();
+        DispatchClaim claim = metrics.measure(DeliveryMetrics.Stage.DISPATCH_CLAIM, () -> dispatchAttemptStore.claim(
+                event,
+                attemptId,
+                dispatchProperties.provider(),
+                now,
+                now.plus(dispatchProperties.leaseDuration()),
+                event.occurredAt().plus(dispatchProperties.primaryTtl())
+        ));
+
+        switch (claim.status()) {
+            case ALREADY_ACCEPTED -> {
+                DeliveryAudit.record(event, "dispatch", "duplicate", attemptId, dispatchProperties.provider(), "already_accepted");
+                metrics.outcome(DeliveryMetrics.Outcome.DISPATCH_DUPLICATE);
+                log.debug("Completed dispatch skipped. deliveryId={}, attemptId={}", event.deliveryId(), attemptId);
+            }
+            case IN_PROGRESS -> {
+                metrics.outcome(DeliveryMetrics.Outcome.DISPATCH_IN_PROGRESS);
+                throw new DispatchAttemptInProgressException(event.deliveryId());
+            }
+            case RETRY_WAIT -> {
+                metrics.outcome(DeliveryMetrics.Outcome.DISPATCH_RETRY_WAIT);
+                throw new DispatchRetryPendingException(event.deliveryId());
+            }
+            case DECISION_PENDING -> {
+                DeliveryAudit.record(event, "dispatch", "decision_pending", attemptId, dispatchProperties.provider(), "pending_next_stage");
+                metrics.outcome(DeliveryMetrics.Outcome.DISPATCH_DECISION_PENDING);
+                secondaryDispatch.dispatch(event, attemptId);
+            }
+            case REVIEW_REQUIRED -> {
+                DeliveryAudit.record(event, "dispatch", "review_required", attemptId, dispatchProperties.provider(), "result_unknown");
+                metrics.outcome(DeliveryMetrics.Outcome.DISPATCH_REVIEW);
+                log.warn(
+                    "Dispatch requires operational review; provider not called. deliveryId={}, attemptId={}",
+                    event.deliveryId(), attemptId);
+            }
+            case CLAIMED -> invokeProvider(event, claim, attemptId);
+        }
+    }
+
+    private void invokeProvider(DeliveryEvent event, DispatchClaim claim, String attemptId) {
+        if (!dispatchClock.instant().isBefore(claim.attempt().deadline())) {
+            persistFailure(event, claim, attemptId, DispatchRetryPolicy.expired(claim.attempt().deadline()));
+            return;
+        }
+        final ProviderDispatchResponse response;
+        try {
+            response = metrics.measure(DeliveryMetrics.Stage.DISPATCH_HTTP, () -> {
+                ProviderDispatchResponse received = deliveryProviderClient.send(event, attemptId, claim.attempt().retryCount() + 1);
+                if (!Boolean.TRUE.equals(received.accepted())) {
+                    throw new ProviderFailureException(ProviderFailureException.Kind.INVALID_RESPONSE);
+                }
+                return received;
+            });
+        } catch (ProviderFailureException failure) {
+            if (shuttingDown && failure.kind() == ProviderFailureException.Kind.NO_RESPONSE) {
+                // The provider may have acted before the response was lost. Keep the claimed STEP and its
+                // original deadline; a shutdown-time timeout must not enqueue another external call.
+                log.warn("Dispatch response unknown during shutdown; retaining STEP. deliveryId={}, attemptId={}",
+                        event.deliveryId(), attemptId);
+                return;
+            }
+            persistFailure(event, claim, attemptId,
+                    DispatchRetryPolicy.decide(claim.attempt(), failure.kind(), dispatchClock.instant(), dispatchProperties));
+            return;
+        }
+
+        if (!dispatchClock.instant().isBefore(claim.attempt().deadline())) {
+            persistFailure(event, claim, attemptId, DispatchRetryPolicy.expired(claim.attempt().deadline()));
+            return;
+        }
+
+        metrics.measure(DeliveryMetrics.Stage.DISPATCH_STORE, () -> dispatchAttemptStore.markAccepted(
+                claim.attempt(),
+                response.processedAt(),
+                dispatchClock.instant()
+        ));
+        metrics.outcome(DeliveryMetrics.Outcome.DISPATCH_ACCEPTED);
+        metrics.accepted(event.occurredAt(), dispatchClock.instant());
+        DeliveryAudit.record(event, "dispatch", "accepted", attemptId, dispatchProperties.provider(), "accepted");
+
+        log.debug("Dispatch completed. deliveryId={}, attemptId={}, processedAt={}",
+                event.deliveryId(), attemptId, response.processedAt());
+    }
+
+    private void persistFailure(DeliveryEvent event, DispatchClaim claim, String attemptId, DispatchFailureDecision decision) {
+        if (event.schemaVersion() >= 2 && decision.state() == DispatchFailureDecision.State.RETRY_SCHEDULED) {
+            retries.publish(new messaging.delivery.dispatch.retry.RetryCommand(event, claim.attempt(), claim.attempt().retryCount() + 1, decision.nextAttemptAt()));
+            metrics.outcome(DeliveryMetrics.Outcome.DISPATCH_RETRY_SCHEDULED);
+            return;
+        }
+        metrics.measure(DeliveryMetrics.Stage.DISPATCH_STORE, () -> dispatchAttemptStore.recordFailure(claim.attempt(), decision));
+        String outcome = switch (decision.state()) {
+            case RETRY_SCHEDULED -> "retry_scheduled";
+            case REVIEW_REQUIRED -> "review_required";
+            case DECISION_PENDING -> "decision_pending";
+        };
+        DeliveryAudit.record(event, "dispatch", outcome, attemptId, dispatchProperties.provider(), decision.reason());
+        metrics.outcome(switch (decision.state()) {
+            case RETRY_SCHEDULED -> DeliveryMetrics.Outcome.DISPATCH_RETRY_SCHEDULED;
+            case REVIEW_REQUIRED -> DeliveryMetrics.Outcome.DISPATCH_REVIEW;
+            case DECISION_PENDING -> DeliveryMetrics.Outcome.DISPATCH_DECISION_PENDING;
+        });
+        if (decision.state() == DispatchFailureDecision.State.RETRY_SCHEDULED) {
+            throw new DispatchRetryPendingException(event.deliveryId());
+        }
+        if (decision.state() == DispatchFailureDecision.State.DECISION_PENDING) {
+            secondaryDispatch.dispatch(event, attemptId);
+        }
+    }
+}

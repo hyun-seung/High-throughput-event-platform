@@ -50,7 +50,7 @@ services:
       MANAGEMENT_SERVER_PORT: 19080
       LOGGING_FILE_NAME: /logs/api.log
     volumes:
-      - ${MONITOR_API_JAR:-./event-api/target/event-api-1.0-SNAPSHOT.jar}:/app/app.jar:ro
+      - ${MONITOR_API_JAR:-./messaging-api/target/messaging-api-1.0-SNAPSHOT.jar}:/app/app.jar:ro
       - monitoring-logs:/logs
     depends_on:
       kafka: {condition: service_healthy}

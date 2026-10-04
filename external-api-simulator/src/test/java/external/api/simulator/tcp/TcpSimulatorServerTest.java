@@ -1,8 +1,8 @@
 package external.api.simulator.tcp;
 
-import event.common.tcp.TcpFrames;
-import event.common.tcp.TcpDeliveryRequest;
-import event.common.tcp.TcpDeliveryResponse;
+import messaging.common.tcp.TcpFrames;
+import messaging.common.tcp.TcpDeliveryRequest;
+import messaging.common.tcp.TcpDeliveryResponse;
 import external.api.simulator.delivery.config.SimulatorProperties;
 import external.api.simulator.delivery.service.SimulatorLedger;
 import external.api.simulator.receipt.SimulatorReceiptSender;

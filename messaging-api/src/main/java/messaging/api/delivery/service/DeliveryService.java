@@ -1,0 +1,57 @@
+package messaging.api.delivery.service;
+
+import messaging.api.delivery.dto.DeliveryRequest;
+import messaging.api.delivery.dto.DeliveryResponse;
+import messaging.api.delivery.kafka.DeliveryEventPublisher;
+import messaging.api.security.principal.AuthenticatedUser;
+import messaging.common.delivery.DeliveryEvent;
+import messaging.common.delivery.DeliveryIds;
+import messaging.common.metrics.DeliveryMetrics;
+import messaging.common.metrics.DeliveryAudit;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+
+import java.time.Instant;
+import java.util.concurrent.CompletableFuture;
+
+@Service
+@RequiredArgsConstructor
+public class DeliveryService {
+
+    private static final String ACCEPTED = "ACCEPTED";
+
+    private final DeliveryEventPublisher deliveryEventPublisher;
+    private final DeliveryMetrics metrics;
+
+    public CompletableFuture<DeliveryResponse> accept(
+            AuthenticatedUser user,
+            String idempotencyKey,
+            DeliveryRequest request
+    ) {
+        String deliveryId = DeliveryIds.deliveryId(user.userId(), idempotencyKey);
+        DeliveryEvent event = DeliveryEvent.requested(
+                deliveryId,
+                user.userId(),
+                request.deliveryType(),
+                request.payload(),
+                Instant.now(),
+                request.fallbackAllowed()
+        ).forAdmission();
+
+        try {
+            return metrics.measureAsync(DeliveryMetrics.Stage.API_PUBLISH, () -> deliveryEventPublisher.send(event))
+                    .handle((ignored, failure) -> {
+                        if (failure != null) {
+                            DeliveryAudit.record(event, "api", "publish_unconfirmed", "", "", "kafka_ack_failed");
+                            throw new DeliveryAcceptanceException(failure);
+                        }
+                        DeliveryAudit.record(event, "api", "accepted", "", "", "202");
+                        return new DeliveryResponse(deliveryId, ACCEPTED);
+                    });
+        } catch (RuntimeException failure) {
+            DeliveryAudit.record(event, "api", "publish_unconfirmed", "", "", "publish_failed");
+            // Kafka send can fail before returning a future (metadata/buffer/serialization).
+            return CompletableFuture.failedFuture(new DeliveryAcceptanceException(failure));
+        }
+    }
+}

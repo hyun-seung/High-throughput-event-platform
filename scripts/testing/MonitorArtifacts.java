@@ -11,7 +11,7 @@ import java.util.List;
 /** Prepare immutable monitoring JAR copies and a local Grafana admin token. */
 public class MonitorArtifacts {
     private static final List<String[]> MODULES = List.of(
-            new String[] {"API", "event-api"},
+            new String[] {"API", "messaging-api"},
             new String[] {"INGRESS", "delivery-ingress-worker"},
             new String[] {"DISPATCH", "dispatch-worker"},
             new String[] {"SIMULATOR", "external-api-simulator"});

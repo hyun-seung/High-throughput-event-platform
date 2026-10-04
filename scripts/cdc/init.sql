@@ -1,6 +1,13 @@
--- Local CDC source tables. Flyway V13/V14 use the same definitions in delivery_results.
+-- Local CDC source tables. Flyway V13/V14 create them and V15 renames the contract table.
 CREATE SCHEMA IF NOT EXISTS delivery_results;
-CREATE TABLE IF NOT EXISTS delivery_results.client_event_contracts (
+DO $$
+BEGIN
+    IF to_regclass('delivery_results.client_event_contracts') IS NOT NULL
+       AND to_regclass('delivery_results.client_message_contracts') IS NULL THEN
+        ALTER TABLE delivery_results.client_event_contracts RENAME TO client_message_contracts;
+    END IF;
+END $$;
+CREATE TABLE IF NOT EXISTS delivery_results.client_message_contracts (
     client_id bigint PRIMARY KEY REFERENCES public.users(id),
     enabled boolean NOT NULL DEFAULT true,
     tps_limit integer NOT NULL CHECK (tps_limit > 0),
@@ -17,13 +24,13 @@ CREATE TABLE IF NOT EXISTS delivery_results.phone_carrier_mappings (
 );
 DO $$
 BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'event_reference_pub') THEN
-        CREATE PUBLICATION event_reference_pub FOR TABLE
-            delivery_results.client_event_contracts,
+    IF NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'messaging_reference_pub') THEN
+        CREATE PUBLICATION messaging_reference_pub FOR TABLE
+            delivery_results.client_message_contracts,
             delivery_results.phone_carrier_mappings;
     ELSE
-        ALTER PUBLICATION event_reference_pub SET TABLE
-            delivery_results.client_event_contracts,
+        ALTER PUBLICATION messaging_reference_pub SET TABLE
+            delivery_results.client_message_contracts,
             delivery_results.phone_carrier_mappings;
     END IF;
 END $$;

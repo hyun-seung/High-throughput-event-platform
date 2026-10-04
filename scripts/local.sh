@@ -23,11 +23,11 @@ case "${1:-help}" in
     for pair in blocked:false tpsEnabled:true requestsPerSecond:100 burstCapacity:100 quotaEnabled:true monthlyLimit:100000; do
       docker compose exec -T redis redis-cli -n "${REDIS_DATABASE:-0}" HSETNX "$policy_key" "${pair%%:*}" "${pair#*:}" > /dev/null
     done
-    event_usage_key="event:usage:{client:$user_id}:policy"
+    message_usage_key="message:usage:{client:$user_id}:policy"
     for pair in tpsLimit:100 quotaGENERAL:100000 quotaNOTI:100000 quotaADV:100000 quotaALERT:100000; do
-      docker compose exec -T redis redis-cli -n "${REDIS_DATABASE:-0}" HSETNX "$event_usage_key" "${pair%%:*}" "${pair#*:}" > /dev/null
+      docker compose exec -T redis redis-cli -n "${REDIS_DATABASE:-0}" HSETNX "$message_usage_key" "${pair%%:*}" "${pair#*:}" > /dev/null
     done
-    echo "Local request and event usage policies initialized for user $user_id."
+    echo "Local request and message usage policies initialized for user $user_id."
     ;;
   cdc)
     # The local connector captures only the reference tables used by PRE-SEND-MANAGER.
@@ -38,7 +38,7 @@ case "${1:-help}" in
     curl --fail --silent --show-error --max-time 5 --retry 20 --retry-delay 2 --retry-connrefused "$connect_url/connectors" > /dev/null
     curl --fail --silent --show-error --request PUT --header 'Content-Type: application/json' \
       --data-binary @scripts/cdc/connector-config.json \
-      "$connect_url/connectors/event-reference-postgres/config" > /dev/null
+      "$connect_url/connectors/messaging-reference-postgres/config" > /dev/null
     echo "Local reference CDC connector registered."
     ;;
   smoke)
@@ -51,8 +51,8 @@ case "${1:-help}" in
   run)
     module="${2:-}"
     case "$module" in
-      event-api|event-publication-recovery-app|event-reference-cache|event-http-sender|delivery-ingress-worker|dispatch-worker|external-api-simulator|receipt-api|delivery-result-worker) ;;
-      *) echo 'Usage: bash scripts/local.sh run <event-api|event-publication-recovery-app|event-reference-cache|event-http-sender|delivery-ingress-worker|dispatch-worker|external-api-simulator|receipt-api|delivery-result-worker>' >&2; exit 2 ;;
+      messaging-api|messaging-publication-recovery-app|messaging-reference-cache|messaging-http-sender|delivery-ingress-worker|dispatch-worker|external-api-simulator|receipt-api|delivery-result-worker) ;;
+      *) echo 'Usage: bash scripts/local.sh run <messaging-api|messaging-publication-recovery-app|messaging-reference-cache|messaging-http-sender|delivery-ingress-worker|dispatch-worker|external-api-simulator|receipt-api|delivery-result-worker>' >&2; exit 2 ;;
     esac
     export SPRING_PROFILES_ACTIVE=dev
     export KAFKA_BOOTSTRAP_SERVERS="localhost:${KAFKA_HOST_PORT:-9092}"
@@ -69,11 +69,11 @@ case "${1:-help}" in
       dispatch-worker) export SERVER_PORT="${DISPATCH_HTTP_PORT:-8092}" ;;
       receipt-api) export SERVER_PORT="${RECEIPT_API_PORT:-8094}" ;;
       delivery-result-worker) export SERVER_PORT="${RESULT_HTTP_PORT:-8095}" ;;
-      event-publication-recovery-app) export SERVER_PORT="${PUBLISHER_HTTP_PORT:-8096}" ;;
-      event-reference-cache) export SERVER_PORT="${EVENT_REFERENCE_CACHE_PORT:-8098}" ;;
-      event-http-sender) export SERVER_PORT="${EVENT_HTTP_SENDER_PORT:-8097}" ;;
+      messaging-publication-recovery-app) export SERVER_PORT="${PUBLISHER_HTTP_PORT:-8096}" ;;
+      messaging-reference-cache) export SERVER_PORT="${MESSAGING_REFERENCE_CACHE_PORT:-8098}" ;;
+      messaging-http-sender) export SERVER_PORT="${MESSAGING_HTTP_SENDER_PORT:-8097}" ;;
     esac
-    if [[ "$module" == event-api ]]; then
+    if [[ "$module" == messaging-api ]]; then
       : "${JWT_SECRET:?Copy .env.example to .env and set JWT_SECRET}"
     fi
     jar="$module/target/$module-1.0-SNAPSHOT.jar"

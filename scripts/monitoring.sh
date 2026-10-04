@@ -12,7 +12,7 @@ compose=(docker compose -p platform-monitoring -f compose.yml -f monitoring/comp
 case "${1:-help}" in
   up)
     bash scripts/check-kafka-volume.sh "${compose[@]}"
-    for module in event-api delivery-ingress-worker dispatch-worker external-api-simulator; do
+    for module in messaging-api delivery-ingress-worker dispatch-worker external-api-simulator; do
       [[ -f "$module/target/$module-1.0-SNAPSHOT.jar" ]] || { echo 'Build the application JARs first.' >&2; exit 1; }
     done
     if command -v /usr/libexec/java_home >/dev/null 2>&1; then

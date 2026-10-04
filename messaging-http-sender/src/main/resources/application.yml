@@ -1,0 +1,64 @@
+server:
+  port: ${SERVER_PORT:8097}
+  shutdown: graceful
+
+spring:
+  application:
+    name: messaging-http-sender
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    listener:
+      ack-mode: record
+      concurrency: ${MESSAGING_HTTP_SENDER_CONCURRENCY:3}
+    consumer:
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      key-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      properties:
+        "[spring.deserializer.key.delegate.class]": org.apache.kafka.common.serialization.StringDeserializer
+        "[spring.deserializer.value.delegate.class]": org.springframework.kafka.support.serializer.JacksonJsonDeserializer
+        "[spring.json.value.default.type]": messaging.common.messages.MessageSubmission
+        "[spring.json.trusted.packages]": messaging.common.messages
+    producer:
+      acks: all
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JacksonJsonSerializer
+      properties:
+        "[enable.idempotence]": true
+        "[spring.json.add.type.headers]": false
+
+messaging:
+  http:
+    sender:
+      provider: ${MESSAGING_HTTP_PROVIDER:mock-provider}
+      base-url: ${EXTERNAL_API_BASE_URL:http://localhost:8090}
+      connect-timeout: ${EXTERNAL_API_CONNECT_TIMEOUT:2s}
+      read-timeout: ${EXTERNAL_API_READ_TIMEOUT:5s}
+      acquire-timeout: ${EXTERNAL_API_ACQUIRE_TIMEOUT:2s}
+      max-connections: ${EXTERNAL_API_MAX_CONNECTIONS:64}
+      primary-ttl: ${MESSAGING_PRIMARY_TTL:3h}
+      lease-duration: ${MESSAGING_HTTP_LEASE_DURATION:30s}
+
+delivery:
+  dynamodb:
+    enabled: true
+    region: ${AWS_REGION:ap-northeast-2}
+    endpoint: ${DYNAMODB_ENDPOINT:http://localhost:8000}
+    initialize-tables: false
+
+management:
+  endpoint:
+    health:
+      probes:
+        enabled: true
+        add-additional-paths: true
+  server:
+    address: 127.0.0.1
+    port: ${MESSAGING_HTTP_METRICS_PORT:19086}
+  endpoints:
+    web:
+      exposure:
+        include: health

@@ -1,0 +1,100 @@
+server:
+  port: 8080
+  shutdown: graceful
+
+spring:
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+  application:
+    name: message-receive-api
+
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:local}
+
+  mvc:
+    async:
+      request-timeout: ${DELIVERY_HTTP_ASYNC_TIMEOUT:20s}
+
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        format_sql: true
+    open-in-view: false
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      database: ${REDIS_DATABASE:0}
+      connect-timeout: ${REDIS_CONNECT_TIMEOUT:200ms}
+      timeout: ${REDIS_TIMEOUT:200ms}
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    properties:
+      "[reconnect.backoff.ms]": ${KAFKA_RECONNECT_BACKOFF_MS:500}
+      "[reconnect.backoff.max.ms]": ${KAFKA_RECONNECT_BACKOFF_MAX_MS:10000}
+      "[retry.backoff.ms]": ${KAFKA_RETRY_BACKOFF_MS:500}
+      "[retry.backoff.max.ms]": ${KAFKA_RETRY_BACKOFF_MAX_MS:10000}
+      "[socket.connection.setup.timeout.ms]": ${KAFKA_SOCKET_SETUP_TIMEOUT_MS:5000}
+      "[socket.connection.setup.timeout.max.ms]": ${KAFKA_SOCKET_SETUP_TIMEOUT_MAX_MS:10000}
+    producer:
+      acks: all
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JacksonJsonSerializer
+      properties:
+        "[enable.idempotence]": true
+        "[compression.type]": zstd
+        "[linger.ms]": 5
+        "[spring.json.add.type.headers]": false
+        "[max.block.ms]": ${KAFKA_PUBLISH_MAX_BLOCK_MS:5000}
+        "[request.timeout.ms]": ${KAFKA_PUBLISH_REQUEST_TIMEOUT_MS:5000}
+        "[delivery.timeout.ms]": ${KAFKA_PUBLISH_DELIVERY_TIMEOUT_MS:10000}
+
+jwt:
+  access-token-expiration: 3600
+  secret: ${JWT_SECRET}
+
+delivery:
+  dynamodb:
+    enabled: true
+    endpoint: ${DYNAMODB_ENDPOINT:http://localhost:8000}
+    initialize-tables: ${DYNAMODB_INITIALIZE_TABLES:false}
+
+messaging:
+  admission:
+    enabled: ${MESSAGING_ADMISSION_ENABLED:false}
+
+management:
+  endpoint:
+    health:
+      probes:
+        enabled: true
+        add-additional-paths: true
+  server:
+    address: 127.0.0.1
+    port: ${DELIVERY_API_METRICS_PORT:19080}
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      maximum-expected-value:
+        "[delivery.acceptance.latency]": 7h
+      percentiles-histogram:
+        "[delivery.admission.duration]": true
+        "[http.server.requests]": true
+        "[delivery.stage.duration]": true
+        "[delivery.dynamodb.duration]": true
+        "[delivery.acceptance.latency]": true

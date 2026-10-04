@@ -1,0 +1,121 @@
+package messaging.delivery.dispatch.service;
+
+import messaging.common.delivery.DeliveryEvent;
+import messaging.common.metrics.DeliveryAudit;
+import messaging.common.metrics.DeliveryMetrics;
+import messaging.delivery.dispatch.config.DispatchProperties;
+import messaging.delivery.dispatch.config.SecondaryDispatchProperties;
+import messaging.delivery.dispatch.external.client.ProviderFailureException;
+import messaging.delivery.dispatch.model.DispatchFailureDecision;
+import messaging.delivery.dispatch.model.DispatchAttempt;
+import messaging.delivery.dispatch.model.DispatchClaimStatus;
+import messaging.delivery.dispatch.external.dto.ProviderDispatchResponse;
+import messaging.delivery.dispatch.port.DispatchAttemptStore;
+import messaging.delivery.dispatch.port.SecondaryProviderClient;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.event.ContextClosedEvent;
+import org.springframework.context.event.EventListener;
+import org.springframework.stereotype.Service;
+
+import java.time.Clock;
+
+@Service
+@RequiredArgsConstructor
+@Slf4j
+public class SecondaryDispatchService {
+    private final DispatchAttemptStore store;
+    private final SecondaryProviderClient client;
+    private final SecondaryDispatchProperties properties;
+    private final DispatchProperties dispatchProperties;
+    private final Clock dispatchClock;
+    private final DeliveryMetrics metrics;
+    private volatile boolean shuttingDown;
+
+    @EventListener(ContextClosedEvent.class)
+    public void onContextClosed() { shuttingDown = true; }
+
+    private messaging.delivery.dispatch.retry.RetryPublisher retries;
+    @org.springframework.beans.factory.annotation.Autowired
+    public void retryPublisher(messaging.delivery.dispatch.retry.RetryPublisher retries) { this.retries = retries; }
+
+    public void dispatch(DeliveryEvent event, String primaryAttemptId) {
+        var planned = store.prepareSecondary(event, primaryAttemptId, properties.provider(), properties.ttl());
+        if (planned.isEmpty()) return;
+        var route = planned.get();
+        if (!route.provider().equals(properties.provider())) {
+            throw new IllegalStateException("Persisted secondary provider is not configured; retain input for recovery");
+        }
+        var now = dispatchClock.instant();
+        var claim = metrics.measure(DeliveryMetrics.Stage.DISPATCH_CLAIM,
+                () -> store.claimSecondary(event, route, now, now.plus(dispatchProperties.leaseDuration())));
+        switch (claim.status()) {
+            case IN_PROGRESS -> throw new DispatchAttemptInProgressException(event.deliveryId());
+            case RETRY_WAIT -> {
+                metrics.outcome(DeliveryMetrics.Outcome.DISPATCH_RETRY_WAIT);
+                throw new DispatchRetryPendingException(event.deliveryId());
+            }
+            case ALREADY_ACCEPTED -> {
+                DeliveryAudit.record(event, "secondary", "duplicate", route.attemptId(), route.provider(), claim.status().name());
+                return;
+            }
+            case REVIEW_REQUIRED, DECISION_PENDING -> {
+                boolean review = claim.status() == DispatchClaimStatus.REVIEW_REQUIRED;
+                DeliveryAudit.record(event, "secondary", review ? "review_required" : "decision_pending",
+                        route.attemptId(), route.provider(), claim.status().name());
+                metrics.outcome(review ? DeliveryMetrics.Outcome.DISPATCH_REVIEW : DeliveryMetrics.Outcome.DISPATCH_DECISION_PENDING);
+                return;
+            }
+            case CLAIMED -> { }
+        }
+        invokeRetry(event, claim.attempt());
+    }
+
+    public void invokeRetry(DeliveryEvent event, DispatchAttempt attempt) {
+        if (!dispatchClock.instant().isBefore(attempt.deadline())) {
+            persistFailure(event, attempt, DispatchRetryPolicy.expired(attempt.deadline(), 2));
+            return;
+        }
+        final ProviderDispatchResponse response;
+        try {
+            response = metrics.measure(DeliveryMetrics.Stage.DISPATCH_TCP, () -> client.send(event, attempt.attemptId(), attempt.retryCount() + 1));
+            if (!Boolean.TRUE.equals(response.accepted())) throw new ProviderFailureException(ProviderFailureException.Kind.INVALID_RESPONSE);
+        } catch (ProviderFailureException failure) {
+            if (shuttingDown && failure.kind() == ProviderFailureException.Kind.NO_RESPONSE) {
+                // The TCP peer may have acted before its reply was lost. Preserve the claimed STEP and
+                // original deadline instead of scheduling another external call during shutdown.
+                log.warn("Secondary response unknown during shutdown; retaining STEP. deliveryId={}, attemptId={}",
+                        event.deliveryId(), attempt.attemptId());
+                return;
+            }
+            persistFailure(event, attempt, DispatchRetryPolicy.decide(attempt, failure.kind(), dispatchClock.instant(), dispatchProperties));
+            return;
+        }
+        if (!dispatchClock.instant().isBefore(attempt.deadline())) {
+            persistFailure(event, attempt, DispatchRetryPolicy.expired(attempt.deadline(), 2));
+            return;
+        }
+        metrics.measure(DeliveryMetrics.Stage.DISPATCH_STORE,
+                () -> store.markAccepted(attempt, response.processedAt(), dispatchClock.instant()));
+        metrics.outcome(DeliveryMetrics.Outcome.SECONDARY_ACCEPTED);
+        DeliveryAudit.record(event, "secondary", "accepted", attempt.attemptId(), attempt.provider(), "RECEIVED");
+    }
+
+    private void persistFailure(DeliveryEvent event, DispatchAttempt attempt,
+                                DispatchFailureDecision decision) {
+        if (event.schemaVersion() >= 2 && decision.state() == DispatchFailureDecision.State.RETRY_SCHEDULED) {
+            retries.publish(new messaging.delivery.dispatch.retry.RetryCommand(event, attempt, attempt.retryCount() + 1, decision.nextAttemptAt()));
+            metrics.outcome(DeliveryMetrics.Outcome.DISPATCH_RETRY_SCHEDULED);
+            return;
+        }
+        metrics.measure(DeliveryMetrics.Stage.DISPATCH_STORE, () -> store.recordFailure(attempt, decision));
+        DeliveryAudit.record(event, "secondary", decision.state().name().toLowerCase(java.util.Locale.ROOT),
+                attempt.attemptId(), attempt.provider(), decision.reason());
+        if (decision.state() == DispatchFailureDecision.State.RETRY_SCHEDULED) {
+            metrics.outcome(DeliveryMetrics.Outcome.DISPATCH_RETRY_SCHEDULED);
+            throw new DispatchRetryPendingException(event.deliveryId());
+        }
+        metrics.outcome(decision.state() == DispatchFailureDecision.State.REVIEW_REQUIRED
+                ? DeliveryMetrics.Outcome.DISPATCH_REVIEW : DeliveryMetrics.Outcome.DISPATCH_DECISION_PENDING);
+    }
+}
