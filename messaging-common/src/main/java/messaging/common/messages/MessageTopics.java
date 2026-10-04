@@ -6,8 +6,10 @@ public final class MessageTopics {
     public static final String SKT_HTTP_SEND = "message.skt.http.send.v1";
     public static final String KT_HTTP_SEND = "message.kt.http.send.v1";
     public static final String LGU_HTTP_SEND = "message.lgu.http.send.v1";
-    /** Unified immediate-response and webhook result topic for the new send path. */
+    /** Webhook results published by WEBHOOK-RECEIVE-API for MSG-RESULT-MANAGER. */
     public static final String MSG_RESULT = "MSG_RESULT";
+    /** Final business result produced by MSG-RESULT-MANAGER. */
+    public static final String MSG_RESULT_FINALIZED = "MSG-RESULT-FINALIZED";
 
     public static String httpSend(HttpCarrier carrier) {
         return switch (carrier) {
@@ -24,6 +26,7 @@ public final class MessageTopics {
     public static final String TCP_REQUESTED = "message.tcp.requested.v1";
     public static final String TCP_OUTCOME = "message.tcp.outcome.v1";
     public static final String TCP_RETRY = "message.tcp.retry.v1";
+    /** Previous target name, retained for the legacy flow. */
     public static final String FINALIZED = "message.finalized.v1";
 
     private MessageTopics() { }

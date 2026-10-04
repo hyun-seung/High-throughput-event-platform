@@ -20,7 +20,7 @@
 
 핵심 발송 흐름·DLT 복구, 운영 조회·수동 조치·감사 복구와 Redis/Lifecycle·SQL 통지/정리·DLT의 장애 중 호출 제한까지 구현했습니다. 나머지 운영 권한·연결 복구 설정·실행 준비를 마무리한 뒤 성능 설정·튜닝 → 서비스별 Pod 지속 성능 → 전체 **10,000 TPS** 확장 시험을 진행합니다. 완료 여부·시험 수치는 위 진행 현황 문서에서 관리합니다.
 
-위 구현 설명은 이관 전 경로를 포함합니다. 신규 `MESSAGE-RECEIVED → PRE-SEND-MANAGER → 통신사별 HTTP-SENDER → MSG_RESULT` 경로의 구현 범위는 [현재 상태](docs/01-현재-구현-상태와-남은-작업.md)에서 따로 확인합니다.
+위 구현 설명은 이관 전 경로를 포함합니다. 신규 `MESSAGE-RECEIVED → PRE-SEND-MANAGER → 통신사별 HTTP-SENDER` 뒤 HTTP 200은 DynamoDB에만 기록하고, 웹훅은 `WEBHOOK-RECEIVE-API → MSG_RESULT → MSG-RESULT-MANAGER`로 처리합니다. 구현 범위는 [현재 상태](docs/01-현재-구현-상태와-남은-작업.md)에서 따로 확인합니다.
 
 ## 실행과 Grafana
 
