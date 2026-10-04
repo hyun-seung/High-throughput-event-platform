@@ -114,7 +114,7 @@ class AsyncDeliverySecurityTest {
         pending.completeExceptionally(failure);
         mvc.perform(asyncDispatch(result))
                 .andExpect(status().isServiceUnavailable())
-                .andExpect(jsonPath("$.data.code").value(9003))
+                .andExpect(jsonPath("$.data.code").value(50003))
                 .andExpect(jsonPath("$.data.message").value(
                         "접수 여부를 확인하지 못했습니다. 동일한 Idempotency-Key와 요청 내용으로 재요청해 주세요."));
         verify(limiter, times(1)).tryAcquire(1L);
