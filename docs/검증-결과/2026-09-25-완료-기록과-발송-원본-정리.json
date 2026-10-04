@@ -1,6 +1,6 @@
 {
   "recordedAt": "2026-09-25T02:53:15.473996+00:00",
-  "baseCommit": "f440f9ec82362c22ad6ff0d468c336643de885d1",
+  "baseCommit": "3e068667673b0517b5ad3e51e11cea21967eea9a",
   "workingTreeDirty": true,
   "command": "DYNAMODB_TEST_ENDPOINT=http://localhost:18000 POSTGRES_TEST_URL=jdbc:postgresql://localhost:15432/delivery KAFKA_TEST_BOOTSTRAP_SERVERS=localhost:39092 JAVA_HOME=<JDK21> ./mvnw -q package",
   "exitCode": 0,

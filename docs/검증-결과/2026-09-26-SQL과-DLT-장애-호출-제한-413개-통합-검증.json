@@ -1,7 +1,7 @@
 {
   "date": "2026-09-26",
   "status": "PASS",
-  "baseCommit": "b9223e534d1bea2033143875123cbc3960143904",
+  "baseCommit": "895bcc542cb6ed84baeb2d56bf90a6c97f95b8c4",
   "runDirectory": ".poc-results/java-test-20260926032845-37969",
   "javaIntegration": {
     "suites": 43,

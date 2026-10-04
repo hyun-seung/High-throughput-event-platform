@@ -1,7 +1,7 @@
 {
   "date": "2026-09-25",
   "status": "PASS",
-  "baseCommit": "5a5d18bf2a85b4208187f46f0bc44899c2916e87",
+  "baseCommit": "218316501ffb8f67e1a0ebd47502c0ca4bc9107c",
   "input": "10 and 100 TPS, 5 seconds each, normal primary success, unique requests, provider deduplication off",
   "runs": [
     {
@@ -28,7 +28,7 @@
           "dispatch_metrics": 51476,
           "result_metrics": 51477
         },
-        "gitCommit": "5a5d18bf2a85b4208187f46f0bc44899c2916e87",
+        "gitCommit": "218316501ffb8f67e1a0ebd47502c0ca4bc9107c",
         "workingTreeDirty": true,
         "jarSha256": {
           "provider": "2c32cccc284b31a8c83dd1b27594146540c66de7e4cf159510cfd947900b4ae9",
@@ -366,7 +366,7 @@
           "dispatch_metrics": 55281,
           "result_metrics": 55282
         },
-        "gitCommit": "5a5d18bf2a85b4208187f46f0bc44899c2916e87",
+        "gitCommit": "218316501ffb8f67e1a0ebd47502c0ca4bc9107c",
         "workingTreeDirty": true,
         "jarSha256": {
           "provider": "2c32cccc284b31a8c83dd1b27594146540c66de7e4cf159510cfd947900b4ae9",

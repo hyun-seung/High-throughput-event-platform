@@ -2,7 +2,7 @@
   "date": "2026-09-28",
   "purpose": "PENDING 감사 제한 재확인과 기존 조치 ID·DynamoDB 결과 불명 보존 검증",
   "command": "JAVA_HOME=/Users/hyunseung/Library/Java/JavaVirtualMachines/temurin-21.0.7/Contents/Home bash scripts/test-java.sh integration",
-  "baseCommit": "288aa41",
+  "baseCommit": "330c231",
   "evidence": ".poc-results/java-test-20260928040343-38108",
   "tools": {
     "assertions": "Java/JUnit",

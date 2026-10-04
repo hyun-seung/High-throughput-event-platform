@@ -1,7 +1,7 @@
 {
   "date": "2026-09-25",
   "status": "PASS",
-  "baseCommit": "926f9742291bc3452780b794af1caca699f706e4",
+  "baseCommit": "80341540d1b1b4b35af37ff037a522e7bf97f32c",
   "runDirectory": ".poc-results/full-flow-e59b60bb0640",
   "validation": {
     "mavenPackage": "PASS",
@@ -42,7 +42,7 @@
       "dispatch_metrics": 60710,
       "result_metrics": 60711
     },
-    "gitCommit": "926f9742291bc3452780b794af1caca699f706e4",
+    "gitCommit": "80341540d1b1b4b35af37ff037a522e7bf97f32c",
     "workingTreeDirty": true,
     "jarSha256": {
       "provider": "108291fceaf8cb4876b547b18feabe7f309e22014eac90702f51142e4d3a830f",

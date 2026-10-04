@@ -1,6 +1,6 @@
 {
   "recordedAt": "2026-09-25T03:03:41.938048+00:00",
-  "baseCommit": "3b7f21769ea5089851f06692fea856c0006f9586",
+  "baseCommit": "a9d3c78873a546f842ce53b9ae14af10e4259a15",
   "command": "DYNAMODB_TEST_ENDPOINT=http://localhost:18000 JAVA_HOME=<JDK21> ./mvnw -q -pl dispatch-worker -am -Dtest=DynamoDbWriteBudgetTest -Dsurefire.failIfNoSpecifiedTests=false test",
   "exitCode": 0,
   "tests": 4,

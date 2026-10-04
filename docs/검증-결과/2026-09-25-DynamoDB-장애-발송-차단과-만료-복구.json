@@ -1,7 +1,7 @@
 {
   "date": "2026-09-25",
   "status": "PASS",
-  "baseCommit": "7c51b743c04bfbe1182c0a18bbcc45a85156977f",
+  "baseCommit": "59e9cf05adbaefd8c8215c9531ca3c59cfe0170a",
   "runDirectory": ".poc-results/full-flow-4896c83ceb0b",
   "validation": {
     "pythonTests": 41,
@@ -127,7 +127,7 @@
       "dispatch_metrics": 57602,
       "result_metrics": 57603
     },
-    "gitCommit": "7c51b743c04bfbe1182c0a18bbcc45a85156977f",
+    "gitCommit": "59e9cf05adbaefd8c8215c9531ca3c59cfe0170a",
     "workingTreeDirty": true,
     "jarSha256": {
       "provider": "2c32cccc284b31a8c83dd1b27594146540c66de7e4cf159510cfd947900b4ae9",

@@ -1,7 +1,7 @@
 {
   "date": "2026-09-26",
   "status": "PASS",
-  "baseCommit": "03b238e91540f741c47cc1658a2eb1bed352192b",
+  "baseCommit": "73c03acc7571ba93995b90e819d7fc1a993ef54d",
   "runDirectory": ".poc-results/java-test-20260925160220-26880",
   "earlierRun": {
     "directory": ".poc-results/java-test-20260925155953-26475",

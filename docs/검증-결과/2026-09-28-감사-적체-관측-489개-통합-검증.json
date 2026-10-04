@@ -2,7 +2,7 @@
   "date": "2026-09-28",
   "purpose": "PENDING 감사 적체 지표와 로컬 경보 규칙 검증",
   "command": "JAVA_HOME=/Users/hyunseung/Library/Java/JavaVirtualMachines/temurin-21.0.7/Contents/Home bash scripts/test-java.sh integration",
-  "baseCommit": "0126a82",
+  "baseCommit": "43fd477",
   "evidence": ".poc-results/java-test-20260928070423-42695",
   "tools": {
     "assertions": "Java/JUnit",

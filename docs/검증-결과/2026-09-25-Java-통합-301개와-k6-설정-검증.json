@@ -1,6 +1,6 @@
 {
   "date": "2026-09-25",
-  "baseCommit": "5cd0a553d5e43128d579e091993afc188a659b51",
+  "baseCommit": "8e9d34d25a8cbbb8dc23643dda7905fac64baf91",
   "status": "PASS",
   "runDirectory": ".poc-results/java-test-20260925140528-16402",
   "javaIntegration": {

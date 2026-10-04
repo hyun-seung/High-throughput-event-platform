@@ -1,6 +1,6 @@
 {
   "verifiedAtUtc": "2026-09-25T04:26:43.280481+00:00",
-  "implementationCommit": "b6b37b55a5b105d03e9878a74f918721abbe3e70",
+  "implementationCommit": "18e1db961333719b19ba0bc86a7568c514400c78",
   "scope": "전체 package 278개 통과 후 최종 변경의 관련 통합 시험을 재실행한 누적 282개 보고서. 새로운 TPS/AWS 장애 보장 측정은 아님.",
   "environment": {
     "java": "Temurin 21.0.7",

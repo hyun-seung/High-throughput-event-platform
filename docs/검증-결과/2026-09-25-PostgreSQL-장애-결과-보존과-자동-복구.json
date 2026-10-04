@@ -1,7 +1,7 @@
 {
   "date": "2026-09-25",
   "status": "PASS_AFTER_INFRASTRUCTURE_RETRY",
-  "baseCommit": "5d89bbda96160e1ebaf7a5e75aaeff6ef5dce9ff",
+  "baseCommit": "677900e3277efe0e1d4b8a68e80f6186e7166750",
   "runDirectory": ".poc-results/full-flow-4491a9699388",
   "validation": {
     "pythonTests": 37,
@@ -129,7 +129,7 @@
       "dispatch_metrics": 56875,
       "result_metrics": 56876
     },
-    "gitCommit": "5d89bbda96160e1ebaf7a5e75aaeff6ef5dce9ff",
+    "gitCommit": "677900e3277efe0e1d4b8a68e80f6186e7166750",
     "workingTreeDirty": true,
     "jarSha256": {
       "provider": "2c32cccc284b31a8c83dd1b27594146540c66de7e4cf159510cfd947900b4ae9",

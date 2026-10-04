@@ -1,7 +1,7 @@
 {
   "date": "2026-09-25",
   "status": "PASS",
-  "baseCommit": "bcfa150",
+  "baseCommit": "4d0753a",
   "tests": {
     "event-common": {
       "totals": {
@@ -75,7 +75,7 @@
         "dispatch_metrics": 63867,
         "result_metrics": 63868
       },
-      "gitCommit": "bcfa150356efb21b768291c391a2e423a9d4bbee",
+      "gitCommit": "4d0753aa1f0b12d67036454e1903fc67bf22141f",
       "workingTreeDirty": true,
       "jarSha256": {
         "provider": "2c32cccc284b31a8c83dd1b27594146540c66de7e4cf159510cfd947900b4ae9",
@@ -138,7 +138,7 @@
           "dispatch_metrics": 64338,
           "result_metrics": 64339
         },
-        "gitCommit": "bcfa150356efb21b768291c391a2e423a9d4bbee",
+        "gitCommit": "4d0753aa1f0b12d67036454e1903fc67bf22141f",
         "workingTreeDirty": true,
         "jarSha256": {
           "provider": "2c32cccc284b31a8c83dd1b27594146540c66de7e4cf159510cfd947900b4ae9",
@@ -498,7 +498,7 @@
           "dispatch_metrics": 51373,
           "result_metrics": 51374
         },
-        "gitCommit": "bcfa150356efb21b768291c391a2e423a9d4bbee",
+        "gitCommit": "4d0753aa1f0b12d67036454e1903fc67bf22141f",
         "workingTreeDirty": true,
         "jarSha256": {
           "provider": "2c32cccc284b31a8c83dd1b27594146540c66de7e4cf159510cfd947900b4ae9",

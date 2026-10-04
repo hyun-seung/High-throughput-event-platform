@@ -1,7 +1,7 @@
 {
   "date": "2026-09-25",
   "status": "PASS",
-  "baseCommit": "0b87695",
+  "baseCommit": "8fda200",
   "tests": {
     "event-common": {
       "totals": {
@@ -56,7 +56,7 @@
         "dispatch_metrics": 59518,
         "result_metrics": 59519
       },
-      "gitCommit": "0b876956a89e741833098c11c0ac45038e28d64b",
+      "gitCommit": "8fda200d45c676d9fc778246da1419e0707bd52c",
       "workingTreeDirty": true,
       "jarSha256": {
         "provider": "2c32cccc284b31a8c83dd1b27594146540c66de7e4cf159510cfd947900b4ae9",
@@ -117,7 +117,7 @@
         "dispatch_metrics": 60017,
         "result_metrics": 60018
       },
-      "gitCommit": "0b876956a89e741833098c11c0ac45038e28d64b",
+      "gitCommit": "8fda200d45c676d9fc778246da1419e0707bd52c",
       "workingTreeDirty": true,
       "jarSha256": {
         "provider": "2c32cccc284b31a8c83dd1b27594146540c66de7e4cf159510cfd947900b4ae9",
