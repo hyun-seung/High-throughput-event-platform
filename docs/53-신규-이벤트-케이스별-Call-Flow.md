@@ -176,16 +176,23 @@ sequenceDiagram
 
 ## 5. 접수 성공 후 실패 웹훅
 
-즉시 응답이 `ACCEPTED`였더라도 업체가 나중에 실패 웹훅을 보낼 수 있다. 이 경우 실패의 출처는 sender가 아니라 인증된 `receipt-api`다.
+업체의 HTTP `200 OK`와 유효한 `accepted=true` 응답은 **요청 접수 확인**이다. 최종 수신 성공으로 고객에게 통지하지 않는다. 이후 업체가 `FAILED` 웹훅을 보내면 그 웹훅의 업무 코드가 해당 호출 회차의 실패 원인이다. 실패 결과의 출처는 sender가 아니라 인증된 `receipt-api`다.
 
 ```mermaid
 sequenceDiagram
     autonumber
+    participant S as 통신사별 HTTP-SENDER
     participant P as 통신사 업체
     participant W as receipt-api
     participant K as MSG_RESULT
     participant M as EVENT-RESULT-MANAGER
     participant D as DynamoDB
+    participant T as 후속 Kafka Topic
+    S->>P: HTTP 발송(attemptId·invocation=1)
+    P-->>S: 200 OK + accepted=true
+    S->>D: 발송 시각·접수 응답 기록
+    S->>K: 즉시 ACCEPTED 결과
+    K->>M: 업체 접수 확인, 최종화하지 않음
     P->>W: FAILED 웹훅 + executionId·attemptId·코드
     W->>W: 업체 인증·형식·업체·시도 정보 검증
     W->>K: 실패 웹훅 결과 발행
@@ -193,14 +200,27 @@ sequenceDiagram
     W-->>P: 웹훅 접수 응답
     K->>M: 실패 결과
     M->>D: 실행·단계·회차·version·기한 확인
-    alt 현재 유효한 실패
-        M->>D: 코드별 재시도·2차 전환·최종 실패 중 하나 저장
+    alt 유효한 재시도 대상 코드·기한·횟수
+        M->>D: 실패와 다음 회차·예정 시각 고정
+        M->>T: 같은 통신사 재발송 명령(신규 토픽 미정)
+    else 유효한 대체 대상 코드·fallbackAllowed
+        M->>D: 1차 종료·2차 바인딩 고정
+        M->>T: event.tcp.requested.v1 발행
+    else 유효한 영구 실패
+        M->>D: 최종 실패 고정
+        M->>T: event.finalized.v1 발행
+    else 유효하지만 코드 미분류
+        M->>D: REVIEW_REQUIRED·운영 확인 저장
     else 중복·지난 회차·이미 최종화
         M->>M: 기존 판단 유지, 추가 발송 없음
     end
 ```
 
-유효한 웹훅 실패의 이후 분기는 [즉시 실패와 같은 정책](#4-업체의-즉시-응답이-실패)을 따른다. 웹훅이 먼저 도착하거나 중복·늦게 와도 확정 상태를 덮지 않는다. 업체가 재시도 회차를 웹훅에 어떻게 실어 돌려주는지는 신규 전문 계약에서 정해야 한다.
+이전 경로의 코드별 기준은 `FAILED + RETRY_1S/RETRY_10S`면 원래 1차 deadline과 최대 3회 범위에서 같은 통신사 재시도, `FAILED + FALLBACK`이면 `fallbackAllowed=true`일 때만 TCP 2차 전환, `FAILED + REJECTED`면 최종 실패다. 코드가 없거나 미지의 코드면 재시도·전환을 추측하지 않고 운영 확인 대상으로 남긴다. 신규 `MSG_RESULT` 전문과 실제 업체별 코드표는 아직 확정되지 않았다. 유효한 실패는 최종 결과가 되거나 재시도·2차로 이어지고, 그 전에는 고객에게 최종 결과를 통지하지 않는다.
+
+웹훅이 즉시 응답의 Kafka 결과보다 먼저 도착하거나 중복·늦게 와도 이미 확정한 판단을 덮지 않는다. sender의 늦은 `ACCEPTED` 기록도 웹훅 실패·재시도 판단을 되돌려서는 안 된다. 재시도 회차를 웹훅과 함께 돌려받아 이전 회차의 늦은 실패를 구분해야 한다.
+
+**재시도 멱등키는 추가 결정이 필요하다.** 현재 이전 `event-http-sender`는 HTTP `Idempotency-Key`에 고정 `attemptId`를 쓰며 시뮬레이터는 같은 키의 두 번째 접수 성공을 중복으로 처리한다. 이를 신규 경로에 그대로 적용하면 실패 웹훅 뒤 `invocation=2`를 보내도 새 발송 효과가 없을 수 있다. 논리적 `attemptId`는 유지하되 호출 회차별 업체 멱등키를 구분하고, *같은 회차의 Kafka 재전달*은 같은 키로 재사용하는 방안을 업체 계약과 함께 확정해야 한다.
 
 ## 6. 웹훅 미수신과 1차 만료
 
@@ -302,6 +322,7 @@ flowchart TD
 ## 구현 전에 확정할 인터페이스
 
 - `MSG_RESULT`의 통합 전문: 즉시 응답과 웹훅의 구별, 통신사·단계·`attemptId`·`invocation`·업체 코드·발생 시각·중복 식별자.
+- 업체 재시도용 회차별 멱등키와 웹훅 회차 회신 계약. 기존 `Idempotency-Key: attemptId`를 그대로 쓰면 실패 웹훅 뒤의 새 발송이 업체 중복 처리에 막힐 수 있다.
 - 신규 1차 deadline의 Redis 후보 등록 시점과 재시도 명령의 통신사별 라우팅·지연 예약 방식. 기존 단일 sender용 `event.http.retry.v1`을 그대로 신규 경로로 읽지 않는다.
 - 번호→통신사 Redis 캐시 누락 정책, 계약상 발송 불가 결과의 인계 전문·토픽, 계약·발송 설정 스키마.
 - sender Redis 선점 TTL·진행 중 중복 처리·DynamoDB 기록 실패 복구, 업체별 동일 `attemptId` 보장 범위.
