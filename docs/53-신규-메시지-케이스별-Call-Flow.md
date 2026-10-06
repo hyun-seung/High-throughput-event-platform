@@ -19,7 +19,7 @@
 
 현재 확정한 새 경로의 토픽은 `message.received.v1`(API → PRE-SEND-MANAGER), `message.skt.http.send.v1`·`message.kt.http.send.v1`·`message.lgu.http.send.v1`(Manager → 통신사별 sender), `MSG_RESULT`(웹훅 API의 결과 및 통신사별 sender의 명시적 비-200 실패 → MSG-RESULT-MANAGER), `MSG-RESULT-FINALIZED`(최종 결과 인계)다. 1차 HTTP `200 OK`에서는 sender가 Kafka 결과를 발행하지 않는다. 명시적 비-200 실패는 응답 코드와 함께 sender가 `MSG_RESULT`에 직접 발행하며 해당 발송의 웹훅은 오지 않는다. 오류 코드 대역과 결과 전문은 [54 오류 코드 계약](54-메시징-오류-코드와-결과-인계-계약.md)을 따른다. **2차 발송은 아직 기존 목표명** `message.tcp.requested.v1`/`messaging-tcp-sender`로 표기한다. 제안된 `message.tcp.send.v1` 이름은 확정되지 않았다. 2차 결과 수용 경로도 미정이다.
 
-단일 메시지 처리용 Kafka 레코드의 key는 최초 접수에서 발급한 고정 `sendRequestId`(`R`)다. 현행 접수 이벤트의 `executionId`에는 같은 값이 저장되어 있으며 이관 중이다. 고객 ID는 API의 `messageId`이며 UTF-8 최대 40바이트다. 고정 `R`은 하이픈 없는 UUID 32자리다. CDC 참조 데이터 토픽은 별개다. `attemptId`는 1차 HTTP의 통신사별 시도를 식별하고, 동일 통신사 재시도 회차(`invocation`)는 별도로 구분한다. **업체 발송 요청의 `clientMsgId`에 최대 40바이트의 `R:통신사:회차`(예: `R:SKT:1`, 38바이트)를 담고 웹훅 배열 항목의 `clientMsgId`로 그대로 받는다.** 같은 명령의 재전달에는 같은 파생 ID를 쓰며, 새 회차·통신사에는 고정 `R`에서 새 ID를 파생한다. 웹훅 ID에서 `R`·통신사·회차를 얻어 해당 저장 시도와 정확히 대조한다. 공통 `HttpSendCommand`에 이 계약을 반영했으며 실제 Manager 생산·Sender 소비는 아직 구현 전이다. 고객 API 요청과 웹훅 HTTP 요청은 인입마다 별도의 `traceId`를 발급해 추적하고 메시지 키로 사용하지 않는다. 웹훅 한 요청에 여러 메시지가 섞일 수 있으므로 `MSG_RESULT`를 요청 단위 1레코드로 쓸지 결과별 1레코드로 쓸지는 아직 결정하지 않았다. 다른 토픽 사이의 도착 순서는 보장되지 않으므로 최종 판단은 DynamoDB의 조건부 상태 전이로 수렴시킨다.
+단일 메시지 처리용 Kafka 레코드의 key는 최초 접수에서 발급한 고정 `sendRequestId`(`R`)다. 현행 접수 이벤트의 `executionId`에는 같은 값이 저장되어 있으며 이관 중이다. 고객 ID는 API의 `messageId`이며 UTF-8 최대 40바이트다. 고정 `R`은 하이픈 없는 UUID 32자리다. CDC 참조 데이터 토픽은 별개다. `attemptId`는 1차 HTTP의 통신사별 시도를 식별하고, 동일 통신사 재시도 회차(`invocation`)는 별도로 구분한다. **업체 발송 요청의 `clientMsgId`에 최대 40바이트의 `R:통신사:회차`(예: `R:SKT:1`, 38바이트)를 담고 웹훅 배열 항목의 `clientMsgId`로 그대로 받는다.** 같은 명령의 재전달에는 같은 파생 ID를 쓰며, 새 회차·통신사에는 고정 `R`에서 새 ID를 파생한다. 웹훅 ID에서 `R`·통신사·회차를 얻어 해당 저장 시도와 정확히 대조한다. 공통 `HttpSendCommand`에 이 계약을 반영했으며 실제 Manager 생산·Sender 소비는 아직 구현 전이다. 고객 API 요청과 웹훅 HTTP 요청은 인입마다 별도의 `traceId`를 발급해 추적하고 메시지 키로 사용하지 않는다. 웹훅 API 경량화 기준으로 한 웹훅 HTTP 요청의 1~100개 결과를 `MSG_RESULT`의 1개 Kafka 레코드에 담는다. 이 배치의 key는 인입 `traceId`를 사용하며, 단일 메시지 명령·HTTP 응답 실패 레코드는 고정 `R` key를 사용한다. 웹훅 배치 안의 개별 `R`에 대한 Kafka 파티션 순서는 보장되지 않는다. 다른 토픽 사이의 도착 순서는 보장되지 않으므로 최종 판단은 DynamoDB의 조건부 상태 전이로 수렴시킨다.
 
 ## 1. 1차 정상 성공
 
@@ -190,7 +190,7 @@ flowchart TD
 
 ## 5. 웹훅 묶음과 실패 분기
 
-업체의 HTTP `200 OK`는 최종 수신 성공이 아니다. 업체는 이후 한 번의 웹훅 요청에 **1~100건의 메시지 결과**를 담아 보낼 수 있다. 배열의 각 항목은 `clientMsgId`와 `status`를 담으며 `clientMsgId`는 파생 발송 ID와 같다. `status=success`에는 `error`가 없고 `status=fail`에는 `error: {code, message}`가 반드시 있다. 같은 요청 안에서 `clientMsgId`는 중복되지 않는다. `WEBHOOK-RECEIVE-API`는 업체 인증과 1~100건 형식 검증 후 Kafka `MSG_RESULT` 저장을 확인하고 접수 응답을 반환하며, 개별 메시지의 성공·실패를 판정하지 않는다. **웹훅 API가 실패 응답을 반환하면 업체가 같은 묶음을 재전송한다.** 따라서 다른 요청으로 다시 온 동일 결과는 Manager가 멱등 처리한다. 웹훅 전체를 1개 Kafka 레코드로 보낼지 각 결과를 별도 레코드로 보낼지는 미정이다. 어느 방식을 택해도 Manager는 각 결과를 실행별로 독립 처리한다.
+업체의 HTTP `200 OK`는 최종 수신 성공이 아니다. 업체는 이후 한 번의 웹훅 요청에 **1~100건의 메시지 결과**를 담아 보낼 수 있다. 배열의 각 항목은 `clientMsgId`와 `status`를 담으며 `clientMsgId`는 파생 발송 ID와 같다. `status=success`에는 `error`가 없고 `status=fail`에는 5자리 숫자 `code`와 `message`를 담은 `error`가 반드시 있다. 같은 요청 안에서 `clientMsgId`는 중복되지 않는다. `WEBHOOK-RECEIVE-API`는 업체 인증과 형식·1~100건·수신 크기를 확인하고 **묶음 전체를 `MSG_RESULT` 1레코드로 발행**한다. Kafka 저장 확인 후 접수 응답을 반환하며, 각 메시지의 성공·실패 판단과 DynamoDB 조회는 하지 않는다. Kafka 저장 실패·ack 불명확이면 실패 응답을 주고 업체가 같은 묶음을 재전송한다. Manager는 배치를 풀어 각 결과를 독립 처리하고, 모두 내구성 있게 처리된 후에만 Kafka offset을 완료한다. 한 항목에서 일시 장애가 나면 배치가 재전달되므로 이미 처리한 항목은 저장 상태로 멱등 처리한다. Kafka 배치 기록은 재전달 때 유지되지만 업체가 HTTP 요청 자체를 재전송하면 새 `traceId`가 붙으므로 `traceId`로 결과 중복을 판정하지 않는다.
 
 ```mermaid
 sequenceDiagram
@@ -207,10 +207,11 @@ sequenceDiagram
     S->>D: 발송 시각·HTTP 응답 기록 후 종료
     P->>W: 1~100건 성공·실패 결과 웹훅
     W->>W: 업체 인증·형식·건수 검증
-    W->>K: MSG_RESULT 발행
+    W->>K: 웹훅 묶음 1건을 MSG_RESULT 1레코드로 발행
     K-->>W: 저장 확인
     W-->>P: 웹훅 접수 응답
-    K->>M: 각 메시지 결과
+    K->>M: 1~100건 결과 배치
+    M->>M: 결과별 독립 처리·모두 완료 후 offset 완료
     M->>D: 실행·시도·회차·기한·중복 확인
     alt 성공 웹훅
         M->>D: 최종 성공 조건부 저장
@@ -259,7 +260,7 @@ flowchart TD
     F -->|아니오| E[EXPIRED 최종화]
 ```
 
-Redis 일정이 유실돼도 DynamoDB 조회로 누락을 찾는다. 인증·형식이 유효한 늦은 웹훅은 API가 Kafka 저장 확인 후 접수 성공으로 응답하고 Manager가 관측하되 이미 확정한 만료·2차 전환·최종 결과를 바꾸지 않는다. 업체의 재전송 최대 기간이 없으므로 정리된 실행이나 알 수 없는 파생 `sendRequestId`도 뒤늦게 도착할 수 있다. 형식이 유효하면 고정 `R`을 Kafka key로 추출하되, 저장 원본·회차가 없으면 새 실행·발송을 만들지 않고 관측 보존·격리한다. 구체적인 보존 위치는 추가 설계가 필요하다. 2차 전환을 늦게 처리해도 2차 deadline을 임의로 연장하지 않는다.
+Redis 일정이 유실돼도 DynamoDB 조회로 누락을 찾는다. 인증·형식이 유효한 늦은 웹훅은 API가 Kafka 저장 확인 후 접수 성공으로 응답하고 Manager가 관측하되 이미 확정한 만료·2차 전환·최종 결과를 바꾸지 않는다. 업체의 재전송 최대 기간이 없으므로 정리된 실행이나 알 수 없는 파생 `sendRequestId`도 뒤늦게 도착할 수 있다. 웹훅 배치 Kafka key는 인입 `traceId`이고, Manager가 각 항목의 고정 `R`을 추출한다. 저장 원본·회차가 없으면 새 실행·발송을 만들지 않고 관측 보존·격리한다. 구체적인 보존 위치는 추가 설계가 필요하다. 2차 전환을 늦게 처리해도 2차 deadline을 임의로 연장하지 않는다.
 
 ## 7. 2차 TCP 발송
 
@@ -332,8 +333,8 @@ flowchart TD
 | HTTP `200 OK` 뒤 DynamoDB 갱신 실패·응답 불명 | 업체 접수는 됐을 수 있다. 같은 발송을 곧바로 재호출하지 않고 웹훅·저장 상태와 원래 기한으로 복구. 신규 복구 절차 미정 |
 | 명시적 비-200 기록 뒤 `MSG_RESULT` 발행 실패·ack 불명확 | DynamoDB의 발행 대기 결과를 동일 `resultId`·고정 `R` key로 재발행. 업체 HTTP 호출을 반복하지 않고 Manager가 중복 결과를 제거 |
 | `MSG_RESULT` 소비 후 Manager 판단 저장·후속 Kafka 발행 사이 종료 | DynamoDB에 고정한 판단·명령을 같은 ID로 재발행. 먼저 저장되지 않았다면 원본 결과를 재처리 |
-| 웹훅 1~100건의 Kafka 저장 실패·ack 불명확 | `WEBHOOK-RECEIVE-API`가 실패 응답을 반환하면 업체가 같은 묶음을 재전송. 같은 묶음 안의 ID는 유일하지만 재전송 요청 사이에는 결과가 중복되므로 이미 저장된 결과는 Manager가 멱등 처리 |
-| 한 웹훅 묶음 중 일부 결과만 처리한 뒤 Manager 종료 | 재전달 시 각 결과의 처리 여부를 독립 확인. Kafka 레코드 단위와 offset 완료 기준은 후속 결정 |
+| 웹훅 배치 1레코드의 Kafka 저장 실패·ack 불명확 | `WEBHOOK-RECEIVE-API`가 실패 응답을 반환하면 업체가 같은 묶음을 재전송. 두 레코드가 모두 저장될 수도 있으므로 Manager가 항목별 저장 상태로 멱등 처리 |
+| 한 웹훅 묶음 중 일부 결과만 처리한 뒤 Manager 종료 | 같은 배치 레코드가 재전달된다. 항목별 DynamoDB 조건부 상태로 완료 항목을 멱등 통과하고 남은 항목을 처리한 뒤 offset 완료 |
 | Redis deadline 일정 유실 | DynamoDB 복구 인덱스로 만료 후보 재발견. Redis 비어 있음 여부에만 의존하지 않음 |
 | 최종 DDB 저장 뒤 `MSG-RESULT-FINALIZED` 발행 실패 | DDB의 불변 최종 결과로 같은 최종 결과 레코드 재인계 |
 | PostgreSQL commit 뒤 고객 통지·DDB 정리 전 종료 | SQL의 통지·정리 예약으로 각각 재개. 고객 통지 완료와 정리는 독립 |
@@ -342,14 +343,14 @@ flowchart TD
 
 ## 즉시 실패 인계와 오류 코드
 
-HTTP `200 OK` 경로는 Kafka를 발행하지 않는다. **명시적 비-200 실패는 웹훅이 오지 않으므로 통신사별 sender가 `MSG_RESULT`에 직접 발행한다.** `source=HTTP_RESPONSE`와 웹훅의 `source=WEBHOOK`을 구분하고, 두 경로 모두 고정 `R` key·결과별 안정적인 `resultId`를 사용한다. Sender가 DynamoDB에 실패·발행 대기를 기록한 뒤 Kafka 발행 중 종료하면 같은 결과를 복구 발행한다. Manager는 중복 수신을 조건부 상태 전이로 처리한다.
+HTTP `200 OK` 경로는 Kafka를 발행하지 않는다. **명시적 비-200 실패는 웹훅이 오지 않으므로 통신사별 sender가 `MSG_RESULT`에 직접 발행한다.** `source=HTTP_RESPONSE`와 웹훅 배치의 `source=WEBHOOK`을 구분한다. HTTP 실패 레코드는 고정 `R` key, 웹훅 배치 레코드는 인입 `traceId` key를 사용한다. 두 경로의 개별 결과는 안정적인 식별·조건부 상태 전이로 중복을 제거한다. Sender가 DynamoDB에 실패·발행 대기를 기록한 뒤 Kafka 발행 중 종료하면 같은 결과를 복구 발행한다. Manager는 중복 수신을 조건부 상태 전이로 처리한다.
 
 우리 서비스 코드는 `10000~59999`, 1차 HTTP 3사 정규화 코드는 `60000~69999`, 2차 TCP 업체 정규화 코드는 `70000~79999`를 사용한다. HTTP status와 업체 원본 코드는 별도 필드로 보존한다. 상세 대역과 필드 계약은 [54 오류 코드 계약](54-메시징-오류-코드와-결과-인계-계약.md)에 기록한다. 타임아웃은 비-200 실패로 간주하지 않고 별도 결과 불명 정책을 적용한다.
 
 ## 구현 전에 확정할 인터페이스
 
-- `MSG_RESULT`의 웹훅 전문: 요청 추적용 `traceId`와 1~100개 결과. 업체 원문은 `{clientMsgId, status}` 또는 `{clientMsgId, status, error: {code, message}}` 객체의 배열이며 `clientMsgId`가 파생 발송 ID다. `status` 값은 소문자 `success`·`fail`이고, `success`에는 `error`가 없으며 `fail`에는 필수다. 파생 ID에서 고정 `R`·통신사·회차를 얻고 `attemptId`·발송 시각은 저장 원본에서 보강한다. 업체 결과 ID는 없으므로 중복 식별자는 저장 상태와 결합해 설계한다.
-- 웹훅 1개를 Kafka 1레코드로 보낼지, 각 메시지 결과를 별도 레코드로 나눌지. **권장안은 결과별 레코드 + 고정 `R` key + 결과별 멱등 ID**다. 메시지별 순서와 독립 재처리가 단순해지지만, 1~100건 중 일부만 Kafka에 저장된 뒤 웹훅 재전달되는 경우를 멱등 처리하고 전체 발행 확인 전 API 성공 응답을 하지 않아야 한다. 묶음 1레코드는 메시지별 key·순서와 부분 실패 처리가 어렵다.
+- `MSG_RESULT`의 웹훅 전문: 요청 추적용 `traceId`와 1~100개 결과를 묶은 1레코드. 업체 원문은 `{clientMsgId, status}` 또는 `{clientMsgId, status, error: {code, message}}` 객체의 배열이며 `clientMsgId`가 파생 발송 ID다. `status` 값은 소문자 `success`·`fail`이고, `success`에는 `error`가 없으며 `fail`에는 5자리 숫자 `error.code`가 필수다. 파생 ID에서 고정 `R`·통신사·회차를 얻고 `attemptId`·발송 시각은 저장 원본에서 보강한다. 업체 결과 ID는 없으므로 중복 식별자는 저장 상태와 결합해 설계한다.
+- 웹훅 API 경량화에 맞춰 **요청 1건당 Kafka 1레코드**를 사용한다. Manager는 1~100개 항목을 제한된 병렬성으로 처리하고 전부 완료된 뒤 offset을 완료한다. 배치에 서로 다른 `R`이 섞이므로 파티션 순서에 의존하지 않고 항목별 DynamoDB 조건부 전이를 사용한다. 한 항목의 일시 장애는 배치 전체 재처리를 일으킨다. 영구적으로 잘못된 항목의 격리 정책과 Kafka 메시지·HTTP 요청 최대 바이트는 구현 전에 정한다.
 - 명시적 비-200 실패는 sender가 `MSG_RESULT`에 직접 발행한다. 업체별 원본 코드 → 6만 대역 정규화 코드와 코드별 재시도·통신사 이동·2차·최종 실패 정책, DynamoDB 발행 대기 인덱스·복구 작업은 구현 전에 확정한다. HTTP `200 OK` 경로에서 Kafka 발행이 없다는 규칙은 유지한다. 응답이 없는 타임아웃은 별도 분류한다.
 - 웹훅이 Sender의 DynamoDB `200 OK` 기록보다 먼저 온 경우에도 웹훅이 해당 시도의 최종 결과라는 규칙을 지키는 조건부 갱신. 늦은 sender 기록은 메타데이터만 보충한다.
 - 2차 비대상 실패의 최종 실패·동일 통신사 재시도·운영 확인 기준과 웹훅 미수신 시 만료 판단을 깨우는 주체.
