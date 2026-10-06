@@ -31,8 +31,10 @@
 | 웹훅 접수 | `WEBHOOK-RECEIVE-API` | 신규 경로 구현 전. 현재 `receipt-api`는 이전 경로 |
 | 결과 판단 | `MSG-RESULT-MANAGER` | 신규 경로 구현 전 |
 | 2차 TCP 발송 | `MSG-TCP-SENDER` | 목표 AP명 확정, 신규 경로 구현 전 |
+| 최종 결과 이력·정리 | `MSG-FINALIZER` | 목표 AP명. 현재 `delivery-result-worker`의 일부 책임을 이관해야 함 |
+| 고객 결과 웹훅 발송 | `MSG-WEBHOOK-SENDER` | 목표 AP명. 현재 `delivery-result-worker`의 통지 책임을 분리해야 함 |
 
-`messaging-http-sender`는 이전 단일 sender 모듈이고, `messaging-publication-recovery-app`·`messaging-reference-cache`는 각각 최초 Kafka 발행 복구와 CDC 캐시 투영을 돕는 별도 AP다. 현재 이름을 유지한 `delivery-result-worker`는 최종 이력·고객 통지용이며 신규 `MSG-RESULT-FINALIZED` 연결이 남아 있다.
+`messaging-http-sender`는 이전 단일 sender 모듈이고, `messaging-publication-recovery-app`·`messaging-reference-cache`는 각각 최초 Kafka 발행 복구와 CDC 캐시 투영을 돕는 별도 AP다. 현재 `delivery-result-worker`는 최종 이력·고객 통지·정리를 한 모듈에서 수행한다. 신규 `MSG-RESULT-FINALIZED` 연결과 `MSG-FINALIZER`·`MSG-WEBHOOK-SENDER` 분리는 아직 구현 전이다.
 
 ## 1. 1차 정상 성공
 
@@ -82,7 +84,8 @@ sequenceDiagram
     participant M as MSG-RESULT-MANAGER
     participant D as DynamoDB
     participant R as Redis
-    participant H as delivery-result-worker
+    participant F as MSG-FINALIZER
+    participant N as MSG-WEBHOOK-SENDER
     participant Q as PostgreSQL
     P->>W: 1~100건 결과 웹훅(이 중 성공 1건)
     W->>W: 업체 인증·전문·건수 검증
@@ -93,20 +96,21 @@ sequenceDiagram
     M->>D: 실행·시도·회차 확인 후 최종 성공 조건부 저장
     M->>K: MSG-RESULT-FINALIZED 발행
     M->>R: deadline 후보 제거
-    K->>H: 최종 결과
-    H->>Q: 이력·통지 예약·정리 예약 원자 commit
+    K->>F: 최종 결과
+    F->>Q: 이력·통지 예약·정리 예약 원자 commit
     par 고객 결과 통지
-        H->>C: 성공 결과 HTTP 통지
-        C-->>H: 204
-        H->>Q: 통지 완료
+        N->>Q: 통지 예약 선점
+        N->>C: 성공 결과 HTTP 웹훅
+        C-->>N: 204
+        N->>Q: 통지 완료
     and 발송 데이터 정리
-        H->>R: 성공 시각부터 중복키 2시간 차단
-        H->>D: ORIGIN·STEP 조건부 삭제
-        H->>Q: 정리 완료
+        F->>R: 성공 시각부터 중복키 2시간 차단
+        F->>D: ORIGIN·STEP 조건부 삭제
+        F->>Q: 정리 완료
     end
 ```
 
-고객 통지와 발송 데이터 정리는 SQL commit 후 독립 작업이다. 고객 204를 기다려야만 ORIGIN·STEP을 지우는 순서가 아니다. 위 웹훅의 Kafka 레코드를 요청 단위로 만들지, 결과 건별로 나눌지는 미정이며, 어느 쪽이든 Manager는 **각 메시지 결과를 독립적으로** 판단해야 한다.
+고객 통지와 발송 데이터 정리는 SQL commit 후 독립 작업이다. 고객 204를 기다려야만 ORIGIN·STEP을 지우는 순서가 아니다. 업체 웹훅 HTTP 요청 1건(결과 1~100건)을 `MSG_RESULT` Kafka 레코드 1개로 발행한다. Manager는 배치 안의 **각 메시지 결과를 독립적으로** 판단한다.
 
 ## 2. 접수 거절·중복·최초 발행 불명확
 
@@ -310,13 +314,14 @@ sequenceDiagram
 
 ## 8. 최종 결과 이후 고객 통지와 정리
 
-`MSG-RESULT-MANAGER`가 최종 결과를 DynamoDB에 고정한 뒤 `MSG-RESULT-FINALIZED`로 인계한다. `delivery-result-worker`는 PostgreSQL에 **최종 이력·고객 통지 예약·정리 예약을 단일 트랜잭션**으로 저장한다. SQL commit 전에는 ORIGIN·STEP을 삭제하지 않는다.
+`MSG-RESULT-MANAGER`가 최종 결과를 DynamoDB에 고정한 뒤 `MSG-RESULT-FINALIZED`로 인계한다. 목표 구조에서 `MSG-FINALIZER`가 PostgreSQL에 **최종 이력·고객 통지 예약·정리 예약을 단일 트랜잭션**으로 저장한다. `MSG-WEBHOOK-SENDER`는 예약을 읽어 고객에게 결과 웹훅을 발송한다. 현재 이 책임은 `delivery-result-worker` 한 모듈에 합쳐져 있으며 신규 토픽 연결과 AP 분리는 구현 전이다. SQL commit 전에는 ORIGIN·STEP을 삭제하지 않는다.
 
 ```mermaid
 flowchart TD
-    F[MSG-RESULT-FINALIZED] --> Q[PostgreSQL 이력·통지·정리 예약 commit]
-    Q --> N[고객 HTTP 결과 통지]
-    Q --> C[발송 데이터 정리]
+    F[MSG-RESULT-FINALIZED] --> Z[MSG-FINALIZER]
+    Z --> Q[PostgreSQL 이력·통지·정리 예약 commit]
+    Q --> N[MSG-WEBHOOK-SENDER 고객 결과 웹훅]
+    Q --> C[MSG-FINALIZER 발송 데이터 정리]
     N --> A{204 수신?}
     A -->|예| D[SQL 통지 완료]
     A -->|아니오| R[같은 묶음으로 재전송 예약]
