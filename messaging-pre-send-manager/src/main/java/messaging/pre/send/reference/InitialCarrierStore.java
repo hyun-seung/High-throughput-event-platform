@@ -18,7 +18,7 @@ import java.util.function.Supplier;
 import static messaging.common.dynamodb.DynamoDbTableNames.ORIGIN;
 
 /** Freezes the first HTTP carrier on ORIGIN before a send command can be prepared. */
-public final class InitialCarrierStore {
+public class InitialCarrierStore {
     public static final String CARRIER = "initial_http_carrier";
     public static final String MAPPED = "initial_http_carrier_mapped";
 

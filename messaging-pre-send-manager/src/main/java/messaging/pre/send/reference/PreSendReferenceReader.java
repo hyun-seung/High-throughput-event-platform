@@ -11,7 +11,7 @@ import java.util.Objects;
 import java.util.Optional;
 
 /** Reads the CDC projection first; only a missing contract falls back to PostgreSQL. */
-public final class PreSendReferenceReader {
+public class PreSendReferenceReader {
     private final StringRedisTemplate redis;
     private final JdbcTemplate jdbc;
     private final JsonMapper mapper;
