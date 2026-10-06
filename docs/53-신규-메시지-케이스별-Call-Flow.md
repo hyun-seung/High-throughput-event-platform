@@ -190,7 +190,7 @@ flowchart TD
 
 ## 5. 웹훅 묶음과 실패 분기
 
-업체의 HTTP `200 OK`는 최종 수신 성공이 아니다. 업체는 이후 한 번의 웹훅 요청에 **1~100건의 메시지 결과**를 담아 보낼 수 있다. 배열의 각 항목은 `{clientMsgId, status, error?}`이며 `clientMsgId`는 파생 발송 ID와 같다. `error` 객체가 포함되면 `code`와 `message`를 담으며 같은 요청 안에서 `clientMsgId`가 중복되지 않는다. `WEBHOOK-RECEIVE-API`는 업체 인증과 1~100건 형식 검증 후 Kafka `MSG_RESULT` 저장을 확인하고 접수 응답을 반환하며, 개별 메시지의 성공·실패를 판정하지 않는다. **웹훅 API가 실패 응답을 반환하면 업체가 같은 묶음을 재전송한다.** 따라서 다른 요청으로 다시 온 동일 결과는 Manager가 멱등 처리한다. 웹훅 전체를 1개 Kafka 레코드로 보낼지 각 결과를 별도 레코드로 보낼지는 미정이다. 어느 방식을 택해도 Manager는 각 결과를 실행별로 독립 처리한다.
+업체의 HTTP `200 OK`는 최종 수신 성공이 아니다. 업체는 이후 한 번의 웹훅 요청에 **1~100건의 메시지 결과**를 담아 보낼 수 있다. 배열의 각 항목은 `clientMsgId`와 `status`를 담으며 `clientMsgId`는 파생 발송 ID와 같다. `status=success`에는 `error`가 없고 `status=fail`에는 `error: {code, message}`가 반드시 있다. 같은 요청 안에서 `clientMsgId`는 중복되지 않는다. `WEBHOOK-RECEIVE-API`는 업체 인증과 1~100건 형식 검증 후 Kafka `MSG_RESULT` 저장을 확인하고 접수 응답을 반환하며, 개별 메시지의 성공·실패를 판정하지 않는다. **웹훅 API가 실패 응답을 반환하면 업체가 같은 묶음을 재전송한다.** 따라서 다른 요청으로 다시 온 동일 결과는 Manager가 멱등 처리한다. 웹훅 전체를 1개 Kafka 레코드로 보낼지 각 결과를 별도 레코드로 보낼지는 미정이다. 어느 방식을 택해도 Manager는 각 결과를 실행별로 독립 처리한다.
 
 ```mermaid
 sequenceDiagram
@@ -348,7 +348,7 @@ HTTP `200 OK` 경로는 Kafka를 발행하지 않는다. **명시적 비-200 실
 
 ## 구현 전에 확정할 인터페이스
 
-- `MSG_RESULT`의 웹훅 전문: 요청 추적용 `traceId`와 1~100개 결과. 업체 원문은 `{clientMsgId, status, error?}` 객체의 배열이며 `clientMsgId`가 파생 발송 ID다. `error` 객체의 필드는 `code`·`message`로 확정됐고 `status`의 실제 값은 확인이 필요하다. 파생 ID에서 고정 `R`·통신사·회차를 얻고 `attemptId`·발송 시각은 저장 원본에서 보강한다. 업체 결과 ID는 없으므로 중복 식별자는 저장 상태와 결합해 설계한다.
+- `MSG_RESULT`의 웹훅 전문: 요청 추적용 `traceId`와 1~100개 결과. 업체 원문은 `{clientMsgId, status}` 또는 `{clientMsgId, status, error: {code, message}}` 객체의 배열이며 `clientMsgId`가 파생 발송 ID다. `status` 값은 소문자 `success`·`fail`이고, `success`에는 `error`가 없으며 `fail`에는 필수다. 파생 ID에서 고정 `R`·통신사·회차를 얻고 `attemptId`·발송 시각은 저장 원본에서 보강한다. 업체 결과 ID는 없으므로 중복 식별자는 저장 상태와 결합해 설계한다.
 - 웹훅 1개를 Kafka 1레코드로 보낼지, 각 메시지 결과를 별도 레코드로 나눌지. **권장안은 결과별 레코드 + 고정 `R` key + 결과별 멱등 ID**다. 메시지별 순서와 독립 재처리가 단순해지지만, 1~100건 중 일부만 Kafka에 저장된 뒤 웹훅 재전달되는 경우를 멱등 처리하고 전체 발행 확인 전 API 성공 응답을 하지 않아야 한다. 묶음 1레코드는 메시지별 key·순서와 부분 실패 처리가 어렵다.
 - 명시적 비-200 실패는 sender가 `MSG_RESULT`에 직접 발행한다. 업체별 원본 코드 → 6만 대역 정규화 코드와 코드별 재시도·통신사 이동·2차·최종 실패 정책, DynamoDB 발행 대기 인덱스·복구 작업은 구현 전에 확정한다. HTTP `200 OK` 경로에서 Kafka 발행이 없다는 규칙은 유지한다. 응답이 없는 타임아웃은 별도 분류한다.
 - 웹훅이 Sender의 DynamoDB `200 OK` 기록보다 먼저 온 경우에도 웹훅이 해당 시도의 최종 결과라는 규칙을 지키는 조건부 갱신. 늦은 sender 기록은 메타데이터만 보충한다.
