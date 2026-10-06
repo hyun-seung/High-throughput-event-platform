@@ -41,12 +41,12 @@ class OriginPublicationRecoveryTest {
         var origin = MessageOriginCodec.encode(event, mapper);
         when(db.getItem(any(GetItemRequest.class))).thenReturn(GetItemResponse.builder().item(origin).build());
         when(db.query(any(QueryRequest.class))).thenReturn(QueryResponse.builder().build());
-        when(kafka.send(MessageTopics.RECEIVED, event.executionId(), event))
+        when(kafka.send(MessageTopics.RECEIVED, event.clientMsgId(), event))
                 .thenReturn(CompletableFuture.completedFuture(null));
 
-        recovery.recover(MessageOriginCodec.key(event.executionId()));
+        recovery.recover(MessageOriginCodec.key(event.clientMsgId()));
 
-        verify(kafka).send(MessageTopics.RECEIVED, event.executionId(), event);
+        verify(kafka).send(MessageTopics.RECEIVED, event.clientMsgId(), event);
         verify(db, never()).updateItem(any(UpdateItemRequest.class));
     }
 
@@ -55,9 +55,9 @@ class OriginPublicationRecoveryTest {
         var origin = MessageOriginCodec.encode(event, mapper);
         when(db.getItem(any(GetItemRequest.class))).thenReturn(GetItemResponse.builder().item(origin).build());
         when(db.query(any(QueryRequest.class))).thenReturn(QueryResponse.builder().items(
-                Map.of("pk", AttributeValue.fromS("DELIVERY#" + event.executionId()))).build());
+                Map.of("pk", AttributeValue.fromS("DELIVERY#" + event.clientMsgId()))).build());
 
-        recovery.recover(MessageOriginCodec.key(event.executionId()));
+        recovery.recover(MessageOriginCodec.key(event.clientMsgId()));
 
         verifyNoInteractions(kafka);
         verify(db).updateItem(any(UpdateItemRequest.class));
@@ -69,7 +69,7 @@ class OriginPublicationRecoveryTest {
         origin.put("completion_event_id", AttributeValue.fromS("done"));
         when(db.getItem(any(GetItemRequest.class))).thenReturn(GetItemResponse.builder().item(origin).build());
 
-        recovery.recover(MessageOriginCodec.key(event.executionId()));
+        recovery.recover(MessageOriginCodec.key(event.clientMsgId()));
 
         verifyNoInteractions(kafka);
         verify(db, never()).query(any(QueryRequest.class));

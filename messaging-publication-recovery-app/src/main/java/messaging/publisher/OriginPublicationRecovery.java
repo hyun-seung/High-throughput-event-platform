@@ -77,46 +77,46 @@ public class OriginPublicationRecovery {
     }
 
     void recover(Map<String, AttributeValue> candidate) {
-        String executionId = candidate.get("delivery_id") == null
+        String clientMsgId = candidate.get("delivery_id") == null
                 ? candidate.get("pk").s().substring("DELIVERY#".length())
                 : candidate.get("delivery_id").s();
         var current = db.getItem(GetItemRequest.builder().tableName(ORIGIN)
-                .key(MessageOriginCodec.key(executionId)).consistentRead(true).build()).item();
+                .key(MessageOriginCodec.key(clientMsgId)).consistentRead(true).build()).item();
         if (current.isEmpty()) return;
         if (!current.containsKey(MessageOriginCodec.MESSAGE_ID)) return;
         if (current.containsKey("completion_event_id")
                 || !MessageOriginCodec.STATUS_RECEIVED.equals(current.getOrDefault("status", AttributeValue.fromS("")).s())
-                || hasStep(executionId)) {
-            clearRecoveryIndex(executionId);
+                || hasStep(clientMsgId)) {
+            clearRecoveryIndex(clientMsgId);
             return;
         }
         var event = MessageOriginCodec.decode(current, mapper);
         try {
-            kafka.send(MessageTopics.RECEIVED, event.executionId(), event).get();
+            kafka.send(MessageTopics.RECEIVED, event.clientMsgId(), event).get();
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("ORIGIN recovery publication interrupted", interrupted);
         } catch (Exception unconfirmed) {
             throw new IllegalStateException("ORIGIN recovery publication not confirmed", unconfirmed);
         }
-        log.info("ORIGIN publication recovery sent: executionId={}", executionId);
+        log.info("ORIGIN publication recovery sent: clientMsgId={}", clientMsgId);
     }
 
-    private boolean hasStep(String executionId) {
+    private boolean hasStep(String clientMsgId) {
         return !db.query(QueryRequest.builder().tableName(STEP).consistentRead(true)
                 .keyConditionExpression("pk = :pk")
-                .expressionAttributeValues(Map.of(":pk", AttributeValue.fromS("DELIVERY#" + executionId)))
+                .expressionAttributeValues(Map.of(":pk", AttributeValue.fromS("DELIVERY#" + clientMsgId)))
                 .limit(1).build()).items().isEmpty();
     }
 
-    private void clearRecoveryIndex(String executionId) {
+    private void clearRecoveryIndex(String clientMsgId) {
         try {
-            db.updateItem(UpdateItemRequest.builder().tableName(ORIGIN).key(MessageOriginCodec.key(executionId))
+            db.updateItem(UpdateItemRequest.builder().tableName(ORIGIN).key(MessageOriginCodec.key(clientMsgId))
                     .conditionExpression("delivery_id = :execution AND attribute_exists(#bucket)")
                     .updateExpression("REMOVE #bucket, #due")
                     .expressionAttributeNames(Map.of("#bucket", MessagePublicationIndex.BUCKET,
                             "#due", MessagePublicationIndex.DUE))
-                    .expressionAttributeValues(Map.of(":execution", AttributeValue.fromS(executionId))).build());
+                    .expressionAttributeValues(Map.of(":execution", AttributeValue.fromS(clientMsgId))).build());
         } catch (ConditionalCheckFailedException alreadyGone) {
             // A sender or cleanup may have removed the index first.
         }

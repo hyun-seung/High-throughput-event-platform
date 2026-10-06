@@ -55,11 +55,11 @@ class HttpAttemptRepositoryTest {
 
     @Test
     void duplicateStepReturnsStoredOutcomeWithoutNewClaim() {
-        String attemptId = DeliveryIds.attemptId(event.executionId(), "mock-provider", 1, 1);
-        var outcome = new HttpOutcome("outcome-1", event.executionId(), attemptId, 1, 1,
+        String attemptId = DeliveryIds.attemptId(event.clientMsgId(), "mock-provider", 1, 1);
+        var outcome = new HttpOutcome("outcome-1", event.clientMsgId(), attemptId, 1, 1,
                 HttpOutcome.Kind.ACCEPTED, event.receivedAt(), event.receivedAt());
         var existing = new HashMap<String, AttributeValue>();
-        existing.put("delivery_id", AttributeValue.fromS(event.executionId()));
+        existing.put("delivery_id", AttributeValue.fromS(event.clientMsgId()));
         existing.put("attempt_id", AttributeValue.fromS(attemptId));
         existing.put("outcome_event", AttributeValue.fromS(mapper.writeValueAsString(outcome)));
         when(db.getItem(any(GetItemRequest.class)))

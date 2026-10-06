@@ -17,6 +17,6 @@ public class KafkaMessageRequestPublisher implements MessageRequestPublisher {
 
     @Override
     public CompletableFuture<?> publish(MessageSubmission event) {
-        return kafka.send(MessageTopics.RECEIVED, event.executionId(), event);
+        return kafka.send(MessageTopics.RECEIVED, event.clientMsgId(), event);
     }
 }

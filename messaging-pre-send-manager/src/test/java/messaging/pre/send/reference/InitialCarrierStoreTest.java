@@ -97,7 +97,7 @@ class InitialCarrierStoreTest {
     @Test
     void mismatchedKafkaAdmissionDoesNotFreezeRoute() {
         when(db.getItem(any(GetItemRequest.class))).thenReturn(origin(originItem()));
-        MessageSubmission changed = new MessageSubmission(admission.executionId(), admission.clientId(),
+        MessageSubmission changed = new MessageSubmission(admission.clientMsgId(), admission.clientId(),
                 admission.messageId(), admission.recipientNumber(), admission.messageCategory(),
                 Map.of("message", "different"), admission.fallbackAllowed(), admission.receivedAt());
 

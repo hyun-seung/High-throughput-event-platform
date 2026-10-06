@@ -15,16 +15,17 @@ public final class MessageOriginCodec {
 
     private MessageOriginCodec() { }
 
-    public static Map<String, AttributeValue> key(String executionId) {
-        return Map.of("pk", AttributeValue.fromS("DELIVERY#" + executionId),
+    public static Map<String, AttributeValue> key(String clientMsgId) {
+        return Map.of("pk", AttributeValue.fromS("DELIVERY#" + clientMsgId),
                 "sk", AttributeValue.fromS("META"));
     }
 
     public static Map<String, AttributeValue> encode(MessageSubmission event, JsonMapper mapper) {
-        Map<String, AttributeValue> item = new HashMap<>(key(event.executionId()));
+        Map<String, AttributeValue> item = new HashMap<>(key(event.clientMsgId()));
         item.put("schema_version", AttributeValue.fromN("3"));
-        item.put("delivery_id", AttributeValue.fromS(event.executionId()));
-        item.put("request_key", AttributeValue.fromS(event.executionId()));
+        // Existing DynamoDB key attributes keep their physical names; both values are clientMsgId.
+        item.put("delivery_id", AttributeValue.fromS(event.clientMsgId()));
+        item.put("request_key", AttributeValue.fromS(event.clientMsgId()));
         item.put("tenant_id", AttributeValue.fromN(Long.toString(event.clientId())));
         item.put(MESSAGE_ID, AttributeValue.fromS(event.messageId()));
         item.put(RECIPIENT_NUMBER, AttributeValue.fromS(event.recipientNumber()));

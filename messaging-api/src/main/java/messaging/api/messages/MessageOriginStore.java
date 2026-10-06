@@ -6,5 +6,5 @@ import java.util.Optional;
 
 public interface MessageOriginStore {
     void save(MessageSubmission event);
-    Optional<MessageSubmission> find(String executionId);
+    Optional<MessageSubmission> find(String clientMsgId);
 }

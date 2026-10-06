@@ -42,9 +42,9 @@ public class HttpSendService {
                 ? provider.send(event, claim.attemptId(), 1)
                 : new HttpProviderClient.Observation(HttpOutcome.Kind.EXPIRED, null);
         Instant observedAt = clock.instant();
-        String outcomeId = UUID.nameUUIDFromBytes(("http-outcome:" + event.executionId() + ":1")
+        String outcomeId = UUID.nameUUIDFromBytes(("http-outcome:" + event.clientMsgId() + ":1")
                 .getBytes(StandardCharsets.UTF_8)).toString();
-        var outcome = new HttpOutcome(outcomeId, event.executionId(), claim.attemptId(), 1, 1,
+        var outcome = new HttpOutcome(outcomeId, event.clientMsgId(), claim.attemptId(), 1, 1,
                 observed.kind(), observedAt, observed.providerProcessedAt());
         attempts.record(outcome);
         publish(outcome);
@@ -52,7 +52,7 @@ public class HttpSendService {
 
     private void publish(HttpOutcome outcome) {
         try {
-            kafka.send(MessageTopics.HTTP_OUTCOME, outcome.executionId(), outcome).get();
+            kafka.send(MessageTopics.HTTP_OUTCOME, outcome.clientMsgId(), outcome).get();
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("HTTP outcome publication interrupted", interrupted);

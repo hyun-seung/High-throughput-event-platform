@@ -18,8 +18,8 @@ public final class MessagePublicationIndex {
 
     private MessagePublicationIndex() { }
 
-    public static String bucket(String executionId) {
-        return bucketForShard(Math.floorMod(executionId.hashCode(), SHARDS));
+    public static String bucket(String clientMsgId) {
+        return bucketForShard(Math.floorMod(clientMsgId.hashCode(), SHARDS));
     }
 
     public static String bucketForShard(int shard) {
@@ -28,7 +28,7 @@ public final class MessagePublicationIndex {
     }
 
     public static void add(Map<String, AttributeValue> item, MessageSubmission event) {
-        item.put(BUCKET, AttributeValue.fromS(bucket(event.executionId())));
+        item.put(BUCKET, AttributeValue.fromS(bucket(event.clientMsgId())));
         item.put(DUE, AttributeValue.fromN(Long.toString(event.receivedAt().plusSeconds(60).toEpochMilli())));
     }
 

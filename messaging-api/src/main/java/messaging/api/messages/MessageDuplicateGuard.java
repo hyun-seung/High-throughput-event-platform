@@ -36,13 +36,13 @@ public class MessageDuplicateGuard {
         this.mapper = mapper;
     }
 
-    public Claim claim(long clientId, MessageReceiveRequest request, String proposedExecutionId) {
+    public Claim claim(long clientId, MessageReceiveRequest request, String proposedClientMsgId) {
         String key = key(clientId, request.messageId(), request.recipientNumber());
         String fingerprint = fingerprint(request);
-        String value = proposedExecutionId + ":" + fingerprint;
+        String value = proposedClientMsgId + ":" + fingerprint;
         try {
             if (Boolean.TRUE.equals(redis.opsForValue().setIfAbsent(key, value, ACTIVE_KEY_TTL))) {
-                return new Claim(proposedExecutionId, key, value, true, true);
+                return new Claim(proposedClientMsgId, key, value, true, true);
             }
             String existing = redis.opsForValue().get(key);
             if (existing == null) {
@@ -54,7 +54,7 @@ public class MessageDuplicateGuard {
             }
             return new Claim(existing.substring(0, separator), key, existing, false, true);
         } catch (RedisConnectionFailureException | QueryTimeoutException unavailable) {
-            return new Claim(proposedExecutionId, key, value, true, false);
+            return new Claim(proposedClientMsgId, key, value, true, false);
         }
     }
 
@@ -90,5 +90,5 @@ public class MessageDuplicateGuard {
         }
     }
 
-    public record Claim(String executionId, String key, String value, boolean owner, boolean redisActive) { }
+    public record Claim(String clientMsgId, String key, String value, boolean owner, boolean redisActive) { }
 }

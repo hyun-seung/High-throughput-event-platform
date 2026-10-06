@@ -17,28 +17,27 @@ class HttpSendCommandTest {
     }
 
     @Test
-    void rejectsACommandWhoseWireBodyBelongsToAnotherMessage() {
-        var body = new HttpProviderRequest("request-1:SKT:1", 42, "GENERAL", "01012345678",
-                Map.of("message", "hello"), Instant.parse("2026-10-02T00:00:00Z"), 1);
-
-        assertThrows(IllegalArgumentException.class, () -> new HttpSendCommand("request-2", "attempt-1",
-                HttpCarrier.SKT, Instant.parse("2026-10-02T03:00:00Z"), body));
+    void rejectsAProviderIdLongerThanFortyBytes() {
+        assertThrows(IllegalArgumentException.class, () -> new HttpProviderRequest("a".repeat(41), 42,
+                "GENERAL", "01012345678", Map.of("message", "hello"),
+                Instant.parse("2026-10-02T00:00:00Z")));
     }
 
     @Test
-    void keepsOneMessageIdAndDerivesTheProviderIdForEachInvocation() {
-        var body = new HttpProviderRequest("request-1:SKT:1", 42, "GENERAL", "01012345678",
-                Map.of("message", "hello"), Instant.parse("2026-10-02T00:00:00Z"), 1);
-        var command = new HttpSendCommand("request-1", "attempt-1",
-                HttpCarrier.SKT, Instant.parse("2026-10-02T03:00:00Z"), body);
+    void keepsTheSameClientMsgIdAcrossCarrierChangesAndRetries() {
+        var body = new HttpProviderRequest("request-1", 42, "GENERAL", "01012345678",
+                Map.of("message", "hello"), Instant.parse("2026-10-02T00:00:00Z"));
+        var command = new HttpSendCommand("attempt-1", HttpCarrier.SKT, 1,
+                Instant.parse("2026-10-02T03:00:00Z"), body);
+        var retry = new HttpSendCommand("attempt-2", HttpCarrier.KT, 2, command.deadlineAt(), body);
 
         assertEquals("attempt-1", command.attemptId());
-        assertEquals("request-1", command.sendRequestId());
-        assertEquals("request-1:SKT:1", command.request().clientMsgId());
+        assertEquals(2, retry.invocation());
+        assertEquals("request-1", command.request().clientMsgId());
+        assertEquals(command.request().clientMsgId(), retry.request().clientMsgId());
         String providerJson = JsonMapper.builder().build().writeValueAsString(command.request());
-        assertTrue(providerJson.contains("\"clientMsgId\":\"request-1:SKT:1\""));
+        assertTrue(providerJson.contains("\"clientMsgId\":\"request-1\""));
         assertFalse(providerJson.contains("\"sendRequestId\""));
-        assertThrows(IllegalArgumentException.class, () -> new HttpSendCommand("request-1", "attempt-1",
-                HttpCarrier.KT, command.deadlineAt(), body));
+        assertFalse(providerJson.contains("\"invocation\""));
     }
 }

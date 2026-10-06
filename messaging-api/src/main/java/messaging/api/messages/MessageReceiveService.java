@@ -42,12 +42,12 @@ public class MessageReceiveService {
         }
         usage.charge(clientId, request.messageCategory());
         validate(request);
-        String proposedExecutionId = UUID.randomUUID().toString().replace("-", "");
-        MessageDuplicateGuard.Claim claim = duplicates.claim(clientId, request, proposedExecutionId);
+        String proposedClientMsgId = UUID.randomUUID().toString().replace("-", "");
+        MessageDuplicateGuard.Claim claim = duplicates.claim(clientId, request, proposedClientMsgId);
         if (!claim.owner()) {
             MessageSubmission existing;
             try {
-                existing = lookup(claim.executionId()).orElseThrow(() ->
+                existing = lookup(claim.clientMsgId()).orElseThrow(() ->
                         new MessageAdmissionException(HttpStatus.SERVICE_UNAVAILABLE,
                                 "Duplicate admission is pending origin confirmation"));
             } catch (MessageAdmissionException known) {
@@ -63,7 +63,7 @@ public class MessageReceiveService {
             return accepted(existing);
         }
 
-        MessageSubmission event = new MessageSubmission(claim.executionId(), clientId, request.messageId(),
+        MessageSubmission event = new MessageSubmission(claim.clientMsgId(), clientId, request.messageId(),
                 request.recipientNumber(), request.messageCategory(), request.payload(),
                 request.allowFallback(), clock.instant());
         try {
@@ -75,7 +75,7 @@ public class MessageReceiveService {
             // PutItem may have committed even when its response was lost. Never release the Redis key
             // before a strongly consistent read resolves the same execution.
             try {
-                Optional<MessageSubmission> stored = lookup(event.executionId());
+                Optional<MessageSubmission> stored = lookup(event.clientMsgId());
                 if (stored.isPresent() && sameAdmission(stored.get(), event)) {
                     return accepted(stored.get());
                 }
@@ -93,18 +93,18 @@ public class MessageReceiveService {
         // Kafka send fails, its ack is lost, or this process exits before the send.
         try {
             publisher.publish(event).whenComplete((ignored, failure) -> {
-                if (failure != null) log.warn("Initial Kafka publication unconfirmed: sendRequestId={}", event.executionId());
+                if (failure != null) log.warn("Initial Kafka publication unconfirmed: clientMsgId={}", event.clientMsgId());
             });
         } catch (RuntimeException unconfirmed) {
-            log.warn("Initial Kafka publication could not start: sendRequestId={}", event.executionId());
+            log.warn("Initial Kafka publication could not start: clientMsgId={}", event.clientMsgId());
         }
-        return new MessageReceiveResponse(event.executionId(), "RECEIVED");
+        return new MessageReceiveResponse(event.clientMsgId(), "RECEIVED");
     }
 
-    private Optional<MessageSubmission> lookup(String executionId) { return origins.find(executionId); }
+    private Optional<MessageSubmission> lookup(String clientMsgId) { return origins.find(clientMsgId); }
 
     private static boolean sameAdmission(MessageSubmission a, MessageSubmission b) {
-        return a.executionId().equals(b.executionId()) && a.clientId() == b.clientId()
+        return a.clientMsgId().equals(b.clientMsgId()) && a.clientId() == b.clientId()
                 && a.messageId().equals(b.messageId()) && a.recipientNumber().equals(b.recipientNumber())
                 && a.messageCategory() == b.messageCategory() && a.payload().equals(b.payload())
                 && a.fallbackAllowed() == b.fallbackAllowed();

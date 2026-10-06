@@ -34,7 +34,7 @@ public final class InitialCarrierStore {
     public Optional<CarrierResolution> resolve(MessageSubmission admission, Supplier<CarrierResolution> choose) {
         Objects.requireNonNull(admission);
         Objects.requireNonNull(choose);
-        Map<String, AttributeValue> current = read(admission.executionId());
+        Map<String, AttributeValue> current = read(admission.clientMsgId());
         if (!eligible(current)) return Optional.empty();
         verifyAdmission(current, admission);
         if (current.containsKey(CARRIER)) return Optional.of(decode(current));
@@ -42,21 +42,21 @@ public final class InitialCarrierStore {
         CarrierResolution selected = Objects.requireNonNull(choose.get());
         try {
             db.updateItem(UpdateItemRequest.builder().tableName(ORIGIN)
-                    .key(MessageOriginCodec.key(admission.executionId()))
+                    .key(MessageOriginCodec.key(admission.clientMsgId()))
                     .conditionExpression("delivery_id = :execution AND #status = :received "
                             + "AND attribute_not_exists(completion_event_id) AND attribute_not_exists(#carrier)")
                     .updateExpression("SET #carrier = :carrier, #mapped = :mapped")
                     .expressionAttributeNames(Map.of("#status", "status", "#carrier", CARRIER,
                             "#mapped", MAPPED))
                     .expressionAttributeValues(Map.of(
-                            ":execution", AttributeValue.fromS(admission.executionId()),
+                            ":execution", AttributeValue.fromS(admission.clientMsgId()),
                             ":received", AttributeValue.fromS(MessageOriginCodec.STATUS_RECEIVED),
                             ":carrier", AttributeValue.fromS(selected.carrier().name()),
                             ":mapped", AttributeValue.fromBool(selected.mapped()))).build());
             return Optional.of(selected);
         } catch (ConditionalCheckFailedException changed) {
             // Another consumer may have selected a carrier or the execution may have closed.
-            current = read(admission.executionId());
+            current = read(admission.clientMsgId());
             if (!eligible(current)) return Optional.empty();
             verifyAdmission(current, admission);
             if (current.containsKey(CARRIER)) return Optional.of(decode(current));
@@ -64,9 +64,9 @@ public final class InitialCarrierStore {
         }
     }
 
-    private Map<String, AttributeValue> read(String executionId) {
+    private Map<String, AttributeValue> read(String clientMsgId) {
         return db.getItem(GetItemRequest.builder().tableName(ORIGIN)
-                .key(MessageOriginCodec.key(executionId)).consistentRead(true).build()).item();
+                .key(MessageOriginCodec.key(clientMsgId)).consistentRead(true).build()).item();
     }
 
     private static boolean eligible(Map<String, AttributeValue> item) {

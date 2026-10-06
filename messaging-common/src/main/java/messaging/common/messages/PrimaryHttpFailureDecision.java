@@ -9,7 +9,7 @@ import java.util.Set;
 public final class PrimaryHttpFailureDecision {
     public sealed interface Action permits Send, FailPrimary { }
 
-    /** A new invocation derives a new provider wire ID from the stable sendRequestId. */
+    /** Each invocation retains the message's stable clientMsgId; carrier and invocation stay in attempt state. */
     public record Send(HttpCarrier carrier, int invocation, Instant notBefore) implements Action { }
 
     /** First-send stage failure; the caller must then evaluate secondary-send eligibility. */

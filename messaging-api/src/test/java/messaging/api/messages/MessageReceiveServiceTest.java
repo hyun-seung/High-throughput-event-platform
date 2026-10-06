@@ -42,7 +42,7 @@ class MessageReceiveServiceTest {
 
         MessageReceiveResponse response = service.receive(42L, request);
 
-        assertEquals(id, response.sendRequestId());
+        assertEquals(id, response.clientMsgId());
         var order = inOrder(usage, duplicates, origins, publisher);
         order.verify(usage).charge(42L, MessageCategory.GENERAL);
         order.verify(duplicates).claim(eq(42L), eq(request), anyString());
@@ -58,10 +58,10 @@ class MessageReceiveServiceTest {
             return new MessageDuplicateGuard.Claim(id, "key", "value", true, true);
         });
 
-        String id = service.receive(42L, request).sendRequestId();
+        String id = service.receive(42L, request).clientMsgId();
 
         assertTrue(id.matches("[0-9a-f]{32}"));
-        verify(origins).save(argThat(event -> id.equals(event.executionId())));
+        verify(origins).save(argThat(event -> id.equals(event.clientMsgId())));
     }
 
     @Test
@@ -77,14 +77,14 @@ class MessageReceiveServiceTest {
     }
 
     @Test
-    void ambiguousPutThatCommittedConvergesByExecutionId() {
+    void ambiguousPutThatCommittedConvergesByClientMsgId() {
         String id = "00000000-0000-0000-0000-000000000001";
         when(duplicates.claim(eq(42L), eq(request), anyString()))
                 .thenReturn(new MessageDuplicateGuard.Claim(id, "key", "value", true, true));
         doThrow(DynamoDbException.builder().message("response lost").build()).when(origins).save(any());
         when(origins.find(id)).thenReturn(Optional.of(event(id)));
 
-        assertEquals(id, service.receive(42L, request).sendRequestId());
+        assertEquals(id, service.receive(42L, request).clientMsgId());
         verify(duplicates, never()).release(any());
         verify(publisher).publish(any(MessageSubmission.class));
     }
@@ -132,7 +132,7 @@ class MessageReceiveServiceTest {
                 .thenReturn(new MessageDuplicateGuard.Claim(id, "key", "value", true, true));
         when(publisher.publish(any())).thenReturn(CompletableFuture.failedFuture(new IllegalStateException("broker unavailable")));
 
-        assertEquals(id, service.receive(42L, request).sendRequestId());
+        assertEquals(id, service.receive(42L, request).clientMsgId());
 
         var order = inOrder(origins, publisher);
         order.verify(origins).save(any(MessageSubmission.class));

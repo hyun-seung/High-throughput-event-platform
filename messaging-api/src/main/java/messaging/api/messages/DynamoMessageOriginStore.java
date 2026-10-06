@@ -31,9 +31,9 @@ public class DynamoMessageOriginStore implements MessageOriginStore {
     }
 
     @Override
-    public Optional<MessageSubmission> find(String executionId) {
+    public Optional<MessageSubmission> find(String clientMsgId) {
         var item = db.getItem(GetItemRequest.builder().tableName(ORIGIN)
-                .key(MessageOriginCodec.key(executionId)).consistentRead(true).build()).item();
+                .key(MessageOriginCodec.key(clientMsgId)).consistentRead(true).build()).item();
         return item.isEmpty() ? Optional.empty() : Optional.of(MessageOriginCodec.decode(item, mapper));
     }
 }

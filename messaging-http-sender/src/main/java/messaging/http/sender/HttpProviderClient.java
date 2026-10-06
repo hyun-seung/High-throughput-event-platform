@@ -21,7 +21,7 @@ public class HttpProviderClient {
     public HttpProviderClient(RestClient providerRestClient) { this.client = providerRestClient; }
 
     public Observation send(MessageSubmission event, String attemptId, int invocation) {
-        var request = new ProviderRequest(event.executionId(), event.clientId(), event.messageCategory().name(),
+        var request = new ProviderRequest(event.clientMsgId(), event.clientId(), event.messageCategory().name(),
                 event.recipientNumber(), event.payload(), event.receivedAt(), invocation);
         try {
             ResponseEntity<ProviderResponse> response = client.post().uri("/api/v1/deliveries")
@@ -29,7 +29,7 @@ public class HttpProviderClient {
                     .onStatus(HttpStatusCode::isError, (sent, received) -> { })
                     .toEntity(ProviderResponse.class);
             ProviderResponse body = response.getBody();
-            if (body == null || !event.executionId().equals(body.deliveryId())
+            if (body == null || !event.clientMsgId().equals(body.deliveryId())
                     || body.accepted() == null || body.processedAt() == null) {
                 return new Observation(HttpOutcome.Kind.INVALID_RESPONSE, null);
             }

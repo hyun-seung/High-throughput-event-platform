@@ -22,9 +22,9 @@ class KafkaMessageRequestPublisherTest {
                 "client-event-1", "01012345678", MessageCategory.GENERAL, Map.of("message", "hello"), false,
                 Instant.parse("2026-10-02T00:00:00Z"));
         var send = CompletableFuture.completedFuture((org.springframework.kafka.support.SendResult<String, MessageSubmission>) null);
-        when(kafka.send(MessageTopics.RECEIVED, event.executionId(), event)).thenReturn(send);
+        when(kafka.send(MessageTopics.RECEIVED, event.clientMsgId(), event)).thenReturn(send);
 
         assertSame(send, new KafkaMessageRequestPublisher(kafka).publish(event));
-        verify(kafka).send(MessageTopics.RECEIVED, event.executionId(), event);
+        verify(kafka).send(MessageTopics.RECEIVED, event.clientMsgId(), event);
     }
 }

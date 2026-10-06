@@ -39,7 +39,7 @@ class HttpSendServiceTest {
         when(provider.send(event, "attempt-1", 1)).thenReturn(
                 new HttpProviderClient.Observation(HttpOutcome.Kind.ACCEPTED, clock.instant()));
         when(attempts.record(any())).thenAnswer(call -> call.getArgument(0));
-        when(kafka.send(eq(MessageTopics.HTTP_OUTCOME), eq(event.executionId()), any()))
+        when(kafka.send(eq(MessageTopics.HTTP_OUTCOME), eq(event.clientMsgId()), any()))
                 .thenReturn(CompletableFuture.completedFuture(null));
 
         service.send(event);
@@ -48,34 +48,34 @@ class HttpSendServiceTest {
         order.verify(attempts).claim(eq(event), eq("mock-provider"), any(), any(), any());
         order.verify(provider).send(event, "attempt-1", 1);
         order.verify(attempts).record(any(HttpOutcome.class));
-        order.verify(kafka).send(eq(MessageTopics.HTTP_OUTCOME), eq(event.executionId()), any(HttpOutcome.class));
+        order.verify(kafka).send(eq(MessageTopics.HTTP_OUTCOME), eq(event.clientMsgId()), any(HttpOutcome.class));
         order.verify(attempts).published(any(HttpOutcome.class));
     }
 
     @Test
     void duplicateWithStoredOutcomeRepublishesWithoutCallingProvider() {
-        var stored = new HttpOutcome("outcome-1", event.executionId(), "attempt-1", 1, 1,
+        var stored = new HttpOutcome("outcome-1", event.clientMsgId(), "attempt-1", 1, 1,
                 HttpOutcome.Kind.ACCEPTED, clock.instant(), clock.instant());
         when(attempts.claim(eq(event), eq("mock-provider"), any(), any(), any()))
                 .thenReturn(new HttpAttemptRepository.Claim(HttpAttemptRepository.State.OBSERVED, "attempt-1", stored));
-        when(kafka.send(MessageTopics.HTTP_OUTCOME, event.executionId(), stored))
+        when(kafka.send(MessageTopics.HTTP_OUTCOME, event.clientMsgId(), stored))
                 .thenReturn(CompletableFuture.completedFuture(null));
 
         service.send(event);
 
         verifyNoInteractions(provider);
         verify(attempts, never()).record(any());
-        verify(kafka).send(MessageTopics.HTTP_OUTCOME, event.executionId(), stored);
+        verify(kafka).send(MessageTopics.HTTP_OUTCOME, event.clientMsgId(), stored);
     }
 
     @Test
     void claimedAfterDeadlineRecordsExpiryWithoutExternalCall() {
-        var expired = new MessageSubmission(event.executionId(), event.clientId(), event.messageId(),
+        var expired = new MessageSubmission(event.clientMsgId(), event.clientId(), event.messageId(),
                 event.recipientNumber(), event.messageCategory(), event.payload(), event.fallbackAllowed(),
                 clock.instant().minus(Duration.ofHours(4)));
         when(attempts.claim(eq(expired), eq("mock-provider"), any(), any(), any()))
                 .thenReturn(new HttpAttemptRepository.Claim(HttpAttemptRepository.State.CLAIMED, "attempt-1", null));
-        when(kafka.send(eq(MessageTopics.HTTP_OUTCOME), eq(expired.executionId()), any()))
+        when(kafka.send(eq(MessageTopics.HTTP_OUTCOME), eq(expired.clientMsgId()), any()))
                 .thenReturn(CompletableFuture.completedFuture(null));
 
         service.send(expired);

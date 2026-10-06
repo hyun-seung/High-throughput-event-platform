@@ -37,17 +37,17 @@ public class HttpAttemptRepository {
     }
 
     public Claim claim(MessageSubmission event, String provider, Instant now, Instant leaseUntil, Instant deadline) {
-        String attemptId = DeliveryIds.attemptId(event.executionId(), provider, 1, 1);
-        var key = key(event.executionId(), attemptId);
+        String attemptId = DeliveryIds.attemptId(event.clientMsgId(), provider, 1, 1);
+        var key = key(event.clientMsgId(), attemptId);
         var origin = db.getItem(GetItemRequest.builder().tableName(ORIGIN)
-                .key(MessageOriginCodec.key(event.executionId())).consistentRead(true).build()).item();
+                .key(MessageOriginCodec.key(event.clientMsgId())).consistentRead(true).build()).item();
         if (origin.isEmpty() || !origin.containsKey(MessageOriginCodec.MESSAGE_ID))
             return new Claim(State.INELIGIBLE, attemptId, null);
         if (!MessageOriginCodec.decode(origin, mapper).equals(event))
             throw new IllegalStateException("Kafka request does not match immutable ORIGIN");
         var item = new HashMap<>(key);
         item.put("schema_version", n(3));
-        item.put("delivery_id", s(event.executionId()));
+        item.put("delivery_id", s(event.clientMsgId()));
         item.put("message_id", s(event.messageId()));
         item.put("tenant_id", n(event.clientId()));
         item.put("attempt_id", s(attemptId));
@@ -63,11 +63,11 @@ public class HttpAttemptRepository {
         try {
             db.transactWriteItems(builder -> builder.transactItems(
                     TransactWriteItem.builder().conditionCheck(ConditionCheck.builder().tableName(ORIGIN)
-                            .key(MessageOriginCodec.key(event.executionId()))
+                            .key(MessageOriginCodec.key(event.clientMsgId()))
                             .conditionExpression("delivery_id = :execution AND #status = :received "
                                     + "AND attribute_not_exists(completion_event_id)")
                             .expressionAttributeNames(Map.of("#status", "status"))
-                            .expressionAttributeValues(Map.of(":execution", s(event.executionId()),
+                            .expressionAttributeValues(Map.of(":execution", s(event.clientMsgId()),
                                     ":received", s(MessageOriginCodec.STATUS_RECEIVED))).build()).build(),
                     TransactWriteItem.builder().put(Put.builder().tableName(STEP).item(item)
                             .conditionExpression("attribute_not_exists(pk)").build()).build()));
@@ -78,7 +78,7 @@ public class HttpAttemptRepository {
             var existing = db.getItem(GetItemRequest.builder().tableName(STEP).key(key)
                     .consistentRead(true).build()).item();
             if (existing.isEmpty()) return new Claim(State.INELIGIBLE, attemptId, null);
-            if (!event.executionId().equals(existing.get("delivery_id").s())
+            if (!event.clientMsgId().equals(existing.get("delivery_id").s())
                     || !attemptId.equals(existing.get("attempt_id").s())) {
                 throw new IllegalStateException("HTTP STEP key belongs to another execution");
             }
@@ -92,7 +92,7 @@ public class HttpAttemptRepository {
 
     public HttpOutcome record(HttpOutcome outcome) {
         String encoded = mapper.writeValueAsString(outcome);
-        var key = key(outcome.executionId(), outcome.attemptId());
+        var key = key(outcome.clientMsgId(), outcome.attemptId());
         try {
             db.updateItem(UpdateItemRequest.builder().tableName(STEP).key(key)
                     .conditionExpression("#status = :processing AND #version = :version AND attribute_not_exists(outcome_event)")
@@ -115,14 +115,14 @@ public class HttpAttemptRepository {
         String encoded = mapper.writeValueAsString(outcome);
         try {
             db.updateItem(UpdateItemRequest.builder().tableName(STEP)
-                    .key(key(outcome.executionId(), outcome.attemptId()))
+                    .key(key(outcome.clientMsgId(), outcome.attemptId()))
                     .conditionExpression("outcome_event = :event AND publish_state = :pending")
                     .updateExpression("SET publish_state = :published")
                     .expressionAttributeValues(Map.of(":event", s(encoded), ":pending", s("PENDING"),
                             ":published", s("PUBLISHED"))).build());
         } catch (ConditionalCheckFailedException changed) {
             var existing = db.getItem(GetItemRequest.builder().tableName(STEP)
-                    .key(key(outcome.executionId(), outcome.attemptId())).consistentRead(true).build()).item();
+                    .key(key(outcome.clientMsgId(), outcome.attemptId())).consistentRead(true).build()).item();
             if (!encoded.equals(existing.getOrDefault("outcome_event", s("")).s())
                     || !"PUBLISHED".equals(existing.getOrDefault("publish_state", s("")).s())) throw changed;
         }
