@@ -6,7 +6,7 @@ public final class MessageTopics {
     public static final String SKT_HTTP_SEND = "message.skt.http.send.v1";
     public static final String KT_HTTP_SEND = "message.kt.http.send.v1";
     public static final String LGU_HTTP_SEND = "message.lgu.http.send.v1";
-    /** Webhook batches, HTTP failure/timeout observations and TCP responses consumed by MSG-RESULT-MANAGER. */
+    /** Pre-send failures, webhook batches, HTTP failures/timeouts and TCP responses for MSG-RESULT-MANAGER. */
     public static final String MSG_RESULT = "MSG_RESULT";
     /** Final business result produced by MSG-RESULT-MANAGER. */
     public static final String MSG_RESULT_FINALIZED = "MSG-RESULT-FINALIZED";

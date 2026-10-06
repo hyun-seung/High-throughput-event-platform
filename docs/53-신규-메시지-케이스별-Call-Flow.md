@@ -1,6 +1,6 @@
 # 메시지 접수부터 최종 결과까지: 케이스별 Call Flow
 
-기준: 2026-10-07. **신규 `/api/v1/messages` 경로의 목표 설계**를 한곳에서 읽기 위한 문서다. 정상 흐름과 실패·복구 분기를 함께 그린다. 현재 구현은 API 접수·ORIGIN 저장·`message.received.v1` 발행, 공통 전문·통신사별 토픽, CDC 캐시 준비, PRE-SEND-MANAGER의 참조 조회·첫 통신사 고정·최초 HTTP 명령 준비, 발송 시도별 Redis 선점 준비 코드, `WEBHOOK-RECEIVE-API`의 1~100건 단일 Kafka 발행, 1차 오류 코드의 순수 후속 판단까지다. PRE-SEND-MANAGER의 Kafka 소비·발행, 통신사별 sender, `MSG-RESULT-MANAGER`의 결과 소비·판단은 아직 연결되지 않았다. 이관 전 `delivery.*` 및 `message.http.requested.v1` 구현·검증을 신규 경로의 완료로 읽지 않는다. 구현 상태는 [01 현재 상태](01-현재-구현-상태와-남은-작업.md), 결정 근거는 [ADR-026](adr/ADR-026-MESSAGE-RECEIVED와-통신사별-HTTP-발송-분리.md)·[ADR-027](adr/ADR-027-접수-API-Redis-TPS와-유형별-월-Quota.md)을 따른다.
+기준: 2026-10-07. **신규 `/api/v1/messages` 경로의 목표 설계**를 한곳에서 읽기 위한 문서다. 정상 흐름과 실패·복구 분기를 함께 그린다. 현재 구현은 API 접수·ORIGIN 저장·`message.received.v1` 발행, 공통 전문·통신사별 토픽, CDC 캐시 준비, PRE-SEND-MANAGER의 Kafka 소비·판단 고정·통신사별 HTTP 명령 발행과 발송 불가 결과 인계, 발송 시도별 Redis 선점 준비 코드, `WEBHOOK-RECEIVE-API`의 1~100건 단일 Kafka 발행, 1차 오류 코드의 순수 후속 판단까지다. 통신사별 sender와 `MSG-RESULT-MANAGER`의 결과 소비·판단은 아직 연결되지 않았다. 이관 전 `delivery.*` 및 `message.http.requested.v1` 구현·검증을 신규 경로의 완료로 읽지 않는다. 구현 상태는 [01 현재 상태](01-현재-구현-상태와-남은-작업.md), 결정 근거는 [ADR-026](adr/ADR-026-MESSAGE-RECEIVED와-통신사별-HTTP-발송-분리.md)·[ADR-027](adr/ADR-027-접수-API-Redis-TPS와-유형별-월-Quota.md)을 따른다.
 
 ## 읽는 순서와 경계
 
@@ -19,7 +19,7 @@
 | 완료 관리자 상세 처리 | [8.1](#81-msg-complete-manager의-처리-로직) | 메시지당 이력 1건·1차 성공 과금 최대 1건 |
 | 중간 종료·저장소 장애 | [9](#9-중간-종료와-저장소-장애) | 저장된 원본·판단 기준 재개 |
 
-현재 확정한 새 경로의 토픽은 `message.received.v1`(API → PRE-SEND-MANAGER), `message.skt.http.send.v1`·`message.kt.http.send.v1`·`message.lgu.http.send.v1`(Manager → 통신사별 sender), `MSG_RESULT`(1차 웹훅·명시적 HTTP 실패·5초 타임아웃·2차 TCP 즉시 응답 → MSG-RESULT-MANAGER), `MSG-RESULT-FINALIZED`(완료 관리자 인계), `WEBHOOK-SEND`(결과 관리자 → 고객 웹훅 sender)다. 1차 HTTP `200 OK`에서는 sender가 Kafka 결과를 발행하지 않는다. 명시적 비-200과 5초 무응답은 sender가 출처를 구분해 `MSG_RESULT`에 직접 발행한다. 오류 코드 대역과 결과 전문은 [54 오류 코드 계약](54-메시징-오류-코드와-결과-인계-계약.md)을 따른다. 2차 발송 AP는 `MSG-TCP-SENDER`, 현재 발송 명령 토픽은 `message.tcp.requested.v1`이다. 2차 TCP는 즉시 응답을 최종 결과로 보고 `MSG_RESULT`에 `source=TCP_RESPONSE`로 인계한다.
+현재 확정한 새 경로의 토픽은 `message.received.v1`(API → PRE-SEND-MANAGER), `message.skt.http.send.v1`·`message.kt.http.send.v1`·`message.lgu.http.send.v1`(Manager → 통신사별 sender), `MSG_RESULT`(발송 전 실패·1차 웹훅·명시적 HTTP 실패·5초 타임아웃·2차 TCP 즉시 응답 → MSG-RESULT-MANAGER), `MSG-RESULT-FINALIZED`(완료 관리자 인계), `WEBHOOK-SEND`(결과 관리자 → 고객 웹훅 sender)다. 1차 HTTP `200 OK`에서는 sender가 Kafka 결과를 발행하지 않는다. 명시적 비-200과 5초 무응답은 sender가 출처를 구분해 `MSG_RESULT`에 직접 발행한다. 오류 코드 대역과 결과 전문은 [54 오류 코드 계약](54-메시징-오류-코드와-결과-인계-계약.md)을 따른다. 2차 발송 AP는 `MSG-TCP-SENDER`, 현재 발송 명령 토픽은 `message.tcp.requested.v1`이다. 2차 TCP는 즉시 응답을 최종 결과로 보고 `MSG_RESULT`에 `source=TCP_RESPONSE`로 인계한다.
 
 단일 메시지 처리용 Kafka 레코드의 key는 최초 접수에서 발급한 고정 `clientMsgId`다. 고객 ID는 API의 `messageId`이며 UTF-8 최대 40바이트다. `clientMsgId`는 하이픈 없는 UUID 32자리로 만들고 API 202 응답, ORIGIN·Kafka·STEP, 업체 발송 요청·웹훅, 이력·과금에 같은 값을 사용한다. `attemptId`는 내부 통신사 시도, `invocation`은 같은 통신사의 재시도 회차를 구분하며 업체 ID에 붙이지 않는다. 업체 웹훅에는 `clientMsgId`만 돌아온다. 고객 API 요청과 웹훅 HTTP 요청은 인입마다 별도의 `traceId`를 발급해 추적하고 메시지 키로 사용하지 않는다. 한 웹훅 HTTP 요청의 1~100개 결과는 `MSG_RESULT`의 Kafka 1레코드에 담고 배치 key에는 `traceId`를 사용한다. 단일 메시지 명령·HTTP 응답 실패 레코드는 `clientMsgId` key를 사용한다. 웹훅 배치 안의 개별 메시지에 대한 Kafka 파티션 순서와 토픽 간 도착 순서는 보장되지 않으므로 DynamoDB 조건부 상태 전이가 필요하다.
 
@@ -28,7 +28,7 @@
 | 단계 | AP 이름 | 구현 상태 |
 |---|---|---|
 | 고객 접수 | `MSG-RECEIVE-API` | `messaging-api`에 신규 접수 경로 구현, 기본 비활성화 |
-| 1차 발송 준비 | `PRE-SEND-MANAGER` | 참조 조회·최초 HTTP 명령 준비 구현, Kafka 소비·발행 미연결 |
+| 1차 발송 준비 | `PRE-SEND-MANAGER` | 참조 조회·명령 또는 발송 불가 결과를 ORIGIN에 고정하고 Kafka 인계 구현 |
 | 1차 HTTP 발송 | `MSG-SKT-SENDER`, `MSG-KT-SENDER`, `MSG-LGU-SENDER` | 통신사별 Deployment 목표, 신규 소비·발송 구현 전 |
 | 웹훅 접수 | `WEBHOOK-RECEIVE-API` | 독립 `messaging-webhook-receive-api`에 인증·1~100건 검증·`MSG_RESULT` 단일 레코드 발행 구현. 기존 `receipt-api`는 이관 전 경로 |
 | 결과 판단 | `MSG-RESULT-MANAGER` | 신규 경로 구현 전 |
@@ -151,7 +151,7 @@ flowchart TD
     C -->|누락| P[PostgreSQL 계약 조회]
     C -->|있음| V[계약·발송 조건 확인]
     P --> V
-    V -->|발송 불가| F[실패 결과로 인계: 전문·토픽 미정]
+    V -->|발송 불가| F[ORIGIN에 사유 고정 후 MSG_RESULT 발행]
     V -->|발송 가능| N[Redis 전화번호→통신사 조회]
     N -->|SKT·KT·LGU| B[전문·통신사·attemptId 고정]
     B --> T[해당 통신사 HTTP 발송 토픽]
@@ -161,7 +161,9 @@ flowchart TD
 
 계약 원본과 번호 매핑 원본은 PostgreSQL이며 CDC가 Redis를 갱신한다. **계약 캐시 누락은 PostgreSQL 조회, 번호→통신사 캐시 누락은 SKT 첫 발송**으로 처리한다. 번호 매핑 누락 때문에 접수를 거절하거나 통신사 찾기를 위해 PostgreSQL을 인라인 조회하지 않는다. `messaging-pre-send-manager`에는 ORIGIN 원문과 접수 레코드가 일치할 때 첫 통신사를 조건부로 저장하고, 재전달에서는 그 값을 우선 재사용하는 코드가 있다. 이 저장은 경로 고정이며 발송 중복 선점은 아니다. 한 번 발행한 *통신사 시도*의 전문·`attemptId`는 Kafka 재전달 중 바꾸지 않는다. 현재 계약 테이블에 발송 전문 생성에 필요한 모든 정보가 있는 것도 아니므로 계약·설정 스키마는 추가 설계가 필요하다.
 
-현재 `PreSendPreparation`은 계약의 존재·활성 여부, 1차 기한, ORIGIN의 활성 여부를 확인하고 정상 건의 `HttpSendCommand`를 생성한다. 명령은 같은 `clientMsgId`·통신사에 대해 결정적인 `attemptId`와 최초 인입 +3시간 기한, 원본 발송 payload를 사용한다. 계약 누락·비활성·기한 만료·ORIGIN 종료는 발송 명령을 만들지 않고 각각 구분된 판단으로 돌려준다. **Kafka 소비·발행과 계약상 발송 불가 결과 인계는 아직 연결 전**이며, 현 계약 테이블에 없는 발송 설정 필드는 규격 확정 뒤 추가해야 한다.
+`messaging-pre-send-manager`는 `message.received.v1`을 소비해 계약의 존재·활성 여부, 1차 기한, ORIGIN의 활성 여부를 확인한다. 정상 건의 `HttpSendCommand`는 같은 `clientMsgId`·통신사에 대해 결정적인 `attemptId`, 최초 인입 +3시간 기한과 원본 발송 payload를 사용한다. 명령 또는 발송 불가 사유(`CONTRACT_MISSING`·`CONTRACT_DISABLED`·`PRIMARY_EXPIRED`)를 ORIGIN의 `pre_send_dispatch`에 조건부로 고정한 후 해당 통신사 토픽 또는 `MSG_RESULT`에 발행한다. 발송 불가 레코드는 `source=PRE_SEND`, 고정 `clientMsgId`·`resultId`, 사유와 관찰 시각을 담는다. Kafka 저장 확인 뒤 접수 offset을 완료하며 발행 실패·ack 불명 때는 고정된 내용을 다시 발행한다. 이미 끝난 ORIGIN은 새 명령을 발행하지 않는다. 현 계약 테이블에 없는 발송 설정 필드는 규격 확정 뒤 추가해야 한다. 발송 불가 사유의 최종 고객 오류 코드·2차 발송 여부는 `MSG-RESULT-MANAGER` 구현 전에 확정해야 한다.
+
+현재 소비 오류는 무제한 재시도하여 offset을 건너뛰지 않는다. 영구 불량 레코드가 있으면 해당 파티션이 멈추므로 격리·DLT 및 운영 재처리 경로가 필요하다. Kafka 발행 ack가 불명확해 같은 명령이 중복될 수 있으므로 통신사별 Sender는 고정 `attemptId`·회차와 저장 상태를 기준으로 중복 발송을 막아야 한다.
 
 ### 3.1 번호 매핑 누락과 통신사 이동
 
