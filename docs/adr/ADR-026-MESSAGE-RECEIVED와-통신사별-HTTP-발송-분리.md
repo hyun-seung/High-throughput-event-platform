@@ -35,5 +35,6 @@
 ## 2026-10-06 최종 결과 이후 인계 보완
 
 - `MSG-RESULT-MANAGER`가 최종 결과를 DynamoDB에 고정하면 `MSG-RESULT-FINALIZED`로 `MSG-COMPLETE-MANAGER`에 인계한다. 고객 웹훅 발송 대상이면 **별도 `WEBHOOK-SEND` 토픽도 직접 발행**해 `MSG-WEBHOOK-SENDER`가 소비한다. 두 토픽의 발행·소비 순서는 보장하지 않으며, 하나만 발행된 뒤 중단돼도 저장된 같은 결과 ID로 다른 인계를 복구한다.
-- `MSG-COMPLETE-MANAGER`는 `TBL_MSG_HIST`에 최종 메시지당 1건을 저장한다. **1차 발송의 최종 성공**일 때만 `TBL_CDR_HIST`에 고객 메시지당 최대 1건을 저장하고, 그 외 결과는 과금하지 않는다. 같은 고객 메시지의 새로운 실행 ID가 생겨도 과금 고유 키가 중복 CDR을 막아야 한다. SQL 저장 확인 뒤 DynamoDB ORIGIN·STEP 삭제를 시도한다.
+- `MSG-WEBHOOK-SENDER`는 고객 HTTP 웹훅 발송 **후** `TBL_WEBHOOK_HIST`에 발송 시각·결과를 별도 기록한다. 고객 웹훅 HTTP 성공과 이력 저장 사이에 종료되면 재전송될 수 있으므로 같은 웹훅 ID를 유지해 고객의 중복 제거를 돕는다. 이력의 행 단위와 고객 결과 묶음 방식은 별도 확정한다.
+- `MSG-COMPLETE-MANAGER`는 `TBL_MSG_HIST`에 최종 메시지당 1건을 저장한다. **1차 발송의 최종 성공**일 때만 `TBL_CDR_HIST`에 과금하고, 원형 `R` 고유 제약으로 같은 접수 실행의 CDR을 최대 1건으로 제한한다. 업체 전송 필드 `clientMsgId=R:통신사:회차`는 과금 고유 키가 아니다. Redis 유실 뒤 같은 고객 요청이 새로운 `R`로 재접수되면 별도 실행이므로 각각의 과금 가능성은 남는다. SQL 저장 확인 뒤 DynamoDB ORIGIN·STEP 삭제를 시도한다.
 - DynamoDB 삭제 실패의 TTL 대체는 목표 정책이다. 현재 ORIGIN·STEP 테이블 초기화와 신규 ORIGIN 저장에는 TTL 설정·만료 속성이 없어 구현이 필요하다. 구체적인 만료 시각과 고객 메시지 과금 고유 키는 [케이스별 Call Flow](../53-신규-메시지-케이스별-Call-Flow.md#81-msg-complete-manager의-처리-로직)에 남긴다.
