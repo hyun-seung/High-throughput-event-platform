@@ -7,6 +7,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.services.dynamodb.model.ConditionalCheckFailedException;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.util.Optional;
 import java.util.UUID;
@@ -41,7 +42,7 @@ public class MessageReceiveService {
         }
         usage.charge(clientId, request.messageCategory());
         validate(request);
-        String proposedExecutionId = UUID.randomUUID().toString();
+        String proposedExecutionId = UUID.randomUUID().toString().replace("-", "");
         MessageDuplicateGuard.Claim claim = duplicates.claim(clientId, request, proposedExecutionId);
         if (!claim.owner()) {
             MessageSubmission existing;
@@ -110,8 +111,9 @@ public class MessageReceiveService {
     }
 
     private static void validate(MessageReceiveRequest request) {
-        if (request.messageId() == null || request.messageId().isBlank() || request.messageId().length() > 100) {
-            throw new MessageAdmissionException(HttpStatus.BAD_REQUEST, "messageId is required (up to 100 characters)");
+        if (request.messageId() == null || request.messageId().isBlank()
+                || request.messageId().getBytes(StandardCharsets.UTF_8).length > 40) {
+            throw new MessageAdmissionException(HttpStatus.BAD_REQUEST, "messageId is required (up to 40 UTF-8 bytes)");
         }
         if (request.recipientNumber() == null || !request.recipientNumber().matches("010[0-9]{8}")) {
             throw new MessageAdmissionException(HttpStatus.BAD_REQUEST, "recipientNumber must be 010 followed by 8 digits");

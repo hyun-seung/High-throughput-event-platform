@@ -1,5 +1,6 @@
 package messaging.common.messages;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 
 /** Provider wire ID derived from the message's stable sendRequestId and one HTTP invocation. */
@@ -12,7 +13,11 @@ public final class ProviderSendRequestIds {
         }
         Objects.requireNonNull(carrier);
         if (invocation < 1) throw new IllegalArgumentException("Invalid HTTP invocation");
-        return sendRequestId + ":" + carrier.name() + ":" + invocation;
+        String providerSendRequestId = sendRequestId + ":" + carrier.name() + ":" + invocation;
+        if (providerSendRequestId.getBytes(StandardCharsets.UTF_8).length > 40) {
+            throw new IllegalArgumentException("Provider sendRequestId exceeds 40 UTF-8 bytes");
+        }
+        return providerSendRequestId;
     }
 
     /** The rightmost two segments identify the carrier and invocation; the prefix stays searchable by equality. */

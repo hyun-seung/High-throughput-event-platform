@@ -52,6 +52,19 @@ class MessageReceiveServiceTest {
     }
 
     @Test
+    void createsACompactStableIdThatFitsTheProviderLimit() {
+        when(duplicates.claim(eq(42L), eq(request), anyString())).thenAnswer(call -> {
+            String id = call.getArgument(2);
+            return new MessageDuplicateGuard.Claim(id, "key", "value", true, true);
+        });
+
+        String id = service.receive(42L, request).sendRequestId();
+
+        assertTrue(id.matches("[0-9a-f]{32}"));
+        verify(origins).save(argThat(event -> id.equals(event.executionId())));
+    }
+
+    @Test
     void duplicateMarkerWithoutConfirmedOriginNeverReturns202() {
         String id = "00000000-0000-0000-0000-000000000001";
         when(duplicates.claim(eq(42L), eq(request), anyString()))
@@ -86,6 +99,18 @@ class MessageReceiveServiceTest {
         verify(usage).charge(42L, MessageCategory.GENERAL);
         verifyNoInteractions(duplicates, origins);
         verifyNoInteractions(publisher);
+    }
+
+    @Test
+    void customerMessageIdUsesUtf8ByteLimit() {
+        var invalid = new MessageReceiveRequest("가".repeat(14), "01012345678", MessageCategory.GENERAL,
+                request.payload(), true);
+
+        MessageAdmissionException failure = assertThrows(MessageAdmissionException.class,
+                () -> service.receive(42L, invalid));
+
+        assertEquals(HttpStatus.BAD_REQUEST, failure.status());
+        verifyNoInteractions(duplicates, origins, publisher);
     }
 
     @Test
