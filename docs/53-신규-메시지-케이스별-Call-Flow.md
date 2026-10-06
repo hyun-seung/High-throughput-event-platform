@@ -12,6 +12,7 @@
 | 번호 매핑 누락·통신사 이동 | [3.1](#31-번호-매핑-누락과-통신사-이동) | SKT → KT → LGU+의 1차 HTTP 경로 |
 | 업체 즉시 응답 실패 | [4](#4-업체의-즉시-응답이-실패) | Sender가 `MSG_RESULT`에 직접 인계. 200 성공 경로와 구분 |
 | 1~100건 웹훅과 실패 분기 | [5](#5-웹훅-묶음과-실패-분기) | 성공 최종화, 실패 시 1차 이동·2차 판단 |
+| 결과 판단 AP의 전체 책임 | [5.1](#51-msg-result-manager의-처리-경계와-후속-연결) | 입력 검증·조건부 판단·후속 발행·완료 인계 |
 | 웹훅 미수신·1차 만료 | [6](#6-웹훅-미수신과-1차-만료) | 2차 전환 또는 만료 |
 | 2차 TCP 발송 | [7](#7-2차-tcp-발송) | 성공·재시도·최종 실패·만료 |
 | 고객 통지 실패·정리 | [8](#8-최종-결과-이후-고객-통지와-정리) | SQL 기준 독립 재개 |
@@ -31,10 +32,10 @@
 | 웹훅 접수 | `WEBHOOK-RECEIVE-API` | 신규 경로 구현 전. 현재 `receipt-api`는 이전 경로 |
 | 결과 판단 | `MSG-RESULT-MANAGER` | 신규 경로 구현 전 |
 | 2차 TCP 발송 | `MSG-TCP-SENDER` | 목표 AP명 확정, 신규 경로 구현 전 |
-| 최종 결과 이력·정리 | `MSG-FINALIZER` | 목표 AP명. 현재 `delivery-result-worker`의 일부 책임을 이관해야 함 |
+| 최종 결과 이력·정리 | `MSG-COMPLETE-MANAGER` | 목표 AP명. 현재 `delivery-result-worker`의 일부 책임을 이관해야 함 |
 | 고객 결과 웹훅 발송 | `MSG-WEBHOOK-SENDER` | 목표 AP명. 현재 `delivery-result-worker`의 통지 책임을 분리해야 함 |
 
-`messaging-http-sender`는 이전 단일 sender 모듈이고, `messaging-publication-recovery-app`·`messaging-reference-cache`는 각각 최초 Kafka 발행 복구와 CDC 캐시 투영을 돕는 별도 AP다. 현재 `delivery-result-worker`는 최종 이력·고객 통지·정리를 한 모듈에서 수행한다. 신규 `MSG-RESULT-FINALIZED` 연결과 `MSG-FINALIZER`·`MSG-WEBHOOK-SENDER` 분리는 아직 구현 전이다.
+`messaging-http-sender`는 이전 단일 sender 모듈이고, `messaging-publication-recovery-app`·`messaging-reference-cache`는 각각 최초 Kafka 발행 복구와 CDC 캐시 투영을 돕는 별도 AP다. 현재 `delivery-result-worker`는 최종 이력·고객 통지·정리를 한 모듈에서 수행한다. 신규 `MSG-RESULT-FINALIZED` 연결과 `MSG-COMPLETE-MANAGER`·`MSG-WEBHOOK-SENDER` 분리는 아직 구현 전이다.
 
 ## 1. 1차 정상 성공
 
@@ -84,7 +85,7 @@ sequenceDiagram
     participant M as MSG-RESULT-MANAGER
     participant D as DynamoDB
     participant R as Redis
-    participant F as MSG-FINALIZER
+    participant F as MSG-COMPLETE-MANAGER
     participant N as MSG-WEBHOOK-SENDER
     participant Q as PostgreSQL
     P->>W: 1~100건 결과 웹훅(이 중 성공 1건)
@@ -261,6 +262,31 @@ sequenceDiagram
 
 **업체 멱등키는 파생 `sendRequestId`다.** 업체는 발송 중·성공한 같은 ID의 중복 발송을 약 2시간 차단하고 실패한 ID는 재사용할 수 있다. 현재 이전 `messaging-http-sender`는 HTTP `Idempotency-Key`에 고정 `attemptId`를 쓰므로 신규 경로에 그대로 적용하면 `66002` 또는 실패 웹훅 뒤 새 회차가 업체에서 중복 처리될 수 있다. 논리적 `attemptId`와 고정 `R`은 유지하되 새 회차에는 `R:SKT:2`처럼 새 파생 ID를 부여하고, *같은 회차의 Kafka 재전달*에는 같은 ID를 재사용한다. 업체의 중복 차단 시간이 만료된 뒤의 재전달에 대비해 내부 상태 확인도 필요하며, 보장 시간의 정확한 길이는 확인해야 한다.
 
+### 5.1 MSG-RESULT-MANAGER의 처리 경계와 후속 연결
+
+`MSG-RESULT-MANAGER`는 **발송 결과를 메시지별 다음 상태와 다음 명령으로 바꾸는 AP**다. 1차 입력은 `WEBHOOK-RECEIVE-API`가 `MSG_RESULT`에 넣은 1~100건 웹훅 배치와 통신사별 sender가 같은 토픽에 직접 넣은 명시적 비-200 실패 1건이다. HTTP `200 OK`만 받은 시점에는 Manager 입력이 없다. 결과가 오지 않은 실행은 별도 만료 판단 작업이 DynamoDB 기준으로 찾아 Manager와 같은 조건부 판단 경계로 인계해야 한다. 2차 TCP 결과도 이 AP가 최종 판단할 목표지만, 현재 목표의 `message.tcp.outcome.v1`을 유지할지 `MSG_RESULT`로 통합할지는 미정이다.
+
+각 입력 항목의 처리 순서는 다음과 같다. 웹훅 배치의 Kafka key인 `traceId`는 요청 추적용이고, **업무 식별자는 항목의 `clientMsgId`에서 역파싱한 고정 `R`·통신사·회차**다. 명시적 비-200 레코드도 같은 저장 시도를 식별해야 한다.
+
+1. 출처(`WEBHOOK` 또는 `HTTP_RESPONSE`), 결과 형식·코드, 파생 ID를 해석한다. 웹훅 항목은 저장된 통신사·회차·`attemptId`와 대조하고, 그 호출에 HTTP `200 OK` 기록이 늦게 반영될 수 있음을 허용한다. 명시적 비-200은 sender가 기록한 실패 관찰과 대조한다.
+2. DynamoDB에서 해당 실행의 현재 단계·시도·기한·이미 처리한 결과를 확인한다. 중복, 이전 회차의 늦은 결과, 이미 2차로 넘어갔거나 최종화된 실행은 현재 판단을 바꾸지 않는다. 정리돼 원본이 없거나 식별자가 잘못된 결과는 새 실행을 만들지 않고 격리·관측 대상으로 남긴다.
+3. 유효한 결과 하나에 대해 상태와 후속 명령을 조건부로 고정한다. 성공 웹훅은 메시지 최종 성공이다. `66001`은 다음 미시도 통신사로 이동하고, `66002`는 최초 발송 후 최대 3회까지 **실패 판단 1분 후** 같은 통신사 새 회차를 예약한다. 각각 소진되면 1차 단계 실패 `40002` 또는 `40001`을 저장한다. 다른 실패는 확정된 코드별 정책에 따라 2차 대상 여부를 판단하며, 미분류 코드를 임의로 재시도하지 않는다.
+4. 1차 실패가 확정되면 최초 요청의 `fallbackAllowed`와 2차 기한·대상 사유를 확인한다. 대상이면 2차 시도와 명령을 고정하고 `MSG-TCP-SENDER` 쪽으로 인계한다. 대상이 아니면 메시지 최종 실패를 고정한다. 2차 결과도 유효한 현재 시도일 때 성공·실패·만료 중 하나로 최종 고정한다.
+5. 다음 통신사, 지연 재발송, 2차 발송 또는 `MSG-RESULT-FINALIZED` 발행을 저장된 판단과 **같은 ID로 재개 가능하게** 만든다. DynamoDB 저장 뒤 Kafka 발행·ack가 불명확하면 발송 명령이나 최종 결과를 새로 판단하지 않고 같은 내용을 재발행한다. 후속 토픽 소비자도 명령 ID로 중복을 막는다.
+
+| 고정된 판단 | Manager의 후속 인계 | 다음 AP의 책임 |
+|---|---|---|
+| 1차 성공 또는 2차 최종 결과 | `MSG-RESULT-FINALIZED` | `MSG-COMPLETE-MANAGER`가 SQL 최종 이력·고객 통지·정리 예약을 commit |
+| `66001`이고 미시도 통신사가 남음 | 다음 통신사의 `message.<carrier>.http.send.v1` | 해당 `MSG-*-SENDER`가 새 통신사로 1차 HTTP 발송 |
+| `66002`이고 재시도 회차가 남음 | 1분 이후 동일 통신사 발송 명령 | 같은 통신사 sender가 새 `R:통신사:회차`로 발송 |
+| 1차 실패이고 2차 대상 | `message.tcp.requested.v1` 목표 토픽 | `MSG-TCP-SENDER`가 2차 발송하고 결과를 다시 Manager 쪽에 인계 |
+| 1차 실패이고 2차 비대상 | 최종 실패 저장 후 `MSG-RESULT-FINALIZED` | `MSG-COMPLETE-MANAGER`가 SQL 처리로 연결 |
+| 중복·늦은 결과 | 새 후속 발행 없음 | 저장된 현재 판단 유지 |
+
+`MSG-COMPLETE-MANAGER`는 **결과를 다시 판단하지 않는다.** 이미 고정된 최종 결과를 PostgreSQL에 이력·고객 웹훅 예약·정리 예약으로 저장하고, SQL commit 이후 `MSG-WEBHOOK-SENDER`가 고객 결과 웹훅을 보내며 정리 작업이 ORIGIN·STEP을 지운다. 고객 통지 재시도와 정리는 서로 독립이다. 웹훅 배치의 offset은 1~100개 항목 모두의 판단과 필요한 후속 발행이 내구성 있게 완료된 뒤에만 처리한다.
+
+미결정 경계는 2차 결과 토픽·전문, `66001`·`66002` 외 업체 코드별 2차 적격성, 응답 불명·영구적으로 잘못된 배치 항목의 격리 방식, 지연 재발송 예약의 구체적인 발행 방식이다. 현재 구현은 `PrimaryHttpFailureDecision`의 `66001`·`66002` 순수 계산까지만 준비돼 있으며 위 Manager의 소비·조건부 저장·후속 발행과 완료 AP 분리는 구현되지 않았다.
+
 ## 6. 웹훅 미수신과 1차 만료
 
 HTTP `200 OK` 뒤 웹훅이 오지 않으면 HTTP 성공만으로 최종 성공을 만들지 않는다. 1차 결과 판단 deadline은 **최초 인입 +3시간**이며, Redis는 빠른 만료 후보 일정이고 DynamoDB는 최종 판단·복구의 기준이다. 2차로 전환했다면 2차 결과 판단 deadline은 **1차 결과 판단 시각 +4시간**이다. 이 기한들은 웹훅 API의 수신 만료가 아니다. 업체에는 웹훅 재전송 최대 기간이 없으므로 훨씬 늦게 도착할 수 있다. deadline은 `200 OK` 시점에 새로 시작하지 않는다. **200 경로에서는** Sender가 `MSG_RESULT`를 발행하지 않으므로 웹훅이 없는 실행을 찾는 만료 스케줄러·복구 조회가 별도로 필요하다. Redis 후보를 언제 등록할지는 신규 경로에서 미정이며, 웹훅 소비 뒤에만 등록하면 미수신 실행을 놓친다.
@@ -314,14 +340,14 @@ sequenceDiagram
 
 ## 8. 최종 결과 이후 고객 통지와 정리
 
-`MSG-RESULT-MANAGER`가 최종 결과를 DynamoDB에 고정한 뒤 `MSG-RESULT-FINALIZED`로 인계한다. 목표 구조에서 `MSG-FINALIZER`가 PostgreSQL에 **최종 이력·고객 통지 예약·정리 예약을 단일 트랜잭션**으로 저장한다. `MSG-WEBHOOK-SENDER`는 예약을 읽어 고객에게 결과 웹훅을 발송한다. 현재 이 책임은 `delivery-result-worker` 한 모듈에 합쳐져 있으며 신규 토픽 연결과 AP 분리는 구현 전이다. SQL commit 전에는 ORIGIN·STEP을 삭제하지 않는다.
+`MSG-RESULT-MANAGER`가 최종 결과를 DynamoDB에 고정한 뒤 `MSG-RESULT-FINALIZED`로 인계한다. 목표 구조에서 `MSG-COMPLETE-MANAGER`가 PostgreSQL에 **최종 이력·고객 통지 예약·정리 예약을 단일 트랜잭션**으로 저장한다. `MSG-WEBHOOK-SENDER`는 예약을 읽어 고객에게 결과 웹훅을 발송한다. 현재 이 책임은 `delivery-result-worker` 한 모듈에 합쳐져 있으며 신규 토픽 연결과 AP 분리는 구현 전이다. SQL commit 전에는 ORIGIN·STEP을 삭제하지 않는다.
 
 ```mermaid
 flowchart TD
-    F[MSG-RESULT-FINALIZED] --> Z[MSG-FINALIZER]
+    F[MSG-RESULT-FINALIZED] --> Z[MSG-COMPLETE-MANAGER]
     Z --> Q[PostgreSQL 이력·통지·정리 예약 commit]
     Q --> N[MSG-WEBHOOK-SENDER 고객 결과 웹훅]
-    Q --> C[MSG-FINALIZER 발송 데이터 정리]
+    Q --> C[MSG-COMPLETE-MANAGER 발송 데이터 정리]
     N --> A{204 수신?}
     A -->|예| D[SQL 통지 완료]
     A -->|아니오| R[같은 묶음으로 재전송 예약]
