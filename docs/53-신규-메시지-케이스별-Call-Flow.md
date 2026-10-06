@@ -17,9 +17,22 @@
 | 고객 통지 실패·정리 | [8](#8-최종-결과-이후-고객-통지와-정리) | SQL 기준 독립 재개 |
 | 중간 종료·저장소 장애 | [9](#9-중간-종료와-저장소-장애) | 저장된 원본·판단 기준 재개 |
 
-현재 확정한 새 경로의 토픽은 `message.received.v1`(API → PRE-SEND-MANAGER), `message.skt.http.send.v1`·`message.kt.http.send.v1`·`message.lgu.http.send.v1`(Manager → 통신사별 sender), `MSG_RESULT`(웹훅 API의 결과 및 통신사별 sender의 명시적 비-200 실패 → MSG-RESULT-MANAGER), `MSG-RESULT-FINALIZED`(최종 결과 인계)다. 1차 HTTP `200 OK`에서는 sender가 Kafka 결과를 발행하지 않는다. 명시적 비-200 실패는 응답 코드와 함께 sender가 `MSG_RESULT`에 직접 발행하며 해당 발송의 웹훅은 오지 않는다. 오류 코드 대역과 결과 전문은 [54 오류 코드 계약](54-메시징-오류-코드와-결과-인계-계약.md)을 따른다. **2차 발송은 아직 기존 목표명** `message.tcp.requested.v1`/`messaging-tcp-sender`로 표기한다. 제안된 `message.tcp.send.v1` 이름은 확정되지 않았다. 2차 결과 수용 경로도 미정이다.
+현재 확정한 새 경로의 토픽은 `message.received.v1`(API → PRE-SEND-MANAGER), `message.skt.http.send.v1`·`message.kt.http.send.v1`·`message.lgu.http.send.v1`(Manager → 통신사별 sender), `MSG_RESULT`(웹훅 API의 결과 및 통신사별 sender의 명시적 비-200 실패 → MSG-RESULT-MANAGER), `MSG-RESULT-FINALIZED`(최종 결과 인계)다. 1차 HTTP `200 OK`에서는 sender가 Kafka 결과를 발행하지 않는다. 명시적 비-200 실패는 응답 코드와 함께 sender가 `MSG_RESULT`에 직접 발행하며 해당 발송의 웹훅은 오지 않는다. 오류 코드 대역과 결과 전문은 [54 오류 코드 계약](54-메시징-오류-코드와-결과-인계-계약.md)을 따른다. 2차 발송 AP명은 `MSG-TCP-SENDER`로 확정했다. 물리 토픽은 현재 목표의 `message.tcp.requested.v1`로 표기하며 제안된 `message.tcp.send.v1` 전환 여부와 2차 결과 수용 경로는 미정이다.
 
 단일 메시지 처리용 Kafka 레코드의 key는 최초 접수에서 발급한 고정 `sendRequestId`(`R`)다. 현행 접수 이벤트의 `executionId`에는 같은 값이 저장되어 있으며 이관 중이다. 고객 ID는 API의 `messageId`이며 UTF-8 최대 40바이트다. 고정 `R`은 하이픈 없는 UUID 32자리다. CDC 참조 데이터 토픽은 별개다. `attemptId`는 1차 HTTP의 통신사별 시도를 식별하고, 동일 통신사 재시도 회차(`invocation`)는 별도로 구분한다. **업체 발송 요청의 `clientMsgId`에 최대 40바이트의 `R:통신사:회차`(예: `R:SKT:1`, 38바이트)를 담고 웹훅 배열 항목의 `clientMsgId`로 그대로 받는다.** 같은 명령의 재전달에는 같은 파생 ID를 쓰며, 새 회차·통신사에는 고정 `R`에서 새 ID를 파생한다. 웹훅 ID에서 `R`·통신사·회차를 얻어 해당 저장 시도와 정확히 대조한다. 공통 `HttpSendCommand`에 이 계약을 반영했으며 실제 Manager 생산·Sender 소비는 아직 구현 전이다. 고객 API 요청과 웹훅 HTTP 요청은 인입마다 별도의 `traceId`를 발급해 추적하고 메시지 키로 사용하지 않는다. 웹훅 API 경량화 기준으로 한 웹훅 HTTP 요청의 1~100개 결과를 `MSG_RESULT`의 1개 Kafka 레코드에 담는다. 이 배치의 key는 인입 `traceId`를 사용하며, 단일 메시지 명령·HTTP 응답 실패 레코드는 고정 `R` key를 사용한다. 웹훅 배치 안의 개별 `R`에 대한 Kafka 파티션 순서는 보장되지 않는다. 다른 토픽 사이의 도착 순서는 보장되지 않으므로 최종 판단은 DynamoDB의 조건부 상태 전이로 수렴시킨다.
+
+발송·결과 경로의 AP 표기는 다음과 같다. 이는 **논리 AP/Deployment 이름**이며 Maven 모듈명이나 물리 Kafka 토픽명을 일괄 변경한 뜻은 아니다.
+
+| 단계 | AP 이름 | 구현 상태 |
+|---|---|---|
+| 고객 접수 | `MSG-RECEIVE-API` | `messaging-api`에 신규 접수 경로 구현, 기본 비활성화 |
+| 1차 발송 준비 | `PRE-SEND-MANAGER` | `messaging-pre-send-manager`의 참조 조회 준비, Kafka 소비·전문 생성 미연결 |
+| 1차 HTTP 발송 | `MSG-SKT-SENDER`, `MSG-KT-SENDER`, `MSG-LGU-SENDER` | 통신사별 Deployment 목표, 신규 소비·발송 구현 전 |
+| 웹훅 접수 | `WEBHOOK-RECEIVE-API` | 신규 경로 구현 전. 현재 `receipt-api`는 이전 경로 |
+| 결과 판단 | `MSG-RESULT-MANAGER` | 신규 경로 구현 전 |
+| 2차 TCP 발송 | `MSG-TCP-SENDER` | 목표 AP명 확정, 신규 경로 구현 전 |
+
+`messaging-http-sender`는 이전 단일 sender 모듈이고, `messaging-publication-recovery-app`·`messaging-reference-cache`는 각각 최초 Kafka 발행 복구와 CDC 캐시 투영을 돕는 별도 AP다. 현재 이름을 유지한 `delivery-result-worker`는 최종 이력·고객 통지용이며 신규 `MSG-RESULT-FINALIZED` 연결이 남아 있다.
 
 ## 1. 1차 정상 성공
 
@@ -29,12 +42,12 @@
 sequenceDiagram
     autonumber
     actor C as 고객
-    participant A as MESSAGE-RECEIVE-API
+    participant A as MSG-RECEIVE-API
     participant R as Redis
     participant D as DynamoDB
     participant K as Kafka
     participant M as PRE-SEND-MANAGER
-    participant S as 통신사별 HTTP-SENDER
+    participant S as 통신사별 발송 AP
     participant P as 통신사 업체
     C->>A: POST /api/v1/messages + JWT
     A->>A: JWT에서 clientId 확인
@@ -168,7 +181,7 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    S[통신사별 HTTP-SENDER가 1차 호출] --> R{업체 응답}
+    S[통신사별 발송 AP가 1차 호출] --> R{업체 응답}
     R -->|200 OK| A[DynamoDB에 접수 시각·응답 기록]
     A --> W[Kafka 발행 없이 종료·웹훅 대기]
     W --> H[웹훅이 해당 호출의 최종 결과]
@@ -192,10 +205,12 @@ flowchart TD
 
 업체의 HTTP `200 OK`는 최종 수신 성공이 아니다. 업체는 이후 한 번의 웹훅 요청에 **1~100건의 메시지 결과**를 담아 보낼 수 있다. 배열의 각 항목은 `clientMsgId`와 `status`를 담으며 `clientMsgId`는 파생 발송 ID와 같다. `status=success`에는 `error`가 없고 `status=fail`에는 5자리 숫자 `code`와 `message`를 담은 `error`가 반드시 있다. 같은 요청 안에서 `clientMsgId`는 중복되지 않는다. `WEBHOOK-RECEIVE-API`는 업체 인증과 형식·1~100건·수신 크기를 확인하고 **묶음 전체를 `MSG_RESULT` 1레코드로 발행**한다. Kafka 저장 확인 후 접수 응답을 반환하며, 각 메시지의 성공·실패 판단과 DynamoDB 조회는 하지 않는다. Kafka 저장 실패·ack 불명확이면 실패 응답을 주고 업체가 같은 묶음을 재전송한다. Manager는 배치를 풀어 각 결과를 독립 처리하고, 모두 내구성 있게 처리된 후에만 Kafka offset을 완료한다. 한 항목에서 일시 장애가 나면 배치가 재전달되므로 이미 처리한 항목은 저장 상태로 멱등 처리한다. Kafka 배치 기록은 재전달 때 유지되지만 업체가 HTTP 요청 자체를 재전송하면 새 `traceId`가 붙으므로 `traceId`로 결과 중복을 판정하지 않는다.
 
+**Kafka 기록 단위는 웹훅 요청 1건, 업무 처리 단위는 배열 항목 1건**이다. `MSG-RESULT-MANAGER` 한 AP 안에서 항목을 제한된 병렬성으로 처리하며 100개를 차례로 모두 끝낼 필요는 없다. 항목별 DynamoDB 조건부 전이와 후속 Kafka 발행을 내구성 있게 마친 뒤 배치 offset을 완료한다. 추가 배치 분리 AP나 항목별 재발행 토픽은 현재 경로에 두지 않는다. 다른 배치가 같은 `R`을 동시에 처리할 수 있으므로 Kafka 순서에 기대지 않는다. 영구적으로 처리 불가한 항목을 보존·격리하지 못하면 해당 배치가 계속 재시도되므로 이 경로와 100건 배치 부하 시험은 운영 전 필수다.
+
 ```mermaid
 sequenceDiagram
     autonumber
-    participant S as 통신사별 HTTP-SENDER
+    participant S as 통신사별 발송 AP
     participant P as 통신사 업체
     participant W as WEBHOOK-RECEIVE-API
     participant K as MSG_RESULT
@@ -264,7 +279,7 @@ Redis 일정이 유실돼도 DynamoDB 조회로 누락을 찾는다. 인증·형
 
 ## 7. 2차 TCP 발송
 
-2차는 모든 1차 실패의 기본 경로가 아니다. 기존 목표의 대체 사유는 `FALLBACK_REQUIRED`, `PRIMARY_EXPIRED`, `RETRY_EXHAUSTED_NO_RESPONSE`이며 최초 요청의 `fallbackAllowed`가 참이어야 한다. 신규 `66002` 허용 회차 소진(`40001`)과 세 통신사 `66001` 소진(`40002`)도 **1차 실패를 먼저 저장한 뒤** `fallbackAllowed`·2차 가능 기한 등으로 대상을 판단한다. 2차 대상이 아니면 1차 실패 사유로 최종화한다. 현재 목표 이름은 `message.tcp.requested.v1` → `messaging-tcp-sender`다. 2차 결과 토픽은 기존 목표의 `message.tcp.outcome.v1`을 표기하며, `MSG_RESULT`로 통합할지는 아직 결정되지 않았다.
+2차는 모든 1차 실패의 기본 경로가 아니다. 기존 목표의 대체 사유는 `FALLBACK_REQUIRED`, `PRIMARY_EXPIRED`, `RETRY_EXHAUSTED_NO_RESPONSE`이며 최초 요청의 `fallbackAllowed`가 참이어야 한다. 신규 `66002` 허용 회차 소진(`40001`)과 세 통신사 `66001` 소진(`40002`)도 **1차 실패를 먼저 저장한 뒤** `fallbackAllowed`·2차 가능 기한 등으로 대상을 판단한다. 2차 대상이 아니면 1차 실패 사유로 최종화한다. 현재 목표 이름은 `message.tcp.requested.v1` → `MSG-TCP-SENDER`다. 2차 결과 토픽은 기존 목표의 `message.tcp.outcome.v1`을 표기하며, `MSG_RESULT`로 통합할지는 아직 결정되지 않았다.
 
 ```mermaid
 sequenceDiagram
@@ -272,7 +287,7 @@ sequenceDiagram
     participant M as MSG-RESULT-MANAGER
     participant D as DynamoDB
     participant K as Kafka
-    participant T as messaging-tcp-sender
+    participant T as MSG-TCP-SENDER
     participant P as TCP 2차 업체
     participant W as receipt-api
     M->>D: 1차 판단 시각·사유·2차 attemptId·deadline 고정
@@ -360,6 +375,6 @@ HTTP `200 OK` 경로는 Kafka를 발행하지 않는다. **명시적 비-200 실
 - 통신사 불일치의 업체별 원본 코드를 `66001`로 매핑하는 표, 중복·늦은 웹훅에 대한 단일 이동 판단, 다음 통신사 명령의 저장 원본·발행 주체.
 - 계약상 발송 불가 결과의 인계 전문·토픽, 계약·발송 설정 스키마.
 - sender Redis 선점 TTL·진행 중 중복 처리·DynamoDB 기록 실패 복구, 업체별 동일 `sendRequestId` 중복 차단 시간과 만료 뒤 내부 재전달 방지 범위.
-- 2차 토픽·Pod 최종 이름과 2차 즉시 응답·웹훅의 `MSG_RESULT` 통합 여부.
+- 2차 물리 토픽 최종 이름과 2차 즉시 응답·웹훅의 `MSG_RESULT` 통합 여부. AP명 `MSG-TCP-SENDER`는 확정됐다.
 
 이전 경로의 상세 시험·장애 근거는 [기존 전체 흐름](04-요청-접수부터-최종-결과까지의-전체-흐름.md), [저장소 장애](09-저장소-장애-시-중단-범위와-복구-절차.md), [계약·번호 CDC](52-계약과-번호-통신사-CDC-캐시.md)에 보존한다. 신규 경로 구현이 진행되면 이 문서의 목표·미정·완료 표시를 갱신한다.

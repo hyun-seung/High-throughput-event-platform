@@ -6,7 +6,7 @@
 
 ## 결정과 호출 순서
 
-`MESSAGE-RECEIVE-API`는 JWT에서 `clientId`를 확인하고 `messageCategory`가 있는 요청에 대해 Redis 운영 정책의 10초 고정 구간 TPS와 메시지 분류별 월 Quota를 **원자적으로 증가·판정**한다. 이후 본문 상세 검증, Redis 고객 중복 확인, DynamoDB ORIGIN 조건부 저장, `message.received.v1` 발행, 202 응답 순서다. 고객 중복 요청과 분류를 알 수 있는 유효하지 않은 본문도 사용량에 포함한다. JWT 거절과 `messageCategory` 누락은 포함하지 않는다.
+`MSG-RECEIVE-API`는 JWT에서 `clientId`를 확인하고 `messageCategory`가 있는 요청에 대해 Redis 운영 정책의 10초 고정 구간 TPS와 메시지 분류별 월 Quota를 **원자적으로 증가·판정**한다. 이후 본문 상세 검증, Redis 고객 중복 확인, DynamoDB ORIGIN 조건부 저장, `message.received.v1` 발행, 202 응답 순서다. 고객 중복 요청과 분류를 알 수 있는 유효하지 않은 본문도 사용량에 포함한다. JWT 거절과 `messageCategory` 누락은 포함하지 않는다.
 
 정책 키는 `message:usage:{client:<id>}:policy`이며 `tpsLimit`, `quotaGENERAL`, `quotaNOTI`, `quotaADV`, `quotaALERT`를 가진다. 10초 구간 한도는 `tpsLimit × 10`이다. 월별 사용량은 `message:usage:{client:<id>}:month:<yyyy-MM>:<messageCategory>`에 한국 시간 기준으로 저장한다. 한도 초과 요청도 증가된 사용량에 포함되고 429를 받는다. 로컬 `scripts/local.sh init-policy`는 예시 정책을 초기화한다. 운영 정책의 원천·변경 절차와 실제 한도는 별도 결정이 필요하다.
 

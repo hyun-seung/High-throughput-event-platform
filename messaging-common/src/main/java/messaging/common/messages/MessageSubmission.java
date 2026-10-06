@@ -5,7 +5,7 @@ import java.time.Instant;
 import java.util.Map;
 import java.util.Objects;
 
-/** Immutable customer message; executionId is generated once by MESSAGE-RECEIVE-API. */
+/** Immutable customer message; executionId is generated once by MSG-RECEIVE-API. */
 public record MessageSubmission(
         String executionId,
         long clientId,

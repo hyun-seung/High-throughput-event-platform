@@ -1,7 +1,7 @@
 package messaging.common.messages;
 
 public final class MessageTopics {
-    /** Admission fact produced by MESSAGE-RECEIVE-API and consumed by PRE-SEND-MANAGER. */
+    /** Admission fact produced by MSG-RECEIVE-API and consumed by PRE-SEND-MANAGER. */
     public static final String RECEIVED = "message.received.v1";
     public static final String SKT_HTTP_SEND = "message.skt.http.send.v1";
     public static final String KT_HTTP_SEND = "message.kt.http.send.v1";
