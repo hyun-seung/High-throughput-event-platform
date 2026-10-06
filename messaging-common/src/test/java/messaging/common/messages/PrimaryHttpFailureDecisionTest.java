@@ -33,9 +33,25 @@ class PrimaryHttpFailureDecisionTest {
     }
 
     @Test
-    void unknownCodeAndImpossibleInvocationDoNotCauseAnotherSend() {
-        assertThrows(IllegalArgumentException.class,
-                () -> decide(66003, HttpCarrier.SKT, 1, Set.of(HttpCarrier.SKT)));
+    void otherCarrierFailuresCloseTheFirstSendStageWithoutRetrying() {
+        assertEquals(new PrimaryHttpFailureDecision.FailPrimary(66003),
+                decide(66003, HttpCarrier.SKT, 1, Set.of(HttpCarrier.SKT)));
+    }
+
+    @Test
+    void noHttpResponseRetriesAfterOneMinuteAndStopsAfterThreeRetries() {
+        for (int invocation = 1; invocation <= 3; invocation++) {
+            assertEquals(new PrimaryHttpFailureDecision.Send(HttpCarrier.SKT, invocation + 1,
+                            DECIDED_AT.plusSeconds(60)),
+                    PrimaryHttpFailureDecision.decideNoResponse(HttpCarrier.SKT, invocation, DECIDED_AT));
+        }
+        assertEquals(new PrimaryHttpFailureDecision.FailPrimary(40003),
+                PrimaryHttpFailureDecision.decideNoResponse(HttpCarrier.SKT, 4, DECIDED_AT));
+        assertEquals(5, PrimaryHttpRetryPolicy.RESPONSE_TIMEOUT.toSeconds());
+    }
+
+    @Test
+    void impossibleInvocationDoesNotCauseAnotherSend() {
         assertThrows(IllegalArgumentException.class,
                 () -> decide(66002, HttpCarrier.SKT, 5, Set.of(HttpCarrier.SKT)));
     }

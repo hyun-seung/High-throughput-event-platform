@@ -29,7 +29,7 @@ class HttpSendServiceTest {
     private final Clock clock = Clock.fixed(Instant.parse("2026-10-02T00:01:00Z"), ZoneOffset.UTC);
     private final HttpSendService service = new HttpSendService(attempts, provider, kafka, properties, clock);
     private final MessageSubmission event = new MessageSubmission("00000000-0000-0000-0000-000000000001", 42,
-            "customer-1", "01012345678", MessageCategory.GENERAL, Map.of("message", "hello"), false,
+            "customer-1", "01012345678", MessageCategory.GENERAL, Map.of("message", "hello"), null,
             Instant.parse("2026-10-02T00:00:00Z"));
 
     @Test
@@ -71,7 +71,7 @@ class HttpSendServiceTest {
     @Test
     void claimedAfterDeadlineRecordsExpiryWithoutExternalCall() {
         var expired = new MessageSubmission(event.clientMsgId(), event.clientId(), event.messageId(),
-                event.recipientNumber(), event.messageCategory(), event.payload(), event.fallbackAllowed(),
+                event.recipientNumber(), event.messageCategory(), event.payload(), event.secondarySendPayload(),
                 clock.instant().minus(Duration.ofHours(4)));
         when(attempts.claim(eq(expired), eq("mock-provider"), any(), any(), any()))
                 .thenReturn(new HttpAttemptRepository.Claim(HttpAttemptRepository.State.CLAIMED, "attempt-1", null));

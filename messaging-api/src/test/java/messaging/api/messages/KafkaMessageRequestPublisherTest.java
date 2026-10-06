@@ -19,7 +19,7 @@ class KafkaMessageRequestPublisherTest {
         @SuppressWarnings("unchecked")
         KafkaTemplate<String, MessageSubmission> kafka = mock(KafkaTemplate.class);
         var event = new MessageSubmission("00000000-0000-0000-0000-000000000001", 42,
-                "client-event-1", "01012345678", MessageCategory.GENERAL, Map.of("message", "hello"), false,
+                "client-event-1", "01012345678", MessageCategory.GENERAL, Map.of("message", "hello"), null,
                 Instant.parse("2026-10-02T00:00:00Z"));
         var send = CompletableFuture.completedFuture((org.springframework.kafka.support.SendResult<String, MessageSubmission>) null);
         when(kafka.send(MessageTopics.RECEIVED, event.clientMsgId(), event)).thenReturn(send);

@@ -71,7 +71,8 @@ public class MessageDuplicateGuard {
         try {
             Map<String, Object> value = Map.of("messageId", request.messageId(), "recipientNumber", request.recipientNumber(),
                     "messageCategory", request.messageCategory().name(), "payload", DeliveryPayloads.canonicalize(request.payload()),
-                    "fallbackAllowed", request.allowFallback());
+                    "secondarySendPayload", request.hasSecondarySendPayload()
+                            ? DeliveryPayloads.canonicalize(request.secondarySendPayload()) : Map.of());
             byte[] digest = MessageDigest.getInstance("SHA-256").digest(
                     mapper.writeValueAsBytes(value));
             return HexFormat.of().formatHex(digest);

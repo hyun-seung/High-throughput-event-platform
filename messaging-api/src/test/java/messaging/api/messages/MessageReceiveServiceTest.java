@@ -26,7 +26,7 @@ class MessageReceiveServiceTest {
     private final MessageReceiveService service = new MessageReceiveService(usage, duplicates, origins, publisher,
             Clock.fixed(Instant.parse("2026-10-02T00:00:00Z"), ZoneOffset.UTC));
     private final MessageReceiveRequest request = new MessageReceiveRequest("customer-1", "01012345678",
-            MessageCategory.GENERAL, Map.of("message", "hello"), true);
+            MessageCategory.GENERAL, Map.of("message", "hello"), Map.of("message", "fallback"));
 
     @BeforeEach
     void publishAcceptedOrigin() {
@@ -92,7 +92,7 @@ class MessageReceiveServiceTest {
     @Test
     void invalidRecipientIsCountedButNeverClaimsDuplicateOrSavesOrigin() {
         var invalid = new MessageReceiveRequest("customer-1", "+821012345678", MessageCategory.GENERAL,
-                request.payload(), true);
+                request.payload(), request.secondarySendPayload());
         MessageAdmissionException failure = assertThrows(MessageAdmissionException.class,
                 () -> service.receive(42L, invalid));
         assertEquals(HttpStatus.BAD_REQUEST, failure.status());
@@ -104,7 +104,19 @@ class MessageReceiveServiceTest {
     @Test
     void customerMessageIdUsesUtf8ByteLimit() {
         var invalid = new MessageReceiveRequest("가".repeat(14), "01012345678", MessageCategory.GENERAL,
-                request.payload(), true);
+                request.payload(), request.secondarySendPayload());
+
+        MessageAdmissionException failure = assertThrows(MessageAdmissionException.class,
+                () -> service.receive(42L, invalid));
+
+        assertEquals(HttpStatus.BAD_REQUEST, failure.status());
+        verifyNoInteractions(duplicates, origins, publisher);
+    }
+
+    @Test
+    void emptySecondarySendPayloadIsRejectedBeforeOriginWrite() {
+        var invalid = new MessageReceiveRequest("customer-1", "01012345678", MessageCategory.GENERAL,
+                request.payload(), Map.of());
 
         MessageAdmissionException failure = assertThrows(MessageAdmissionException.class,
                 () -> service.receive(42L, invalid));
@@ -155,6 +167,6 @@ class MessageReceiveServiceTest {
 
     private MessageSubmission event(String id) {
         return new MessageSubmission(id, 42L, request.messageId(), request.recipientNumber(), request.messageCategory(),
-                request.payload(), true, Instant.parse("2026-10-02T00:00:00Z"));
+                request.payload(), request.secondarySendPayload(), Instant.parse("2026-10-02T00:00:00Z"));
     }
 }

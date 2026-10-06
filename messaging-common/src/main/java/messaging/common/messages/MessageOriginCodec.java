@@ -22,7 +22,7 @@ public final class MessageOriginCodec {
 
     public static Map<String, AttributeValue> encode(MessageSubmission event, JsonMapper mapper) {
         Map<String, AttributeValue> item = new HashMap<>(key(event.clientMsgId()));
-        item.put("schema_version", AttributeValue.fromN("3"));
+        item.put("schema_version", AttributeValue.fromN("4"));
         // Existing DynamoDB key attributes keep their physical names; both values are clientMsgId.
         item.put("delivery_id", AttributeValue.fromS(event.clientMsgId()));
         item.put("request_key", AttributeValue.fromS(event.clientMsgId()));
@@ -32,7 +32,9 @@ public final class MessageOriginCodec {
         item.put("delivery_type", AttributeValue.fromS(event.messageCategory().name()));
         item.put("event_type", AttributeValue.fromS("MESSAGE_RECEIVED"));
         item.put("payload", AttributeValue.fromS(mapper.writeValueAsString(event.payload())));
-        item.put("fallback_allowed", AttributeValue.fromBool(event.fallbackAllowed()));
+        if (event.hasSecondarySendPayload()) {
+            item.put("secondary_send_payload", AttributeValue.fromS(mapper.writeValueAsString(event.secondarySendPayload())));
+        }
         item.put("occurred_at", AttributeValue.fromS(event.receivedAt().toString()));
         item.put("created_at", AttributeValue.fromS(event.receivedAt().toString()));
         item.put("updated_at", AttributeValue.fromS(event.receivedAt().toString()));
@@ -43,14 +45,17 @@ public final class MessageOriginCodec {
 
     @SuppressWarnings("unchecked")
     public static MessageSubmission decode(Map<String, AttributeValue> item, JsonMapper mapper) {
-        if (item == null || item.isEmpty() || !item.containsKey(MESSAGE_ID)) {
-            throw new IllegalArgumentException("Not a v3 message ORIGIN");
+        if (item == null || item.isEmpty() || !item.containsKey(MESSAGE_ID)
+                || !"4".equals(item.getOrDefault("schema_version", AttributeValue.fromN("0")).n())) {
+            throw new IllegalArgumentException("Not a v4 message ORIGIN");
         }
         Map<String, Object> payload = mapper.readValue(item.get("payload").s(), Map.class);
+        Map<String, Object> secondarySendPayload = item.containsKey("secondary_send_payload")
+                ? mapper.readValue(item.get("secondary_send_payload").s(), Map.class) : null;
         return new MessageSubmission(item.get("delivery_id").s(),
                 Long.parseLong(item.get("tenant_id").n()),
                 item.get(MESSAGE_ID).s(), item.get(RECIPIENT_NUMBER).s(),
                 MessageCategory.valueOf(item.get("delivery_type").s()), payload,
-                item.get("fallback_allowed").bool(), Instant.parse(item.get("occurred_at").s()));
+                secondarySendPayload, Instant.parse(item.get("occurred_at").s()));
     }
 }

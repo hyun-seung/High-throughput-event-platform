@@ -14,7 +14,7 @@ public record MessageSubmission(
         String recipientNumber,
         MessageCategory messageCategory,
         Map<String, Object> payload,
-        boolean fallbackAllowed,
+        Map<String, Object> secondarySendPayload,
         Instant receivedAt
 ) {
     public MessageSubmission {
@@ -28,5 +28,11 @@ public record MessageSubmission(
         Objects.requireNonNull(payload);
         Objects.requireNonNull(receivedAt);
         payload = DeliveryPayloads.canonicalize(payload);
+        if (secondarySendPayload != null) {
+            if (secondarySendPayload.isEmpty()) throw new IllegalArgumentException("secondarySendPayload is empty");
+            secondarySendPayload = DeliveryPayloads.canonicalize(secondarySendPayload);
+        }
     }
+
+    public boolean hasSecondarySendPayload() { return secondarySendPayload != null; }
 }

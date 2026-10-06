@@ -9,6 +9,7 @@ import software.amazon.awssdk.services.dynamodb.model.ConditionalCheckFailedExce
 
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -65,7 +66,7 @@ public class MessageReceiveService {
 
         MessageSubmission event = new MessageSubmission(claim.clientMsgId(), clientId, request.messageId(),
                 request.recipientNumber(), request.messageCategory(), request.payload(),
-                request.allowFallback(), clock.instant());
+                request.secondarySendPayload(), clock.instant());
         try {
             origins.save(event);
         } catch (ConditionalCheckFailedException definitiveFailure) {
@@ -107,7 +108,7 @@ public class MessageReceiveService {
         return a.clientMsgId().equals(b.clientMsgId()) && a.clientId() == b.clientId()
                 && a.messageId().equals(b.messageId()) && a.recipientNumber().equals(b.recipientNumber())
                 && a.messageCategory() == b.messageCategory() && a.payload().equals(b.payload())
-                && a.fallbackAllowed() == b.fallbackAllowed();
+                && Objects.equals(a.secondarySendPayload(), b.secondarySendPayload());
     }
 
     private static void validate(MessageReceiveRequest request) {
@@ -120,6 +121,9 @@ public class MessageReceiveService {
         }
         if (request.payload() == null) {
             throw new MessageAdmissionException(HttpStatus.BAD_REQUEST, "payload is required");
+        }
+        if (request.hasSecondarySendPayload() && request.secondarySendPayload().isEmpty()) {
+            throw new MessageAdmissionException(HttpStatus.BAD_REQUEST, "secondarySendPayload must not be empty");
         }
     }
 }

@@ -29,7 +29,7 @@ class HttpAttemptRepositoryTest {
     private final JsonMapper mapper = JsonMapper.builder().build();
     private final HttpAttemptRepository repository = new HttpAttemptRepository(db, mapper);
     private final MessageSubmission event = new MessageSubmission("00000000-0000-0000-0000-000000000001", 42,
-            "customer-1", "01012345678", MessageCategory.GENERAL, Map.of("message", "hello"), false,
+            "customer-1", "01012345678", MessageCategory.GENERAL, Map.of("message", "hello"), null,
             Instant.parse("2026-10-02T00:00:00Z"));
 
     @Test

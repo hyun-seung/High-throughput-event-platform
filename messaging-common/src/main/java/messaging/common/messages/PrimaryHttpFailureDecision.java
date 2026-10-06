@@ -43,7 +43,24 @@ public final class PrimaryHttpFailureDecision {
             }
             return new FailPrimary(PrimarySendFailureCodes.TPS_RETRY_EXHAUSTED);
         }
+        if (normalizedErrorCode >= 60000 && normalizedErrorCode <= 69999) {
+            return new FailPrimary(normalizedErrorCode);
+        }
         throw new IllegalArgumentException("No first-send routing policy for error code " + normalizedErrorCode);
+    }
+
+    /** A missing HTTP response is a separate observation, never a fabricated provider failure code. */
+    public static Action decideNoResponse(HttpCarrier carrier, int invocation, Instant timedOutAt) {
+        Objects.requireNonNull(carrier);
+        Objects.requireNonNull(timedOutAt);
+        if (invocation < 1 || invocation > PrimaryHttpRetryPolicy.NO_RESPONSE_MAX_RETRIES + 1) {
+            throw new IllegalArgumentException("Invalid first-send invocation");
+        }
+        if (invocation <= PrimaryHttpRetryPolicy.NO_RESPONSE_MAX_RETRIES) {
+            return new Send(carrier, invocation + 1,
+                    timedOutAt.plus(PrimaryHttpRetryPolicy.NO_RESPONSE_RETRY_DELAY));
+        }
+        return new FailPrimary(PrimarySendFailureCodes.NO_RESPONSE_RETRY_EXHAUSTED);
     }
 
     private PrimaryHttpFailureDecision() { }

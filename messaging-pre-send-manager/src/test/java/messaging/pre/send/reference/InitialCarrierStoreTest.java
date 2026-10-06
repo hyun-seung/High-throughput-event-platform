@@ -30,7 +30,7 @@ class InitialCarrierStoreTest {
     private final InitialCarrierStore store = new InitialCarrierStore(db, mapper);
     private final MessageSubmission admission = new MessageSubmission(
             "00000000-0000-0000-0000-000000000001", 42L, "customer-1", "01012345678",
-            MessageCategory.GENERAL, Map.of("message", "hello"), false,
+            MessageCategory.GENERAL, Map.of("message", "hello"), null,
             Instant.parse("2026-10-04T00:00:00Z"));
 
     @Test
@@ -99,7 +99,7 @@ class InitialCarrierStoreTest {
         when(db.getItem(any(GetItemRequest.class))).thenReturn(origin(originItem()));
         MessageSubmission changed = new MessageSubmission(admission.clientMsgId(), admission.clientId(),
                 admission.messageId(), admission.recipientNumber(), admission.messageCategory(),
-                Map.of("message", "different"), admission.fallbackAllowed(), admission.receivedAt());
+                Map.of("message", "different"), admission.secondarySendPayload(), admission.receivedAt());
 
         assertThrows(IllegalStateException.class,
                 () -> store.resolve(changed, () -> new CarrierResolution(HttpCarrier.SKT, false)));

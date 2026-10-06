@@ -33,7 +33,7 @@ class OriginPublicationRecoveryTest {
     private final OriginPublicationRecovery recovery = new OriginPublicationRecovery(db, kafka, mapper,
             Clock.fixed(Instant.parse("2026-10-02T00:02:00Z"), ZoneOffset.UTC), 10);
     private final MessageSubmission event = new MessageSubmission("00000000-0000-0000-0000-000000000001", 42,
-            "client-1", "01012345678", MessageCategory.GENERAL, Map.of("message", "hello"), false,
+            "client-1", "01012345678", MessageCategory.GENERAL, Map.of("message", "hello"), null,
             Instant.parse("2026-10-02T00:00:00Z"));
 
     @Test
