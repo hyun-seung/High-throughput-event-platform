@@ -1,3 +1,3 @@
 package messaging.api.messages;
 
-public record MessageReceiveResponse(String executionId, String status) { }
+public record MessageReceiveResponse(String sendRequestId, String status) { }

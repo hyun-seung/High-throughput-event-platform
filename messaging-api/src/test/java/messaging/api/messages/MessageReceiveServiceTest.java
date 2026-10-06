@@ -42,7 +42,7 @@ class MessageReceiveServiceTest {
 
         MessageReceiveResponse response = service.receive(42L, request);
 
-        assertEquals(id, response.executionId());
+        assertEquals(id, response.sendRequestId());
         var order = inOrder(usage, duplicates, origins, publisher);
         order.verify(usage).charge(42L, MessageCategory.GENERAL);
         order.verify(duplicates).claim(eq(42L), eq(request), anyString());
@@ -71,7 +71,7 @@ class MessageReceiveServiceTest {
         doThrow(DynamoDbException.builder().message("response lost").build()).when(origins).save(any());
         when(origins.find(id)).thenReturn(Optional.of(event(id)));
 
-        assertEquals(id, service.receive(42L, request).executionId());
+        assertEquals(id, service.receive(42L, request).sendRequestId());
         verify(duplicates, never()).release(any());
         verify(publisher).publish(any(MessageSubmission.class));
     }
@@ -107,7 +107,7 @@ class MessageReceiveServiceTest {
                 .thenReturn(new MessageDuplicateGuard.Claim(id, "key", "value", true, true));
         when(publisher.publish(any())).thenReturn(CompletableFuture.failedFuture(new IllegalStateException("broker unavailable")));
 
-        assertEquals(id, service.receive(42L, request).executionId());
+        assertEquals(id, service.receive(42L, request).sendRequestId());
 
         var order = inOrder(origins, publisher);
         order.verify(origins).save(any(MessageSubmission.class));

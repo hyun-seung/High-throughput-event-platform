@@ -92,10 +92,10 @@ public class MessageReceiveService {
         // Kafka send fails, its ack is lost, or this process exits before the send.
         try {
             publisher.publish(event).whenComplete((ignored, failure) -> {
-                if (failure != null) log.warn("Initial Kafka publication unconfirmed: executionId={}", event.executionId());
+                if (failure != null) log.warn("Initial Kafka publication unconfirmed: sendRequestId={}", event.executionId());
             });
         } catch (RuntimeException unconfirmed) {
-            log.warn("Initial Kafka publication could not start: executionId={}", event.executionId());
+            log.warn("Initial Kafka publication could not start: sendRequestId={}", event.executionId());
         }
         return new MessageReceiveResponse(event.executionId(), "RECEIVED");
     }
