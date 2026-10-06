@@ -13,7 +13,7 @@ public record HttpSendCommand(String sendRequestId, String attemptId, HttpCarrie
         Objects.requireNonNull(deadlineAt);
         Objects.requireNonNull(request);
         if (sendRequestId.isBlank() || attemptId.isBlank()
-                || !ProviderSendRequestIds.forInvocation(sendRequestId, carrier, request.invocation())
+                || !ProviderClientMsgIds.forInvocation(sendRequestId, carrier, request.invocation())
                         .equals(request.clientMsgId())) {
             throw new IllegalArgumentException("HTTP send command does not match its provider body");
         }
