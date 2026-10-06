@@ -18,7 +18,7 @@
 
 이관 전 경로에서는 핵심 발송 흐름·DLT 복구, 운영 조회·수동 조치·감사 복구와 장애 중 호출 제한까지 구현했습니다. 신규 경로의 통신사별 Sender·결과 Manager·TCP Sender 연결은 아직 남아 있습니다. 완료 여부·시험 수치는 위 진행 현황 문서에서 관리합니다.
 
-위 구현 설명은 이관 전 경로를 포함합니다. 신규 `MESSAGE-RECEIVED → PRE-SEND-MANAGER → 통신사별 HTTP-SENDER` 뒤 HTTP 200은 DynamoDB에만 기록하고, 그 발송의 최종 결과인 웹훅은 `WEBHOOK-RECEIVE-API → MSG_RESULT → MSG-RESULT-MANAGER`로 처리합니다. 명시적 비-200과 5초 무응답은 Sender가 `MSG_RESULT`에 직접 인계합니다. 2차 TCP는 업체가 같은 호출에서 거의 즉시 결과를 준다는 가정으로 처리하며, 실제 규격서에 따른 제한 시간·오류 매핑은 미정입니다. 오류 코드 대역은 [오류 코드 계약](docs/54-메시징-오류-코드와-결과-인계-계약.md), 구현 범위는 [현재 상태](docs/01-현재-구현-상태와-남은-작업.md)에서 확인합니다.
+위 구현 설명은 이관 전 경로를 포함합니다. 신규 `MESSAGE-RECEIVED → PRE-SEND-MANAGER → 통신사별 HTTP-SENDER` 뒤 HTTP 200은 DynamoDB에만 기록하고, 그 발송의 최종 결과인 웹훅은 독립 `messaging-webhook-receive-api`가 받아 `MSG_RESULT → MSG-RESULT-MANAGER`로 인계합니다. 기존 `receipt-api`는 이관 전 경로에서만 사용합니다. 명시적 비-200과 5초 무응답은 Sender가 `MSG_RESULT`에 직접 인계합니다. 2차 TCP는 업체가 같은 호출에서 거의 즉시 결과를 준다는 가정으로 처리하며, 실제 규격서에 따른 제한 시간·오류 매핑은 미정입니다. 오류 코드 대역은 [오류 코드 계약](docs/54-메시징-오류-코드와-결과-인계-계약.md), 구현 범위는 [현재 상태](docs/01-현재-구현-상태와-남은-작업.md)에서 확인합니다.
 
 ## 실행과 Grafana
 

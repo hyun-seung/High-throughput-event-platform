@@ -25,6 +25,7 @@
         <module>messaging-api</module>
         <module>messaging-publication-recovery-app</module>
         <module>messaging-reference-cache</module>
+        <module>messaging-webhook-receive-api</module>
         <module>messaging-pre-send-manager</module>
         <module>messaging-http-sender</module>
         <module>common-security</module>
