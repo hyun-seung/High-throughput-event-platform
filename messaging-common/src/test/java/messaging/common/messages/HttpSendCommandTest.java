@@ -1,6 +1,7 @@
 package messaging.common.messages;
 
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.time.Instant;
 import java.util.Map;
@@ -33,7 +34,10 @@ class HttpSendCommandTest {
 
         assertEquals("attempt-1", command.attemptId());
         assertEquals("request-1", command.sendRequestId());
-        assertEquals("request-1:SKT:1", command.request().sendRequestId());
+        assertEquals("request-1:SKT:1", command.request().clientMsgId());
+        String providerJson = JsonMapper.builder().build().writeValueAsString(command.request());
+        assertTrue(providerJson.contains("\"clientMsgId\":\"request-1:SKT:1\""));
+        assertFalse(providerJson.contains("\"sendRequestId\""));
         assertThrows(IllegalArgumentException.class, () -> new HttpSendCommand("request-1", "attempt-1",
                 HttpCarrier.KT, command.deadlineAt(), body));
     }
