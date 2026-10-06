@@ -31,3 +31,9 @@
 - 기존 `messaging-http-sender`의 `message.http.outcome.v1` 발행은 이전 경로다. 신규 1차 sender는 `200 OK`에서 Kafka 결과를 발행하지 않으며, `WEBHOOK-RECEIVE-API`와 `MSG-RESULT-MANAGER`의 신규 경로는 아직 구현하지 않았다. 2차 발송 AP명은 `MSG-TCP-SENDER`로 확정했다. 현재 목표 토픽은 `message.tcp.requested.v1`이며 물리 토픽 최종 이름은 별도로 정한다.
 - 현재 코드는 API의 Redis TPS·분류별 월 Quota, API·ORIGIN 복구 앱의 `message.received.v1` 발행, 통신사별 토픽·`sendRequestId`를 포함한 공통 명령 타입, 로컬 CDC 소비와 Redis 투영까지 반영했다. `messaging-pre-send-manager` 모듈에는 계약 Redis 우선·누락 시 PostgreSQL 조회, 번호 Redis 조회·누락 시 SKT 선택, 첫 통신사를 ORIGIN에 조건부로 고정하는 코드가 있다. 이 ORIGIN 기록은 재전달 시 경로를 유지하기 위한 것이며 Sender의 Redis 중복 선점과 별개다. Kafka 소비·전문 생성과 통신사별 소비 Pod, Redis 발송 중복 제어, 발송 후 DynamoDB 기록은 아직 구현하지 않았다. 기존 `messaging-http-sender`는 이전 `message.http.requested.v1`과 발송 전 STEP 선점 모델의 코드이며 신규 경로의 소비자가 아니다. 신규 `/api/v1/messages`는 기본 비활성화다.
 - PostgreSQL 논리 복제·Debezium·Redis 투영의 로컬 준비는 [계약·번호 CDC 캐시](../52-계약과-번호-통신사-CDC-캐시.md)에 기록한다. `PRE-SEND-MANAGER`의 참조 조회 코드는 추가됐고, 발송 판단·명령 발행은 아직 연결되지 않았다.
+
+## 2026-10-06 최종 결과 이후 인계 보완
+
+- `MSG-RESULT-MANAGER`가 최종 결과를 DynamoDB에 고정하면 `MSG-RESULT-FINALIZED`로 `MSG-COMPLETE-MANAGER`에 인계한다. 고객 웹훅 발송 대상이면 **별도 `WEBHOOK-SEND` 토픽도 직접 발행**해 `MSG-WEBHOOK-SENDER`가 소비한다. 두 토픽의 발행·소비 순서는 보장하지 않으며, 하나만 발행된 뒤 중단돼도 저장된 같은 결과 ID로 다른 인계를 복구한다.
+- `MSG-COMPLETE-MANAGER`는 `TBL_MSG_HIST`에 최종 메시지당 1건을 저장한다. **1차 발송의 최종 성공**일 때만 `TBL_CDR_HIST`에 고객 메시지당 최대 1건을 저장하고, 그 외 결과는 과금하지 않는다. 같은 고객 메시지의 새로운 실행 ID가 생겨도 과금 고유 키가 중복 CDR을 막아야 한다. SQL 저장 확인 뒤 DynamoDB ORIGIN·STEP 삭제를 시도한다.
+- DynamoDB 삭제 실패의 TTL 대체는 목표 정책이다. 현재 ORIGIN·STEP 테이블 초기화와 신규 ORIGIN 저장에는 TTL 설정·만료 속성이 없어 구현이 필요하다. 구체적인 만료 시각과 고객 메시지 과금 고유 키는 [케이스별 Call Flow](../53-신규-메시지-케이스별-Call-Flow.md#81-msg-complete-manager의-처리-로직)에 남긴다.
