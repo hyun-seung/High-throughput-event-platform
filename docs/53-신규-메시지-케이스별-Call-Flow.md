@@ -33,7 +33,7 @@
 | 웹훅 접수 | `WEBHOOK-RECEIVE-API` | 신규 경로 구현 전. 현재 `receipt-api`는 이전 경로 |
 | 결과 판단 | `MSG-RESULT-MANAGER` | 신규 경로 구현 전 |
 | 2차 TCP 발송 | `MSG-TCP-SENDER` | 목표 AP명 확정, 신규 경로 구현 전 |
-| 최종 결과 이력·정리 | `MSG-COMPLETE-MANAGER` | 목표 AP명. 현재 `delivery-result-worker`의 일부 책임을 이관해야 함 |
+| 1차 성공 과금·메시지 발송 이력·DynamoDB 정리 | `MSG-COMPLETE-MANAGER` | 목표 AP명. `TBL_CDR_HIST`·`TBL_MSG_HIST`는 신규 경로에 아직 미구현 |
 | 고객 결과 웹훅 발송 | `MSG-WEBHOOK-SENDER` | 목표 AP명. 현재 `delivery-result-worker`의 통지 책임을 분리해야 함 |
 
 `messaging-http-sender`는 이전 단일 sender 모듈이고, `messaging-publication-recovery-app`·`messaging-reference-cache`는 각각 최초 Kafka 발행 복구와 CDC 캐시 투영을 돕는 별도 AP다. 현재 `delivery-result-worker`는 최종 이력·고객 통지·정리를 한 모듈에서 수행한다. 신규 `MSG-RESULT-FINALIZED` 연결과 `MSG-COMPLETE-MANAGER`·`MSG-WEBHOOK-SENDER` 분리는 아직 구현 전이다.
@@ -99,9 +99,9 @@ sequenceDiagram
     M->>K: MSG-RESULT-FINALIZED 발행
     M->>R: deadline 후보 제거
     K->>F: 최종 결과
-    F->>Q: 이력·통지 예약·정리 예약 원자 commit
+    F->>Q: TBL_MSG_HIST + 1차 성공 TBL_CDR_HIST 원자 commit
     par 고객 결과 통지
-        N->>Q: 통지 예약 선점
+        N->>Q: 고객 통지 대상 조회·선점 (인계 방식 미정)
         N->>C: 성공 결과 HTTP 웹훅
         C-->>N: 204
         N->>Q: 통지 완료
@@ -277,14 +277,14 @@ sequenceDiagram
 
 | 고정된 판단 | Manager의 후속 인계 | 다음 AP의 책임 |
 |---|---|---|
-| 1차 성공 또는 2차 최종 결과 | `MSG-RESULT-FINALIZED` | `MSG-COMPLETE-MANAGER`가 SQL 최종 이력·고객 통지·정리 예약을 commit |
+| 1차 성공 또는 2차 최종 결과 | `MSG-RESULT-FINALIZED` | `MSG-COMPLETE-MANAGER`가 `TBL_MSG_HIST`를 저장하고 1차 성공만 `TBL_CDR_HIST`에 과금한 뒤 DDB 정리 |
 | `66001`이고 미시도 통신사가 남음 | 다음 통신사의 `message.<carrier>.http.send.v1` | 해당 `MSG-*-SENDER`가 새 통신사로 1차 HTTP 발송 |
 | `66002`이고 재시도 회차가 남음 | 1분 이후 동일 통신사 발송 명령 | 같은 통신사 sender가 새 `R:통신사:회차`로 발송 |
 | 1차 실패이고 2차 대상 | `message.tcp.requested.v1` 목표 토픽 | `MSG-TCP-SENDER`가 2차 발송하고 결과를 다시 Manager 쪽에 인계 |
 | 1차 실패이고 2차 비대상 | 최종 실패 저장 후 `MSG-RESULT-FINALIZED` | `MSG-COMPLETE-MANAGER`가 SQL 처리로 연결 |
 | 중복·늦은 결과 | 새 후속 발행 없음 | 저장된 현재 판단 유지 |
 
-`MSG-COMPLETE-MANAGER`는 **결과를 다시 판단하지 않는다.** 이미 고정된 최종 결과를 PostgreSQL에 이력·고객 웹훅 예약·정리 예약으로 저장하고, SQL commit 이후 `MSG-WEBHOOK-SENDER`가 고객 결과 웹훅을 보내며 정리 작업이 ORIGIN·STEP을 지운다. 고객 통지 재시도와 정리는 서로 독립이다. 웹훅 배치의 offset은 1~100개 항목 모두의 판단과 필요한 후속 발행이 내구성 있게 완료된 뒤에만 처리한다.
+`MSG-COMPLETE-MANAGER`는 **결과를 다시 판단하지 않는다.** 이미 고정된 결과로 `TBL_MSG_HIST` 발송 이력을 저장하고, 1차 발송의 최종 성공이면 `TBL_CDR_HIST` 과금을 저장한 뒤 DynamoDB 데이터를 정리한다. 고객 결과 웹훅은 `MSG-WEBHOOK-SENDER`가 담당하며, 두 AP 사이의 내구성 있는 인계 방식은 아직 결정해야 한다. 웹훅 배치의 offset은 1~100개 항목 모두의 판단과 필요한 후속 발행이 내구성 있게 완료된 뒤에만 처리한다.
 
 미결정 경계는 2차 결과 토픽·전문, `66001`·`66002` 외 업체 코드별 2차 적격성, 응답 불명·영구적으로 잘못된 배치 항목의 격리 방식, 지연 재발송 예약의 구체적인 발행 방식이다. 현재 구현은 `PrimaryHttpFailureDecision`의 `66001`·`66002` 순수 계산까지만 준비돼 있으며 위 Manager의 소비·조건부 저장·후속 발행과 완료 AP 분리는 구현되지 않았다.
 
@@ -341,59 +341,47 @@ sequenceDiagram
 
 ## 8. 최종 결과 이후 고객 통지와 정리
 
-`MSG-RESULT-MANAGER`가 최종 결과를 DynamoDB에 고정한 뒤 `MSG-RESULT-FINALIZED`로 인계한다. 목표 구조에서 `MSG-COMPLETE-MANAGER`가 PostgreSQL에 **최종 이력·고객 통지 예약·정리 예약을 단일 트랜잭션**으로 저장한다. `MSG-WEBHOOK-SENDER`는 예약을 읽어 고객에게 결과 웹훅을 발송한다. 현재 이 책임은 `delivery-result-worker` 한 모듈에 합쳐져 있으며 신규 토픽 연결과 AP 분리는 구현 전이다. SQL commit 전에는 ORIGIN·STEP을 삭제하지 않는다.
+`MSG-RESULT-MANAGER`가 최종 결과를 DynamoDB에 고정하고 `MSG-RESULT-FINALIZED`로 메시지별 1건을 인계한다. `MSG-COMPLETE-MANAGER`는 **1차 발송의 최종 성공이면 `TBL_CDR_HIST`에 과금을 기록하고, `TBL_MSG_HIST`에 메시지 발송 이력을 남긴 뒤 DynamoDB 발송 데이터를 정리**한다. 통신사 HTTP `200 OK`만으로는 과금하지 않는다. 1차 성공은 해당 발송의 **성공 웹훅을 반영해 메시지가 최종 성공으로 확정된 경우**다. 현재 두 테이블과 신규 토픽 연결은 구현 전이며 기존 `delivery-result-worker`의 `delivery_history`·통지·정리 예약 구현과 구분한다.
 
 ```mermaid
 flowchart TD
-    F[MSG-RESULT-FINALIZED] --> Z[MSG-COMPLETE-MANAGER]
-    Z --> Q[PostgreSQL 이력·통지·정리 예약 commit]
+    F[MSG-RESULT-FINALIZED 메시지별 최종 결과] --> C[MSG-COMPLETE-MANAGER]
+    C --> H[TBL_MSG_HIST 발송 이력 저장]
+    C --> B{1차 발송 최종 성공?}
+    B -->|예| R[TBL_CDR_HIST 과금 1건]
+    B -->|아니오| X[과금하지 않음]
+    H --> Q[SQL commit]
+    R --> Q
+    X --> Q
+    Q --> D[MSG-COMPLETE-MANAGER DynamoDB 조건부 정리]
     Q --> N[MSG-WEBHOOK-SENDER 고객 결과 웹훅]
-    Q --> C[MSG-COMPLETE-MANAGER 발송 데이터 정리]
-    N --> A{204 수신?}
-    A -->|예| D[SQL 통지 완료]
-    A -->|아니오| R[같은 묶음으로 재전송 예약]
-    R --> L{총 21회 소진?}
-    L -->|아니오| N
-    L -->|예| H[EXHAUSTED·운영 확인]
-    C --> X[Redis 중복키 처리·DynamoDB 조건부 삭제]
-    X --> Y[SQL 정리 완료]
 ```
 
-| 케이스 | 후속 흐름 |
-|---|---|
-| 고객이 결과 HTTP 통지에 204 응답 | 동일 고객 최대 100건 묶음의 통지 완료를 SQL에 기록 |
-| 고객 응답이 204가 아니거나 무응답 | 같은 묶음 ID·결과 ID로 SQL 예약에 따라 재전송. 최초 + 최대 20회, 총 21회. 소진하면 운영 확인 대상으로 보존 |
-| 고객에게 이미 처리됐지만 204만 유실 | 같은 묶음이 다시 도착할 수 있으므로 고객도 묶음 ID로 중복 제거 |
-| 고객 통지와 무관한 정리 | SQL 이력·예약 저장을 확인하고 ORIGIN·STEP을 조건부 삭제. 성공은 Redis 고객 중복키를 성공 시각부터 2시간 차단, 실패·만료는 해당 실행의 키를 제거 |
-| SQL 저장 실패 | DynamoDB의 불변 최종 결과를 유지하고 SQL 인계를 재시도. 정리 작업은 시작하지 않음 |
-
-정리와 고객 통지는 SQL commit 이후 병렬로 진행한다. 고객 통지 21회 한도와 업체 발송 단계별 최대 3회 재시도는 서로 다른 정책이다.
+`TBL_MSG_HIST`와 조건에 맞는 `TBL_CDR_HIST`는 같은 SQL 트랜잭션으로 확정하는 것을 권장한다. SQL commit 전에 DynamoDB를 지우지 않는다. 고객 결과 웹훅 발송 자체는 `MSG-WEBHOOK-SENDER`의 책임이며, 완료된 이력에서 그 AP로 **유실 없이 인계하는 방식**은 아직 정해야 한다. 고객 통지 성공 여부가 DynamoDB 정리를 막지는 않는다.
 
 ### 8.1 MSG-COMPLETE-MANAGER의 처리 로직
 
-`MSG-COMPLETE-MANAGER`는 **메시지의 최종 업무 판단을 받아 이력과 후속 작업을 안전하게 확정하는 AP**다. 입력은 `MSG-RESULT-MANAGER`가 메시지별로 고정·발행한 `MSG-RESULT-FINALIZED` 1레코드다. 업체 웹훅 한 요청에 결과가 100건 들어왔더라도 완료 인계는 최종 확정된 메시지마다 독립적이다. 고객에게 보낼 결과 웹훅은 이후 `MSG-WEBHOOK-SENDER`가 같은 고객의 예약을 최대 100건씩 새 묶음으로 만든다. **업체 인입 묶음과 고객 발신 묶음의 구성·ID는 별개**다.
-
-| 순서 | `MSG-COMPLETE-MANAGER`의 처리 | 실패·재전달 기준 |
+| 순서 | 목표 처리 | 중복·장애 기준 |
 |---|---|---|
-| 1. 입력 검증 | 신규 이벤트에 고정 `R`, 고객 식별자·고객 `messageId`, 최종 상태(성공·실패·만료), 사유 코드, 확정 시각, 최종 시도와 불변 결과 ID가 들어 있는지 확인한다. DynamoDB 최종 결과와의 대조는 정리 전에 수행한다. | 형식 오류·저장 결과 충돌은 내구성 있는 격리 경로가 생기기 전에는 정상 완료로 ack하지 않는다. 새 최종 판단을 만들지 않는다. |
-| 2. SQL 원자 저장 | PostgreSQL 트랜잭션 하나로 최종 이력 **1행**, 고객 결과 웹훅 예약 **1행**, 발송 데이터 정리 예약 **1행**을 저장한다. 성공·실패·만료 모두 같은 저장 경로다. | SQL commit 전에는 Kafka offset을 완료하지 않고 ORIGIN·STEP을 삭제하지 않는다. 장애 시 같은 결과 ID로 재전달한다. |
-| 3. 멱등 확인 | 동일 고정 `R`·불변 결과 ID가 이미 있으면 저장된 최종 내용과 비교한다. 완전히 같고 두 예약도 있으면 중복 성공으로 처리하며 통지 시도 횟수·정리 상태를 되돌리지 않는다. | 같은 `R`에 다른 결과나 누락된 예약이 있으면 충돌로 남겨 조사한다. 두 번째 고객 통지를 새로 예약하지 않는다. |
-| 4. 후속 작업 시작 | SQL commit 뒤 Kafka offset을 완료한다. 고객 통지 예약은 `MSG-WEBHOOK-SENDER`가, 정리 예약은 완료 관리자의 정리 작업이 각각 선점한다. | 두 작업은 독립적으로 재시도하며 고객의 `204`를 기다려 정리를 시작하지 않는다. |
-| 5. 정리 | SQL 이력·예약이 확인된 결과만 정리한다. DynamoDB의 최종 결과·현재 실행이 같은지 조건부 대조하고 ORIGIN·STEP을 삭제한다. Redis 고객 중복키·deadline 후보도 결과에 맞게 처리하고 SQL 정리 예약을 완료한다. | 조건 불일치·저장소 장애면 예약을 남겨 재시도한다. 늦은 웹훅이 새 발송을 만들거나 이미 확정된 결과를 바꾸지 않게 한다. Redis 처리 실패 때 정리 완료로 볼지는 별도 결정이 필요하다. |
+| 1. 최종 결과 수신 | `MSG-RESULT-FINALIZED`의 고정 `R`, 고객 `messageId`, 최종 상태·단계·사유·시각·불변 결과 ID를 검증한다. 1~100건 업체 웹훅 묶음과 무관하게 완료 처리는 메시지별이다. | 같은 최종 결과를 다시 받아도 새 판단을 만들지 않는다. 형식 오류는 내구성 있는 격리 정책이 정해지기 전에는 정상 처리로 ack하지 않는다. |
+| 2. 과금 대상 판정 | **1차 최종 성공**인 경우에만 `TBL_CDR_HIST` 1건을 만든다. HTTP `200 OK`, 실패 웹훅, 1차 실패 후 2차 전환은 이 과금 조건에 해당하지 않는다. | 같은 `R`·과금 유형의 중복 insert를 고유 제약으로 차단한다. 2차 성공의 과금 규칙은 별도 확정한다. |
+| 3. 이력 저장 | `TBL_MSG_HIST`에 발송·최종 결과를 저장한다. 정리 뒤에도 고객 조회·웹훅 통지·운영 추적에 필요한 값이 남아야 한다. | 같은 `R`의 동일 결과는 멱등 통과, 서로 다른 최종 결과는 충돌로 격리한다. 발송 시도별 상세 저장 단위는 아래 미결정 사항이다. |
+| 4. SQL commit·Kafka 완료 | 이력과 해당 과금을 함께 commit한다. 정리 작업의 재개 근거도 SQL에 내구성 있게 남기는 방식을 권장한다. | commit 전에는 Kafka offset을 완료하지 않는다. commit 뒤 ack가 유실되면 기존 행·결과를 대조해 재처리한다. |
+| 5. DynamoDB 정리 | 저장된 결과와 현재 실행·최종 결과가 같음을 조건부로 확인하고 ORIGIN·STEP 발송 데이터를 삭제한다. Redis 고객 중복키·deadline 후보도 결과에 맞춰 처리한다. | 실패하면 정리 예약에서 다시 시도한다. 고객 웹훅의 `204`는 정리 조건이 아니다. 기존 v2는 Redis 쓰기 실패에도 정리를 계속하므로 새 과금 경로에 그 정책을 적용할지 확인해야 한다. |
 
-고객 결과 웹훅 발송은 완료 관리자의 HTTP 호출이 아니다. `MSG-WEBHOOK-SENDER`가 SQL 예약에서 **같은 고객의 결과 최대 100건**을 크기 제한 안에서 묶고, 묶음 ID·본문을 고정한 뒤 고객 주소로 보낸다. 고객의 `204`만 통지 완료로 인정한다. 다른 응답·타임아웃은 같은 묶음 ID·본문으로 재시도하며, 목표 정책은 최초 포함 총 21회 소진 시 `EXHAUSTED`로 보존하는 것이다. 고객이 실제 수신했지만 `204`가 유실되면 같은 묶음이 다시 도착할 수 있으므로 고객도 묶음 ID로 중복 제거해야 한다. 통지 실패·소진은 최종 이력을 되돌리거나 발송 데이터 정리를 막지 않는다.
+`TBL_MSG_HIST`를 **모든 최종 메시지의 조회 원장**으로 두는 것을 권장한다. 그래야 1차 실패·2차 결과·만료도 조회할 수 있다. 반면 `TBL_CDR_HIST`에는 사용자가 지정한 **1차 최종 성공**만 기록한다. SKT에서 `66001`을 받고 KT로 이동해 성공해도 여전히 1차 성공이다. 두 테이블이 같은 PostgreSQL 데이터베이스에 있다는 가정에서는 한 트랜잭션으로 이력만 저장되고 과금이 빠지는 상태를 막을 수 있다. 다른 데이터베이스라면 원자 commit 대신 별도 내구성 인계·대사가 필요하다.
 
-| 장애 지점 | 재개 근거와 결과 |
+`MSG-WEBHOOK-SENDER`는 결과를 고객에게 전송할 때 같은 고객의 결과를 최대 100건씩 묶을 수 있지만, 이는 업체가 보낸 웹훅 1~100건과 다른 묶음이다. 과금·이력이 commit된 결과가 고객 통지에서 빠지지 않도록 **같은 SQL 트랜잭션의 통지 outbox**를 두는 방식을 권장한다. 이 outbox는 완료 관리자의 업무 판단이나 HTTP 발송 책임을 늘리는 것이 아니라, `MSG-WEBHOOK-SENDER`에 결과를 내구성 있게 넘기는 장치다. 기존 고객 통지 목표의 `204` 완료·총 21회 재시도·묶음 ID 멱등 규칙은 발송 AP에서 담당한다.
+
+| 추가로 정할 경계 | 현재 권장안과 이유 |
 |---|---|
-| 최종 결과를 DynamoDB에 고정했으나 Kafka 발행 실패 | `MSG-RESULT-MANAGER`가 같은 불변 결과를 재발행한다. 완료 관리자는 아직 작업을 시작하지 않는다. |
-| SQL commit 전 종료 | Kafka 레코드가 재전달되고 SQL 저장 전체를 다시 시도한다. 부분 이력·부분 예약은 남지 않는다. |
-| SQL commit 후 Kafka ack 전 종료 | 같은 레코드가 재전달되지만 동일 내용과 예약을 확인해 멱등 통과한다. 이미 진행된 통지·정리는 유지한다. |
-| SQL commit 뒤 웹훅 발송 실패 | SQL 통지 예약과 고정 묶음으로 `MSG-WEBHOOK-SENDER`가 재시도한다. 정리는 별도로 진행한다. |
-| SQL commit 뒤 정리 실패 | SQL 정리 예약으로 재시도한다. 고객 통지 성공 여부와 무관하다. |
+| `TBL_MSG_HIST` 저장 단위 | 고정 `R`당 최종 이력 1건을 두고, SKT→KT 이동·`66002` 재시도 등 **시도별 정보**를 별도 상세 행 또는 보존 가능한 구조에 담는다. DynamoDB 삭제 뒤 이 정보가 사라지면 운영 추적이 어렵다. |
+| 과금 기준·금액 | 성공한 1차 메시지당 과금 1건으로 보고, 요금·계약 버전·과금 시각의 기준을 확정해 CDR에 스냅샷으로 남긴다. 재처리 시 현재 요금으로 다시 계산하지 않는다. |
+| 2차 발송 과금 | 이번 규칙의 `TBL_CDR_HIST` 대상은 **1차 성공만**이다. 2차 성공의 과금 여부와 기록 위치는 아직 결정되지 않았다. |
+| 고객 통지 인계·정리 재개 | 통지 outbox와 정리 예약을 SQL commit에 포함하는 방식을 권장한다. 없으면 commit 직후 AP가 종료될 때 고객 통지·DynamoDB 정리가 누락될 수 있다. |
+| 완료 후 중복·늦은 웹훅 | 기존 v2 정책은 Redis 완료 키 유실 뒤 재접수를 허용한다. 같은 고객 요청이 새 `R`로 재접수되면 기존 `R` 고유 제약만으로 중복 과금을 막지 못하므로 과금도 새 건으로 볼지 결정해야 한다. 정리 후 도착한 업체 웹훅도 조회·격리할 수 있게 `R`과 파생 ID 연결을 SQL에 남길지 결정해야 한다. |
 
-현재 `delivery-result-worker`의 `FinalizedConsumer`·`FinalizedStore`에는 **최종 이력 + 통지 예약 + 정리 예약의 SQL 원자 commit**, 중복 내용 비교, Kafka 레코드 단위 ack가 구현돼 있다. `NotificationRepository`는 고객별 최대 100건의 고정 묶음·최대 21회 재시도를, `CleanupWorker`는 SQL 예약 선점·조건부 DynamoDB 정리를 수행한다. 다만 이 코드는 이전 `delivery.finalized.v1`·UUID형 `DeliveryFinalized` 계약을 소비하고 통지·정리까지 한 모듈에 포함한다. 신규 `MSG-RESULT-FINALIZED`와 고정 32자리 `R`·고객 `messageId` 계약, AP 분리는 아직 구현 전이다. 현재 설정에서 고객 통지와 정리 작업은 기본 비활성화다.
-
-이관 전에 **Redis 정리 정책도 맞춰야 한다.** 목표 설계는 성공이면 성공 시각부터 고객 중복키를 2시간 유지하고 실패·만료면 해당 실행의 키를 해제한다. 현재 `DeliveryCache.complete`는 결과와 관계없이 기본 24시간 완료 키를 만들기 때문에 그대로 연결할 수 없다. Redis 완료 키를 쓰지 못했거나 유실된 뒤 ORIGIN까지 삭제하면 같은 고객 요청이 새 `R`로 다시 접수될 수 있으므로, 이 경우의 접수 중복 보호와 정리 완료 조건을 결정해야 한다. 업체의 동일 파생 ID 중복 차단은 **새 `R`로 다시 접수된 요청**을 막지 못한다. 또한 고객 통지를 기다리지 않고 DynamoDB 원본을 삭제하므로, 기한 없이 늦게 도착할 수 있는 업체 웹훅을 고정 `R`·파생 ID로 조회·관측할 SQL 보존/격리 경로가 필요하다. 현재 새 결과 전문, 충돌 레코드의 격리 위치, 정리 후 늦은 웹훅 조회 방식은 미정이다.
+현재 `delivery-result-worker`는 **이전 경로**의 `delivery_history`와 고객 통지·정리 예약을 한 트랜잭션에 저장하고, SQL commit 뒤 조건부 정리를 재시도하는 기반을 갖고 있다. 새 `TBL_CDR_HIST`·`TBL_MSG_HIST` 저장과 과금 판정은 코드에 없고, 신규 `MSG-RESULT-FINALIZED`도 소비하지 않는다. 따라서 기존 모듈을 이름만 바꿔 이번 역할이 완료됐다고 볼 수 없다.
 
 ## 9. 중간 종료와 저장소 장애
 
