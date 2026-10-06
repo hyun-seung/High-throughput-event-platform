@@ -27,6 +27,7 @@
         <module>messaging-reference-cache</module>
         <module>messaging-webhook-receive-api</module>
         <module>messaging-pre-send-manager</module>
+        <module>messaging-carrier-http-sender</module>
         <module>messaging-http-sender</module>
         <module>common-security</module>
         <module>messaging-common</module>

@@ -1,7 +1,4 @@
-package messaging.pre.send;
-
-import messaging.common.messages.HttpSendCommand;
-import messaging.common.messages.PreSendFailure;
+package messaging.common.messages;
 
 /** Exactly one durable handoff for an admitted message. */
 public record PreSendDispatch(HttpSendCommand command, PreSendFailure failure) {
