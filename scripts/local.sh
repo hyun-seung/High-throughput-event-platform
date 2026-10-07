@@ -51,8 +51,8 @@ case "${1:-help}" in
   run)
     module="${2:-}"
     case "$module" in
-      messaging-api|messaging-publication-recovery-app|messaging-reference-cache|messaging-webhook-receive-api|messaging-pre-send-manager|messaging-carrier-http-sender|messaging-result-manager|messaging-complete-manager|messaging-webhook-sender|delivery-ingress-worker|dispatch-worker|external-api-simulator|receipt-api|delivery-result-worker) ;;
-      *) echo 'Usage: bash scripts/local.sh run <messaging-api|messaging-publication-recovery-app|messaging-reference-cache|messaging-webhook-receive-api|messaging-pre-send-manager|messaging-carrier-http-sender|messaging-result-manager|messaging-complete-manager|messaging-webhook-sender|delivery-ingress-worker|dispatch-worker|external-api-simulator|receipt-api|delivery-result-worker>' >&2; exit 2 ;;
+      messaging-api|messaging-publication-recovery-app|messaging-reference-cache|messaging-webhook-receive-api|messaging-pre-send-manager|messaging-carrier-http-sender|messaging-tcp-sender|messaging-result-manager|messaging-complete-manager|messaging-webhook-sender|delivery-ingress-worker|dispatch-worker|external-api-simulator|receipt-api|delivery-result-worker) ;;
+      *) echo 'Usage: bash scripts/local.sh run <messaging-api|messaging-publication-recovery-app|messaging-reference-cache|messaging-webhook-receive-api|messaging-pre-send-manager|messaging-carrier-http-sender|messaging-tcp-sender|messaging-result-manager|messaging-complete-manager|messaging-webhook-sender|delivery-ingress-worker|dispatch-worker|external-api-simulator|receipt-api|delivery-result-worker>' >&2; exit 2 ;;
     esac
     export SPRING_PROFILES_ACTIVE=dev
     export KAFKA_BOOTSTRAP_SERVERS="localhost:${KAFKA_HOST_PORT:-9092}"
@@ -73,6 +73,7 @@ case "${1:-help}" in
       messaging-reference-cache) export SERVER_PORT="${MESSAGING_REFERENCE_CACHE_PORT:-8098}" ;;
       messaging-pre-send-manager) export SERVER_PORT="${MESSAGING_PRE_SEND_PORT:-8100}" ;;
       messaging-carrier-http-sender) export SERVER_PORT="${MSG_HTTP_SENDER_PORT:-8101}" ;;
+      messaging-tcp-sender) export SERVER_PORT="${MSG_TCP_SENDER_PORT:-8105}" ;;
       messaging-result-manager) export SERVER_PORT="${MSG_RESULT_MANAGER_PORT:-8102}" ;;
       messaging-complete-manager) export SERVER_PORT="${MSG_COMPLETE_MANAGER_PORT:-8103}" ;;
       messaging-webhook-sender) export SERVER_PORT="${MSG_WEBHOOK_SENDER_PORT:-8104}" ;;

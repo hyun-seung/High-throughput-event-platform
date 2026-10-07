@@ -28,6 +28,7 @@
         <module>messaging-webhook-receive-api</module>
         <module>messaging-pre-send-manager</module>
         <module>messaging-carrier-http-sender</module>
+        <module>messaging-tcp-sender</module>
         <module>messaging-result-manager</module>
         <module>messaging-complete-manager</module>
         <module>messaging-webhook-sender</module>

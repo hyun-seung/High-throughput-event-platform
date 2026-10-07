@@ -1,0 +1,73 @@
+server:
+  port: ${MSG_TCP_SENDER_PORT:8105}
+  shutdown: graceful
+
+spring:
+  application:
+    name: messaging-tcp-sender
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      database: ${REDIS_DATABASE:0}
+      connect-timeout: ${REDIS_CONNECT_TIMEOUT:200ms}
+      timeout: ${REDIS_TIMEOUT:200ms}
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    listener:
+      ack-mode: record
+      concurrency: ${MSG_TCP_SENDER_CONCURRENCY:3}
+    consumer:
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      key-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      properties:
+        "[spring.deserializer.key.delegate.class]": org.apache.kafka.common.serialization.StringDeserializer
+        "[spring.deserializer.value.delegate.class]": org.springframework.kafka.support.serializer.JacksonJsonDeserializer
+        "[spring.json.value.default.type]": messaging.common.messages.SecondarySendCommand
+        "[spring.json.trusted.packages]": messaging.common.messages
+        "[allow.auto.create.topics]": false
+    producer:
+      acks: all
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JacksonJsonSerializer
+      properties:
+        "[enable.idempotence]": true
+        "[spring.json.add.type.headers]": false
+        "[max.block.ms]": 5000
+        "[request.timeout.ms]": 5000
+        "[delivery.timeout.ms]": 10000
+
+delivery:
+  dynamodb:
+    enabled: true
+    endpoint: ${DYNAMODB_ENDPOINT:http://localhost:8000}
+    initialize-tables: false
+
+messaging:
+  tcp:
+    sender:
+      enabled: ${MSG_TCP_SENDER_ENABLED:false}
+      host: ${MSG_TCP_PROVIDER_HOST:localhost}
+      port: ${MSG_TCP_PROVIDER_PORT:18091}
+      connect-timeout: ${MSG_TCP_CONNECT_TIMEOUT:2s}
+      response-timeout: ${MSG_TCP_RESPONSE_TIMEOUT:5s}
+      claim-ttl: ${MSG_TCP_CLAIM_TTL:30s}
+      recovery-grace: ${MSG_TCP_RECOVERY_GRACE:30s}
+
+management:
+  endpoint:
+    health:
+      probes:
+        enabled: true
+        add-additional-paths: true
+  server:
+    address: 127.0.0.1
+    port: ${MSG_TCP_SENDER_METRICS_PORT:19097}
+  endpoints:
+    web:
+      exposure:
+        include: health
