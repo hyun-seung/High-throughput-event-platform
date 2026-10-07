@@ -67,8 +67,7 @@ public class MessageResultInboxStore {
         } else if (input instanceof MessageResultInput.Webhook webhook) {
             var batch = webhook.batch();
             for (MessageWebhookResult result : batch.results()) {
-                String resultId = UUID.nameUUIDFromBytes(("webhook-result:" + batch.traceId() + ":"
-                        + result.clientMsgId()).getBytes(StandardCharsets.UTF_8)).toString();
+                String resultId = webhookResultId(batch.traceId(), result.clientMsgId());
                 items.add(new Item(result.clientMsgId(), resultId, batch.source(),
                         mapper.writeValueAsString(new WebhookItem(batch.traceId(), batch.carrier(),
                                 batch.receivedAt(), result)), batch.receivedAt()));
@@ -78,6 +77,38 @@ public class MessageResultInboxStore {
         }
         for (Item item : items) put(item);
         return List.copyOf(items);
+    }
+
+    public static String webhookResultId(String traceId, String clientMsgId) {
+        return UUID.nameUUIDFromBytes(("webhook-result:" + traceId + ":" + clientMsgId)
+                .getBytes(StandardCharsets.UTF_8)).toString();
+    }
+
+    public Item loadPending(Map<String, AttributeValue> key, Instant now) {
+        var stored = read(key);
+        if (stored == null || stored.isEmpty() || !"PENDING".equals(stored.getOrDefault("status", s("")).s())
+                || !stored.containsKey(MessageResultInboxIndex.DUE)
+                || Long.parseLong(stored.get(MessageResultInboxIndex.DUE).n()) > now.toEpochMilli()) return null;
+        var entry = new Item(stored.get("delivery_id").s(), stored.get("result_id").s(),
+                stored.get("source").s(), stored.get("result_payload").s(),
+                Instant.parse(stored.get("received_at").s()));
+        if (!key.equals(entry.key())) throw new IllegalStateException("Result inbox key conflicts with payload");
+        return entry;
+    }
+
+    public void defer(Item entry, Instant nextCheck) {
+        try {
+            db.updateItem(UpdateItemRequest.builder().tableName(STEP).key(entry.key())
+                    .conditionExpression("#status = :pending AND result_payload = :payload AND attribute_exists(#bucket)")
+                    .updateExpression("SET #due = :due")
+                    .expressionAttributeNames(Map.of("#status", "status", "#bucket", MessageResultInboxIndex.BUCKET,
+                            "#due", MessageResultInboxIndex.DUE))
+                    .expressionAttributeValues(Map.of(":pending", s("PENDING"), ":payload", s(entry.payload()),
+                            ":due", AttributeValue.fromN(Long.toString(nextCheck.toEpochMilli())))).build());
+        } catch (ConditionalCheckFailedException changed) {
+            var current = read(entry.key());
+            if (current == null || !"PROCESSED".equals(current.getOrDefault("status", s("")).s())) throw changed;
+        }
     }
 
     private void put(Item entry) {

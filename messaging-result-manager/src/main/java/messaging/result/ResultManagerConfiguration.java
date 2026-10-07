@@ -25,6 +25,11 @@ public class ResultManagerConfiguration {
         return new MessageResultInboxStore(db, mapper, clock);
     }
 
+    @Bean WebhookPrimaryDecisionService webhookPrimaryDecisionService(DynamoDbClient db, JsonMapper mapper,
+                                                                       FollowupHttpCommandStore commands, Clock clock) {
+        return new WebhookPrimaryDecisionService(db, mapper, commands, clock);
+    }
+
     @Bean DefaultErrorHandler resultErrorHandler() {
         var handler = new DefaultErrorHandler(new FixedBackOff(1000L, FixedBackOff.UNLIMITED_ATTEMPTS));
         handler.setClassifications(Map.of(Exception.class, true), true);
