@@ -31,17 +31,14 @@ public record WebhookSenderProperties(
         }
     }
 
-    public record Destination(URI url, String token) {
+    public record Destination(URI url) {
         public Destination {
             if (url == null || url.getHost() == null || url.getUserInfo() != null || url.getFragment() != null
                     || !("https".equals(url.getScheme()) || "http".equals(url.getScheme())
-                    && Set.of("localhost", "127.0.0.1", "[::1]").contains(url.getHost()))
-                    || token == null || !token.matches("[!-~]{32,256}")) {
-                throw new IllegalArgumentException("Customer webhook requires HTTPS (or loopback HTTP) and a 32-256 character token");
+                    && Set.of("localhost", "127.0.0.1", "[::1]").contains(url.getHost()))) {
+                throw new IllegalArgumentException("Customer webhook requires HTTPS (or loopback HTTP)");
             }
         }
-
-        @Override public String toString() { return "Destination[url=" + url + ", token=<redacted>]"; }
     }
 
     public Duration retryAfter(int attempt) {

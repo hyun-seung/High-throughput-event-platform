@@ -391,7 +391,7 @@ flowchart LR
 
 `WEBHOOK-SEND`는 최종 메시지별 인계다. `MSG-WEBHOOK-SENDER`가 Kafka 소비 후 자체 PostgreSQL `tbl_webhook_outbox`에 명령을 저장하고 나서 offset을 완료한다. 같은 `clientId`의 미묶음 결과를 **최대 100건**, 최대 256KiB 요청 본문으로 묶으며 기본 100ms 동안 더 들어올 결과를 기다린다. 100건에 도달하거나 바이트 상한에 닿으면 즉시 묶는다. 고객별 lane 잠금으로 동시에 두 Pod가 같은 고객의 묶음을 만들지 못하게 한다. 묶음 `batchId`·본문·대상 URL은 DB에 고정해 재시도 때 유지한다. 고객의 HTTP `204`만 배치 성공으로 보고, 실패하면 지수 간격 최대 60초로 최초 포함 총 21회까지 재시도한다. 최종 소진 시 `EXHAUSTED`로 보존해 운영 확인 대상으로 남긴다.
 
-현재 `WEBHOOK-SEND`의 Kafka key는 `clientMsgId`, 값은 `CustomerWebhookSendCommand`다. 명령에는 `clientMsgId`에서 결정적으로 만든 `webhookId`와 고정된 최종 결정·최초 접수 전문을 담는다. 고객 웹훅 URL·인증 토큰은 아직 계약 CDC 모델에 없어 Sender의 외부 설정 `messaging.webhook.sender.customers.<clientId>.url/token`에서 조회한다. 설정이 없는 고객 결과는 SQL 대기열에 남는다. 향후 계약 CDC 조회로 바꾸더라도 이미 고정한 묶음의 URL·본문은 유지한다. URL 변경 후 기존 묶음은 잘못된 목적지로 보내지 않도록 발송을 중단하므로 운영 이관 절차가 필요하다.
+현재 `WEBHOOK-SEND`의 Kafka key는 `clientMsgId`, 값은 `CustomerWebhookSendCommand`다. 명령에는 `clientMsgId`에서 결정적으로 만든 `webhookId`와 고정된 최종 결정·최초 접수 전문을 담는다. **고객 웹훅 발송에는 별도 인증 토큰을 사용하지 않는다.** URL은 우선 고객별 외부 설정 `messaging.webhook.sender.customers.<clientId>.url`에 임의의 테스트 수신 주소를 지정한다. 실제 고객 주소가 없는 동안 설정하지 않은 고객의 결과는 SQL 대기열에 남는다. 향후 고객별 실제 URL을 정하더라도 이미 고정한 묶음의 URL·본문은 유지한다. URL 변경 후 기존 묶음은 잘못된 목적지로 보내지 않도록 발송을 중단하므로 운영 이관 절차가 필요하다.
 
 `MSG-WEBHOOK-SENDER`는 고객 HTTP 웹훅을 보낸 **후** 별도 `TBL_WEBHOOK_HIST`에 묶음·시도 회차당 1행으로 발송 시각·대상·건수·HTTP 응답 또는 실패를 기록한다. 개별 `webhookId`는 `tbl_webhook_outbox.batch_id`로 이력과 연결된다. 이 테이블은 `TBL_MSG_HIST`의 메시지 최종 이력, `TBL_CDR_HIST`의 과금 이력과 역할이 다르다. HTTP 발송은 성공했지만 이력 저장 전에 AP가 종료되면 같은 웹훅이 재전송될 수 있으므로 HTTP `Idempotency-Key`와 본문의 `batchId`를 재시도 동안 고정하고, 본문의 개별 `webhookId`로 고객도 중복 제거할 수 있어야 한다.
 
@@ -413,7 +413,7 @@ flowchart LR
 
 **현재 저장소 코드에는 DynamoDB TTL 설정이 없다.** `ORIGIN`·`STEP` 초기화 코드가 TTL을 활성화하지 않고, 신규 ORIGIN 저장 코드도 TTL 속성을 쓰지 않는다. 외부에서 TTL을 별도로 설정했는지는 확인되지 않았다. TTL에 맡기려면 두 테이블의 TTL 속성과 각 항목의 만료 시각을 추가하고, 최종 결과의 SQL 인계·복구 기간보다 먼저 만료되지 않도록 해야 한다. AWS 문서에 따르면 [TTL은 만료 항목을 백그라운드에서 삭제하며 삭제 전까지 읽기에 나타날 수 있다](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/ttl-expired-items.html). 따라서 TTL은 삭제 실패의 저장 공간 정리 수단으로 쓰고, 업무상 완료·과금·중복 여부는 SQL 고유 키와 최종 결과 상태로 판단한다. 업체 웹훅에는 최대 만료 기간이 없으므로 정리 후 늦게 온 결과를 구분할 SQL 참조 정보도 필요하다.
 
-현재 `delivery-result-worker`는 **이전 경로**의 `delivery_history`·통지·정리 예약을 처리한다. 새 `messaging-complete-manager`는 별도 PostgreSQL `messaging_completion` 스키마에 `TBL_MSG_HIST`·`TBL_CDR_HIST`와 `clientMsgId` 기본 키를 만들고 1차 최종 결과를 원자 저장한다. `MSG_COMPLETE_CONSUMER_ENABLED=false`가 기본값이며 DynamoDB 정리와 DynamoDB TTL 설정은 아직 구현되지 않았다. `WEBHOOK-SEND` 생산은 결과 Manager outbox에 연결됐고, 새 `messaging-webhook-sender`에는 토픽 소비·고객별 최대 100건 묶음·HTTP 발송·`messaging_webhook.tbl_webhook_hist` 저장을 구현했다. 발송기는 `MSG_WEBHOOK_SENDER_ENABLED=false`가 기본값이며 고객별 URL·토큰 설정 후 활성화한다.
+현재 `delivery-result-worker`는 **이전 경로**의 `delivery_history`·통지·정리 예약을 처리한다. 새 `messaging-complete-manager`는 별도 PostgreSQL `messaging_completion` 스키마에 `TBL_MSG_HIST`·`TBL_CDR_HIST`와 `clientMsgId` 기본 키를 만들고 1차 최종 결과를 원자 저장한다. `MSG_COMPLETE_CONSUMER_ENABLED=false`가 기본값이며 DynamoDB 정리와 DynamoDB TTL 설정은 아직 구현되지 않았다. `WEBHOOK-SEND` 생산은 결과 Manager outbox에 연결됐고, 새 `messaging-webhook-sender`에는 토픽 소비·고객별 최대 100건 묶음·HTTP 발송·`messaging_webhook.tbl_webhook_hist` 저장을 구현했다. 발송기는 `MSG_WEBHOOK_SENDER_ENABLED=false`가 기본값이며 고객별 URL 설정 후 활성화한다.
 
 ## 9. 중간 종료와 저장소 장애
 

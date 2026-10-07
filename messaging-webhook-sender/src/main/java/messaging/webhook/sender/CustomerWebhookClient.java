@@ -27,7 +27,6 @@ public class CustomerWebhookClient implements AutoCloseable {
         if (!claim.url().equals(destination.url().toString())) throw new IllegalArgumentException("Webhook destination changed");
         var request = HttpRequest.newBuilder(URI.create(claim.url())).timeout(timeout)
                 .header("Content-Type", "application/json")
-                .header("Authorization", "Bearer " + destination.token())
                 .header("Idempotency-Key", claim.batchId().toString())
                 .POST(HttpRequest.BodyPublishers.ofString(claim.body())).build();
         var future = client.sendAsync(request, HttpResponse.BodyHandlers.ofInputStream());

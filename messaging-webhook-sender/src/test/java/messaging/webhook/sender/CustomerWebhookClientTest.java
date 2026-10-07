@@ -31,7 +31,7 @@ class CustomerWebhookClientTest {
         server.start();
         try {
             var destination = new WebhookSenderProperties.Destination(
-                    URI.create("http://127.0.0.1:" + server.getAddress().getPort() + "/webhook"), "a".repeat(32));
+                    URI.create("http://127.0.0.1:" + server.getAddress().getPort() + "/webhook"));
             var settings = new WebhookSenderProperties(true, 100, 1, Duration.ZERO, 262144,
                     Duration.ofSeconds(3), Duration.ofSeconds(30), Duration.ofSeconds(1),
                     Duration.ofSeconds(60), Map.of(42L, destination));
@@ -48,7 +48,7 @@ class CustomerWebhookClientTest {
             }
             assertEquals(claim.batchId().toString(), seenId.get());
             assertEquals(claim.body(), seenBody.get());
-            assertEquals("Bearer " + destination.token(), seenAuth.get());
+            assertNull(seenAuth.get());
         } finally { server.stop(0); }
     }
 }

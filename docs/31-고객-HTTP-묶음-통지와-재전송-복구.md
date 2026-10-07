@@ -2,6 +2,8 @@
 
 작성일: 2026-09-25. 대상: `delivery-result-worker`, 고객 수신 대역 `external-api-simulator`.
 
+이 문서는 이전 경로의 PoC 기록이다. 신규 `MSG-WEBHOOK-SENDER`는 고객 인증 토큰을 보내지 않으며, 현재 계약과 구현은 [신규 메시지 케이스별 Call Flow](53-신규-메시지-케이스별-Call-Flow.md)를 따른다.
+
 ## 이번에 연결한 흐름
 
 ```text
