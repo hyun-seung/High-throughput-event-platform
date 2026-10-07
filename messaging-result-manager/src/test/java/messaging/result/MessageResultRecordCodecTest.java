@@ -5,6 +5,7 @@ import messaging.common.messages.HttpCarrier;
 import messaging.common.messages.MessageWebhookBatch;
 import messaging.common.messages.MessageWebhookResult;
 import messaging.common.messages.PreSendFailure;
+import messaging.common.messages.TcpSendResult;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -54,10 +55,19 @@ class MessageResultRecordCodecTest {
     @Test
     void rejectsUnknownSourceAndInvalidWebhookItem() {
         assertThrows(IllegalArgumentException.class,
-                () -> codec.decode(ID, "{\"source\":\"TCP_RESPONSE\"}"));
+                () -> codec.decode(ID, "{\"source\":\"NOT_SUPPORTED\"}"));
         assertThrows(RuntimeException.class,
                 () -> codec.decode("trace-1", "{\"traceId\":\"trace-1\",\"source\":\"WEBHOOK\","
                         + "\"carrier\":\"KT\",\"receivedAt\":\"2026-10-07T00:00:00Z\","
                         + "\"results\":[{\"clientMsgId\":\"" + ID + "\",\"status\":\"fail\"}]}"));
+    }
+
+    @Test
+    void decodesImmediateTcpResponseUsingClientMsgIdKey() {
+        var result = new TcpSendResult(TcpSendResult.id(ID, "tcp-attempt"), ID, "tcp-attempt",
+                "TCP_RESPONSE", TcpSendResult.Status.FAILED, 70001, "REJECTED", NOW);
+        assertEquals(new MessageResultInput.Tcp(result), codec.decode(ID, mapper.writeValueAsString(result)));
+        assertThrows(IllegalArgumentException.class,
+                () -> codec.decode("b".repeat(32), mapper.writeValueAsString(result)));
     }
 }

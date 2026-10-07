@@ -28,6 +28,7 @@ public class PendingResultDispatcher {
     private final WebhookPrimaryDecisionService decisions;
     private final HttpFailureFollowupService http;
     private final PrimaryStageDecisionStore terminal;
+    private final SecondaryResultService secondary;
     private final JsonMapper mapper;
     private final Clock clock;
     private final int pageSize;
@@ -36,7 +37,8 @@ public class PendingResultDispatcher {
     public PendingResultDispatcher(DynamoDbClient db, MessageResultInboxStore inbox,
                                     WebhookPrimaryDecisionService decisions,
                                     HttpFailureFollowupService http,
-                                    PrimaryStageDecisionStore terminal, JsonMapper mapper, Clock clock,
+                                    PrimaryStageDecisionStore terminal, SecondaryResultService secondary,
+                                    JsonMapper mapper, Clock clock,
                                     @org.springframework.beans.factory.annotation.Value(
                                             "${messaging.result.webhook.page-size:100}") int pageSize) {
         this.db = Objects.requireNonNull(db);
@@ -44,6 +46,7 @@ public class PendingResultDispatcher {
         this.decisions = Objects.requireNonNull(decisions);
         this.http = Objects.requireNonNull(http);
         this.terminal = Objects.requireNonNull(terminal);
+        this.secondary = Objects.requireNonNull(secondary);
         this.mapper = Objects.requireNonNull(mapper);
         this.clock = Objects.requireNonNull(clock);
         if (pageSize < 1 || pageSize > 1000) throw new IllegalArgumentException("Invalid webhook page size");
@@ -105,6 +108,10 @@ public class PendingResultDispatcher {
         } else if ("PRE_SEND".equals(item.source())) {
             terminal.fromPreSend(item);
             inbox.processed(item);
+        } else if ("TCP_RESPONSE".equals(item.source())) {
+            var outcome = secondary.process(item);
+            if (outcome == SecondaryResultService.Outcome.WAITING) inbox.defer(item, now.plus(Duration.ofSeconds(5)));
+            else inbox.processed(item);
         }
     }
 

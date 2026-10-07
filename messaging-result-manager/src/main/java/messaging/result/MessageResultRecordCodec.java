@@ -3,6 +3,7 @@ package messaging.result;
 import messaging.common.messages.CarrierHttpResult;
 import messaging.common.messages.MessageWebhookBatch;
 import messaging.common.messages.PreSendFailure;
+import messaging.common.messages.TcpSendResult;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -42,6 +43,11 @@ public final class MessageResultRecordCodec {
                 PreSendFailure failure = mapper.readValue(json, PreSendFailure.class);
                 requireKey(key, failure.clientMsgId());
                 yield new MessageResultInput.PreSend(failure);
+            }
+            case "TCP_RESPONSE" -> {
+                TcpSendResult result = mapper.readValue(json, TcpSendResult.class);
+                requireKey(key, result.clientMsgId());
+                yield new MessageResultInput.Tcp(result);
             }
             default -> throw new IllegalArgumentException("Unsupported MSG_RESULT source: " + source.asText());
         };

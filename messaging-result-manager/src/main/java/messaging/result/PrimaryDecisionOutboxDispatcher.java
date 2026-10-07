@@ -69,7 +69,8 @@ public class PrimaryDecisionOutboxDispatcher {
                         ":now", AttributeValue.fromN(Long.toString(now))))
                 .exclusiveStartKey(cursors.getOrDefault(shard, Map.of())).limit(pageSize).build());
         for (var candidate : page.items()) {
-            if (!candidate.get("sk").s().startsWith("PRIMARY_DECISION#")) continue;
+            if (!candidate.get("sk").s().startsWith("PRIMARY_DECISION#")
+                    && !candidate.get("sk").s().startsWith("SECONDARY_DECISION#")) continue;
             try {
                 dispatch(Map.of("pk", candidate.get("pk"), "sk", candidate.get("sk")), now);
             } catch (InterruptedException interrupted) {
@@ -90,20 +91,25 @@ public class PrimaryDecisionOutboxDispatcher {
         if (!("PENDING".equals(status) || "FINALIZED_PUBLISHED".equals(status))
                 || !item.containsKey(MessageResultInboxIndex.BUCKET)
                 || Long.parseLong(item.get(MessageResultInboxIndex.DUE).n()) > now) return;
-        var decision = mapper.readValue(item.get("result_payload").s(), PrimaryStageDecision.class);
+        boolean secondary = key.get("sk").s().startsWith("SECONDARY_DECISION#");
+        var finalized = secondary ? mapper.readValue(item.get("result_payload").s(), FinalizedMessageResult.class) : null;
+        var decision = secondary ? finalized.decision()
+                : mapper.readValue(item.get("result_payload").s(), PrimaryStageDecision.class);
         var submission = mapper.readValue(item.get("submission_payload").s(), MessageSubmission.class);
         if (!key.get("pk").s().equals("DELIVERY#" + decision.clientMsgId())
-                || !key.get("sk").s().equals("PRIMARY_DECISION#" + decision.decisionId())
+                || !key.get("sk").s().equals(secondary
+                        ? "SECONDARY_DECISION#" + finalized.secondaryDecision().decisionId()
+                        : "PRIMARY_DECISION#" + decision.decisionId())
                 || !decision.clientMsgId().equals(submission.clientMsgId())) {
             throw new IllegalStateException("Primary decision outbox identity mismatch");
         }
-        if (decision.secondaryRequired()) {
+        if (!secondary && decision.secondaryRequired()) {
             if (!"PENDING".equals(status)) throw new IllegalStateException("Secondary outbox has final topic state");
             send(MessageTopics.TCP_SEND, decision.clientMsgId(), SecondarySendCommand.from(decision, submission));
             markPublished(key, item, now, "PENDING", false);
             return;
         }
-        var finalized = new FinalizedMessageResult(decision, submission);
+        if (!secondary) finalized = new FinalizedMessageResult(decision, submission);
         if ("PENDING".equals(status)) {
             send(MessageTopics.MSG_RESULT_FINALIZED, decision.clientMsgId(), finalized);
             markFinalizedPublished(key, item, now);

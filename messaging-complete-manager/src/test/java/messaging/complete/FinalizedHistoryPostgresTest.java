@@ -7,6 +7,7 @@ import messaging.common.messages.HttpCarrier;
 import messaging.common.messages.MessageCategory;
 import messaging.common.messages.MessageSubmission;
 import messaging.common.messages.PrimaryStageDecision;
+import messaging.common.messages.SecondaryStageDecision;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -78,6 +79,27 @@ class FinalizedHistoryPostgresTest {
         assertEquals(success.decision().decisionId(), jdbc.queryForObject(
                 "SELECT decision_id FROM tbl_cdr_hist WHERE client_msg_id = ?", String.class,
                 success.decision().clientMsgId()));
+    }
+
+    @Test
+    void secondarySuccessStoresOneFinalHistoryWithoutBilling() {
+        String id = "d".repeat(32);
+        var now = Instant.parse("2026-10-07T12:00:00Z");
+        var primary = new PrimaryStageDecision("primary-failure", id,
+                PrimaryStageDecision.Kind.FAILURE, "HTTP_RESPONSE", 66999, null,
+                HttpCarrier.SKT, 1, true, now);
+        var secondary = new SecondaryStageDecision("tcp-result", id, "tcp-attempt",
+                SecondaryStageDecision.Kind.SUCCESS, null, "RECEIVED", now.plusSeconds(1));
+        var submission = new MessageSubmission(id, 42L, "customer-message", "01012345678",
+                MessageCategory.GENERAL, Map.of("text", "hello"), Map.of("text", "secondary"), now.minusSeconds(30));
+        var finalized = new FinalizedMessageResult(primary, secondary, submission);
+
+        history.store(finalized);
+        history.store(finalized);
+
+        assertEquals("SECONDARY", jdbc.queryForObject("SELECT final_stage FROM tbl_msg_hist WHERE client_msg_id = ?", String.class, id));
+        assertEquals("SUCCESS", jdbc.queryForObject("SELECT outcome FROM tbl_msg_hist WHERE client_msg_id = ?", String.class, id));
+        assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM tbl_cdr_hist", Integer.class));
     }
 
     @Test

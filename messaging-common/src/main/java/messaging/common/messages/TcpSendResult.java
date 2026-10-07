@@ -20,7 +20,9 @@ public record TcpSendResult(String resultId, String clientMsgId, String attemptI
         if (!"TCP_RESPONSE".equals(source) || !resultId.equals(id(clientMsgId, attemptId))
                 || clientMsgId.isBlank() || attemptId.isBlank()
                 || (status == Status.SUCCESS) != (errorCode == null)
-                || errorCode != null && (errorCode < 10000 || errorCode > 79999)) {
+                || providerCode != null && providerCode.length() > 64
+                || errorCode != null && (errorCode < 10000 || errorCode > 59999 && errorCode < 70000
+                || errorCode > 79999)) {
             throw new IllegalArgumentException("Invalid TCP result");
         }
     }

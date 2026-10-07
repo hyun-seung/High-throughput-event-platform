@@ -41,7 +41,7 @@ public class TcpProviderClient {
             var reply = mapper.readValue(TcpFrames.read(socket.getInputStream()), TcpDeliveryResponse.class);
             if (reply == null || !submission.clientMsgId().equals(reply.deliveryId())
                     || !command.attemptId().equals(reply.attemptId()) || reply.accepted() == null
-                    || reply.code() == null || reply.processedAt() == null) {
+                    || reply.code() == null || reply.code().length() > 64 || reply.processedAt() == null) {
                 return result(command, TcpSendResult.Status.INVALID_RESPONSE, 40005, null);
             }
             if (reply.accepted()) {

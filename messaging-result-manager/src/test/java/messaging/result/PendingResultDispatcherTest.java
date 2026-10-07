@@ -23,7 +23,8 @@ class PendingResultDispatcherTest {
     private final PrimaryStageDecisionStore terminal = mock(PrimaryStageDecisionStore.class);
     private final JsonMapper mapper = JsonMapper.builder().build();
     private final PendingResultDispatcher dispatcher = new PendingResultDispatcher(mock(DynamoDbClient.class),
-            inbox, decisions, http, terminal, mapper, Clock.fixed(NOW, ZoneOffset.UTC), 100);
+            inbox, decisions, http, terminal, mock(SecondaryResultService.class),
+            mapper, Clock.fixed(NOW, ZoneOffset.UTC), 100);
     private final MessageResultInboxStore.Item item = new MessageResultInboxStore.Item("a".repeat(32),
             "result-1", "WEBHOOK", "{}", NOW);
     private final Map<String, AttributeValue> key = item.key();

@@ -19,7 +19,7 @@ public class FinalizedHistoryStore {
                 recipient_number, message_category, final_stage, outcome, result_source,
                 carrier, invocation, error_code, reason, received_at, decided_at,
                 result_json, submission_json)
-            VALUES (?, ?, ?, ?, ?, ?, 'PRIMARY', ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb)
             ON CONFLICT (client_msg_id) DO NOTHING
             """;
     private static final String INSERT_CDR = """
@@ -43,29 +43,40 @@ public class FinalizedHistoryStore {
     public void store(FinalizedMessageResult finalized) {
         Objects.requireNonNull(finalized);
         var decision = finalized.decision();
+        var secondary = finalized.secondaryDecision();
         var submission = finalized.submission();
-        if (!decision.clientMsgId().equals(submission.clientMsgId()) || decision.secondaryRequired()
-                || decision.kind() == PrimaryStageDecision.Kind.SUCCESS && decision.carrier() == null) {
-            throw new IllegalArgumentException("Invalid primary finalized result");
+        if (!decision.clientMsgId().equals(submission.clientMsgId())
+                || secondary == null && (decision.secondaryRequired()
+                || decision.kind() == PrimaryStageDecision.Kind.SUCCESS && decision.carrier() == null)
+                || secondary != null && (!decision.secondaryRequired()
+                || !secondary.clientMsgId().equals(submission.clientMsgId()))) {
+            throw new IllegalArgumentException("Invalid finalized result");
         }
-        String resultJson = mapper.writeValueAsString(decision);
+        String resultJson = mapper.writeValueAsString(secondary == null ? decision : secondary);
         String submissionJson = mapper.writeValueAsString(submission);
+        String decisionId = secondary == null ? decision.decisionId() : secondary.decisionId();
+        String outcome = secondary == null ? decision.kind().name() : secondary.kind().name();
+        String stage = secondary == null ? "PRIMARY" : "SECONDARY";
         transaction.executeWithoutResult(ignored -> {
-            jdbc.update(INSERT_MESSAGE, submission.clientMsgId(), decision.decisionId(),
+            jdbc.update(INSERT_MESSAGE, submission.clientMsgId(), decisionId,
                     submission.clientId(), submission.messageId(), submission.recipientNumber(),
-                    submission.messageCategory().name(), decision.kind().name(), decision.source(),
-                    decision.carrier() == null ? null : decision.carrier().name(), decision.invocation(),
-                    decision.errorCode(), decision.reason(), Timestamp.from(submission.receivedAt()),
-                    Timestamp.from(decision.decidedAt()), resultJson, submissionJson);
+                    submission.messageCategory().name(), stage, outcome,
+                    secondary == null ? decision.source() : "TCP_RESPONSE",
+                    secondary == null || decision.carrier() == null ? null : decision.carrier().name(),
+                    secondary == null ? decision.invocation() : null,
+                    secondary == null ? decision.errorCode() : secondary.errorCode(),
+                    secondary == null ? decision.reason() : secondary.providerCode(),
+                    Timestamp.from(submission.receivedAt()),
+                    Timestamp.from(secondary == null ? decision.decidedAt() : secondary.decidedAt()), resultJson, submissionJson);
             Boolean sameMessage = jdbc.queryForObject("""
                     SELECT decision_id = ? AND result_json = ?::jsonb AND submission_json = ?::jsonb
                     FROM tbl_msg_hist WHERE client_msg_id = ?
-                    """, Boolean.class, decision.decisionId(), resultJson, submissionJson,
+                    """, Boolean.class, decisionId, resultJson, submissionJson,
                     submission.clientMsgId());
             if (!Boolean.TRUE.equals(sameMessage)) {
                 throw new IllegalStateException("Conflicting final result for clientMsgId=" + submission.clientMsgId());
             }
-            if (decision.kind() != PrimaryStageDecision.Kind.SUCCESS) return;
+            if (secondary != null || decision.kind() != PrimaryStageDecision.Kind.SUCCESS) return;
             jdbc.update(INSERT_CDR, submission.clientMsgId(), decision.decisionId(),
                     submission.clientId(), submission.messageId(), decision.carrier().name(),
                     Timestamp.from(decision.decidedAt()));

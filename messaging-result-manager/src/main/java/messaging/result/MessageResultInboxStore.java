@@ -64,6 +64,10 @@ public class MessageResultInboxStore {
             var failure = preSend.failure();
             items.add(new Item(failure.clientMsgId(), failure.resultId(), failure.source(),
                     mapper.writeValueAsString(failure), failure.observedAt()));
+        } else if (input instanceof MessageResultInput.Tcp tcp) {
+            var result = tcp.result();
+            items.add(new Item(result.clientMsgId(), result.resultId(), result.source(),
+                    mapper.writeValueAsString(result), result.observedAt()));
         } else if (input instanceof MessageResultInput.Webhook webhook) {
             var batch = webhook.batch();
             for (MessageWebhookResult result : batch.results()) {

@@ -8,6 +8,7 @@ import messaging.common.messages.MessageSubmission;
 import messaging.common.messages.MessageTopics;
 import messaging.common.messages.PrimaryStageDecision;
 import messaging.common.messages.SecondarySendCommand;
+import messaging.common.messages.SecondaryStageDecision;
 import org.junit.jupiter.api.Test;
 import org.springframework.kafka.core.KafkaTemplate;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
@@ -123,6 +124,29 @@ class PrimaryDecisionOutboxDispatcherTest {
                 SecondarySendCommand.from(decision, submission));
         verify(kafka, never()).send(eq(MessageTopics.WEBHOOK_SEND), anyString(), any());
         verify(db).updateItem(any(UpdateItemRequest.class));
+    }
+
+    @Test
+    void tcpFinalResultPublishesHistoryAndCustomerWebhookWithoutAnotherTcpCommand() throws Exception {
+        var primary = decision(PrimaryStageDecision.Kind.FAILURE, true);
+        var submission = submission(true);
+        var secondary = new SecondaryStageDecision("tcp-result", ID, "tcp-attempt",
+                SecondaryStageDecision.Kind.SUCCESS, null, "RECEIVED", NOW.plusSeconds(1));
+        var finalized = new FinalizedMessageResult(primary, secondary, submission);
+        var item = outbox(primary, submission);
+        item.put("sk", AttributeValue.fromS("SECONDARY_DECISION#" + secondary.decisionId()));
+        item.put("result_payload", AttributeValue.fromS(mapper.writeValueAsString(finalized)));
+        reads(item);
+        when(kafka.send(eq(MessageTopics.MSG_RESULT_FINALIZED), eq(ID), any()))
+                .thenReturn(CompletableFuture.completedFuture(null));
+        when(kafka.send(eq(MessageTopics.WEBHOOK_SEND), eq(ID), any()))
+                .thenReturn(CompletableFuture.completedFuture(null));
+
+        dispatcher.dispatch(key(item), NOW.toEpochMilli());
+
+        verify(kafka).send(MessageTopics.MSG_RESULT_FINALIZED, ID, finalized);
+        verify(kafka).send(MessageTopics.WEBHOOK_SEND, ID, CustomerWebhookSendCommand.from(finalized));
+        verify(kafka, never()).send(eq(MessageTopics.TCP_SEND), anyString(), any());
     }
 
     @Test
