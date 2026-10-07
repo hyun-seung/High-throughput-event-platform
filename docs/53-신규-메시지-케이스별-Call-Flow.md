@@ -1,6 +1,6 @@
 # 메시지 접수부터 최종 결과까지: 케이스별 Call Flow
 
-기준: 2026-10-07. **신규 `/api/v1/messages` 경로의 목표 설계**를 한곳에서 읽기 위한 문서다. 정상 흐름과 실패·복구 분기를 함께 그린다. 현재 구현은 API 접수·ORIGIN 저장·`message.received.v1` 발행, 공통 전문·통신사별 토픽, CDC 캐시 준비, PRE-SEND-MANAGER의 Kafka 소비·판단 고정·통신사별 HTTP 명령 발행과 발송 불가 결과 인계, 통신사별 sender의 Redis·STEP 선점과 HTTP 응답 기록·실패 인계, `WEBHOOK-RECEIVE-API`의 1~100건 단일 Kafka 발행, 1차 오류 코드의 순수 후속 판단까지다. 통신사별 sender의 명령 소비·HTTP 결과 인계까지 연결됐고, `MSG-RESULT-MANAGER`의 결과 소비·판단은 아직 연결되지 않았다. 이관 전 `delivery.*` 구현·검증을 신규 경로의 완료로 읽지 않는다. 구현 상태는 [01 현재 상태](01-현재-구현-상태와-남은-작업.md), 결정 근거는 [ADR-026](adr/ADR-026-MESSAGE-RECEIVED와-통신사별-HTTP-발송-분리.md)·[ADR-027](adr/ADR-027-접수-API-Redis-TPS와-유형별-월-Quota.md)을 따른다.
+기준: 2026-10-07. **신규 `/api/v1/messages` 경로의 목표 설계**를 한곳에서 읽기 위한 문서다. 정상 흐름과 실패·복구 분기를 함께 그린다. 현재 구현은 API 접수·ORIGIN 저장·`message.received.v1` 발행, 공통 전문·통신사별 토픽, CDC 캐시 준비, PRE-SEND-MANAGER의 Kafka 소비·판단 고정·통신사별 HTTP 명령 발행과 발송 불가 결과 인계, 통신사별 sender의 Redis·STEP 선점과 HTTP 응답 기록·실패 인계, `WEBHOOK-RECEIVE-API`의 1~100건 단일 Kafka 발행까지다. `MSG-RESULT-MANAGER`는 혼합 `MSG_RESULT`를 소비해 항목별 STEP inbox에 보존하고 HTTP 실패·타임아웃의 후속 통신사·재시도 판단까지 연결했다. 웹훅·발송 전 실패·HTTP 재시도 소진의 2차/최종 판단과 1차 만료 처리는 아직 연결되지 않았다. 이관 전 `delivery.*` 구현·검증을 신규 경로의 완료로 읽지 않는다. 구현 상태는 [01 현재 상태](01-현재-구현-상태와-남은-작업.md), 결정 근거는 [ADR-026](adr/ADR-026-MESSAGE-RECEIVED와-통신사별-HTTP-발송-분리.md)·[ADR-027](adr/ADR-027-접수-API-Redis-TPS와-유형별-월-Quota.md)을 따른다.
 
 ## 읽는 순서와 경계
 
@@ -31,7 +31,7 @@
 | 1차 발송 준비 | `PRE-SEND-MANAGER` | 참조 조회·명령 또는 발송 불가 결과를 ORIGIN에 고정하고 Kafka 인계 구현 |
 | 1차 HTTP 발송 | `MSG-SKT-SENDER`, `MSG-KT-SENDER`, `MSG-LGU-SENDER` | 공통 `messaging-carrier-http-sender` 실행 JAR을 통신사별 URL·토픽·소비 그룹으로 분리. 명령 소비·Redis/STEP 선점·HTTP 호출·결과 기록과 실패 인계 구현 |
 | 웹훅 접수 | `WEBHOOK-RECEIVE-API` | 독립 `messaging-webhook-receive-api`에 인증·1~100건 검증·`MSG_RESULT` 단일 레코드 발행 구현. 기존 `receipt-api`는 이관 전 경로 |
-| 결과 판단 | `MSG-RESULT-MANAGER` | `messaging-result-manager`에 혼합 `MSG_RESULT` 전문의 `source`·Kafka key 검증 코드 준비. Kafka 소비·상태 판단·후속 발행은 구현 전 |
+| 결과 판단 | `MSG-RESULT-MANAGER` | 혼합 `MSG_RESULT` 소비·source/key 검사·메시지별 STEP inbox 보존·HTTP 실패의 후속 발송 판단 연결. 웹훅·발송 전 실패·1차 소진의 다음 단계는 대기 |
 | 2차 TCP 발송 | `MSG-TCP-SENDER` | 목표 AP명 확정, 신규 경로 구현 전 |
 | 1차 성공 과금·메시지 발송 이력·DynamoDB 정리 | `MSG-COMPLETE-MANAGER` | 목표 AP명. `TBL_CDR_HIST`·`TBL_MSG_HIST`는 신규 경로에 아직 미구현 |
 | 고객 결과 웹훅 발송 | `MSG-WEBHOOK-SENDER` | `WEBHOOK-SEND` 소비 목표. 현재 `delivery-result-worker`의 통지 책임을 분리해야 함 |
@@ -231,7 +231,7 @@ flowchart TD
 
 업체의 HTTP `200 OK`는 최종 수신 성공이 아니다. 업체는 이후 한 번의 웹훅 요청에 **1~100건의 메시지 결과**를 담아 보낼 수 있다. 배열의 각 항목은 발송 요청과 동일한 `clientMsgId`와 `status`를 담는다. `status=success`에는 `error`가 없고 `status=fail`에는 5자리 숫자 `code`와 `message`를 담은 `error`가 반드시 있다. 같은 요청 안에서 `clientMsgId`는 중복되지 않는다. `WEBHOOK-RECEIVE-API`는 업체 인증과 형식·1~100건·수신 크기를 확인하고 **묶음 전체를 `MSG_RESULT` 1레코드로 발행**한다. Kafka 저장 확인 후 접수 응답을 반환하며, 각 메시지의 성공·실패 판단과 DynamoDB 조회는 하지 않는다. Kafka 저장 실패·ack 불명확이면 실패 응답을 주고 업체가 같은 묶음을 재전송한다. Manager는 배치를 풀어 각 결과를 독립 처리하고, 모두 내구성 있게 처리된 후에만 Kafka offset을 완료한다. 한 항목에서 일시 장애가 나면 배치가 재전달되므로 이미 처리한 항목은 저장 상태로 멱등 처리한다. Kafka 배치 기록은 재전달 때 유지되지만 업체가 HTTP 요청 자체를 재전송하면 새 `traceId`가 붙으므로 `traceId`로 결과 중복을 판정하지 않는다.
 
-**Kafka 기록 단위는 웹훅 요청 1건, 업무 처리 단위는 배열 항목 1건**이다. `MSG-RESULT-MANAGER` 한 AP 안에서 항목을 제한된 병렬성으로 처리하며 100개를 차례로 모두 끝낼 필요는 없다. 항목별 DynamoDB 조건부 전이와 후속 Kafka 발행을 내구성 있게 마친 뒤 배치 offset을 완료한다. 추가 배치 분리 AP나 항목별 재발행 토픽은 현재 경로에 두지 않는다. 다른 배치가 같은 `clientMsgId`를 동시에 처리할 수 있으므로 Kafka 순서에 기대지 않는다. 영구적으로 처리 불가한 항목을 보존·격리하지 못하면 해당 배치가 계속 재시도되므로 이 경로와 100건 배치 부하 시험은 운영 전 필수다.
+**Kafka 기록 단위는 웹훅 요청 1건, 업무 처리 단위는 배열 항목 1건**이다. `MSG-RESULT-MANAGER` 한 AP에서 최대 100건을 메시지별 STEP `RESULT_INBOX`에 조건부 저장한다. 전 항목 보존이 끝나면 배치 offset을 완료하고, 업무 판단·후속 발행은 각 항목의 `PENDING` 상태와 인덱스로 복구한다. 현재 inbox 기록은 순차 처리이며 제한된 병렬 처리와 100건 부하 시험은 운영 전 남은 작업이다. 추가 배치 분리 AP나 항목별 재발행 토픽은 현재 경로에 두지 않는다. 다른 배치가 같은 `clientMsgId`를 동시에 처리할 수 있으므로 Kafka 순서에 기대지 않는다. 영구적으로 잘못된 항목의 격리 경로도 필요하다.
 
 현재 인입 API는 `POST /api/v1/message-webhooks/{skt|kt|lgu}`이며 통신사별 독립 Bearer 비밀값을 요구한다. 비밀값이 비어 있으면 해당 경로는 인증에 실패한다. 요청 본문은 결과 객체의 JSON 배열이고 최대 256 KiB까지 받는다. 이 크기는 현재 구현 제한이며 업체 규격과 실제 100건 payload를 확인한 뒤 조정할 수 있다. `202`는 Kafka 저장 확인만 뜻한다.
 
@@ -312,9 +312,9 @@ sequenceDiagram
 | 1차 실패이고 2차 비대상 | 최종 실패 저장 후 `MSG-RESULT-FINALIZED`와 고객 웹훅 대상의 `WEBHOOK-SEND` | `MSG-COMPLETE-MANAGER`는 이력만 저장하며 과금하지 않음 |
 | 중복·늦은 결과 | 새 후속 발행 없음 | 저장된 현재 판단 유지 |
 
-`MSG-COMPLETE-MANAGER`는 **결과를 다시 판단하지 않는다.** 이미 고정된 결과로 `TBL_MSG_HIST` 발송 이력을 저장하고, 1차 발송의 최종 성공이면 `TBL_CDR_HIST` 과금을 저장한 뒤 DynamoDB 데이터 삭제를 시도한다. 고객 결과 웹훅은 `MSG-RESULT-MANAGER`가 `WEBHOOK-SEND`로 직접 인계하고 `MSG-WEBHOOK-SENDER`가 발송한다. 웹훅 배치의 offset은 1~100개 항목 모두의 판단과 필요한 후속 발행이 내구성 있게 완료된 뒤에만 처리한다.
+`MSG-COMPLETE-MANAGER`는 **결과를 다시 판단하지 않는다.** 이미 고정된 결과로 `TBL_MSG_HIST` 발송 이력을 저장하고, 1차 발송의 최종 성공이면 `TBL_CDR_HIST` 과금을 저장한 뒤 DynamoDB 데이터 삭제를 시도한다. 고객 결과 웹훅은 `MSG-RESULT-MANAGER`가 `WEBHOOK-SEND`로 직접 인계하고 `MSG-WEBHOOK-SENDER`가 발송한다. 웹훅 배치의 offset은 1~100개 항목 모두가 STEP inbox에 내구성 있게 저장된 뒤 완료한다. 각 항목의 후속 업무 판단은 inbox 인덱스에서 이어받아야 한다.
 
-미결정 경계는 2차 TCP 전문의 상세 필드·응답 코드 매핑, 5초 무응답 때 실제 접수 후 늦게 올 수 있는 웹훅과 재발송의 경합, 영구적으로 잘못된 웹훅 배치 항목의 격리 방식, 지연 재발송 예약의 구체적인 발행 방식이다. 현재 구현은 공통 순수 판단·접수 계약까지 준비됐으며 신규 Manager의 소비·조건부 저장·후속 발행과 통신사별·TCP Sender는 아직 연결되지 않았다.
+미결정 경계는 2차 TCP 전문의 상세 필드·응답 코드 매핑, 5초 무응답 때 실제 접수 후 늦게 올 수 있는 웹훅과 재발송의 경합, 영구적으로 잘못된 웹훅 배치 항목의 격리 방식이다. 신규 Manager의 inbox 소비·HTTP 재시도 승인과 통신사별 Sender는 연결됐으며, inbox에 남은 웹훅·발송 전 실패·1차 소진의 업무 판단·후속 발행과 TCP Sender는 아직 연결되지 않았다.
 
 ## 6. 웹훅 미수신과 1차 만료
 
@@ -425,7 +425,7 @@ flowchart LR
 | 명시적 비-200 기록 뒤 `MSG_RESULT` 발행 실패·ack 불명확 | DynamoDB의 발행 대기 결과를 동일 `resultId`·고정 `clientMsgId` key로 재발행. 업체 HTTP 호출을 반복하지 않고 Manager가 중복 결과를 제거 |
 | `MSG_RESULT` 소비 후 Manager 판단 저장·후속 Kafka 발행 사이 종료 | DynamoDB에 고정한 판단·명령을 같은 ID로 재발행. 먼저 저장되지 않았다면 원본 결과를 재처리 |
 | 웹훅 배치 1레코드의 Kafka 저장 실패·ack 불명확 | `WEBHOOK-RECEIVE-API`가 실패 응답을 반환하면 업체가 같은 묶음을 재전송. 두 레코드가 모두 저장될 수도 있으므로 Manager가 항목별 저장 상태로 멱등 처리 |
-| 한 웹훅 묶음 중 일부 결과만 처리한 뒤 Manager 종료 | 같은 배치 레코드가 재전달된다. 항목별 DynamoDB 조건부 상태로 완료 항목을 멱등 통과하고 남은 항목을 처리한 뒤 offset 완료 |
+| 한 웹훅 묶음 중 일부 항목만 inbox에 저장한 뒤 Manager 종료 | 같은 배치 레코드가 재전달된다. 동일 payload가 이미 저장된 항목은 멱등 통과하고 나머지를 보존한 뒤 offset 완료. 후속 판단은 pending 인덱스에서 재개 |
 | Redis deadline 일정 유실 | DynamoDB 복구 인덱스로 만료 후보 재발견. Redis 비어 있음 여부에만 의존하지 않음 |
 | 최종 DDB 저장 뒤 `MSG-RESULT-FINALIZED` 발행 실패 | DDB의 불변 최종 결과로 같은 최종 결과 레코드 재인계 |
 | 최종 DDB 저장 뒤 `WEBHOOK-SEND` 발행 실패 | `MSG-RESULT-FINALIZED` 발행 성공과 무관하게 같은 최종 결과 ID로 고객 웹훅 인계만 재발행. Sender가 중복 제거 |
@@ -442,11 +442,11 @@ HTTP `200 OK` 경로는 Kafka를 발행하지 않는다. **명시적 비-200 실
 ## 구현 전에 확정할 인터페이스
 
 - `MSG_RESULT`의 웹훅 전문: 요청 추적용 `traceId`와 1~100개 결과를 묶은 1레코드. 업체 원문은 `{clientMsgId, status}` 또는 `{clientMsgId, status, error: {code, message}}` 객체의 배열이며 `clientMsgId`는 접수·발송·웹훅에서 동일하다. `status` 값은 소문자 `success`·`fail`이고, `success`에는 `error`가 없으며 `fail`에는 5자리 숫자 `error.code`가 필수다. `attemptId`·회차·발송 시각은 내부 저장 원본에서 보강하되 웹훅에는 시도 식별자가 없어 이전 회차의 늦은 중복을 완전히 구분할 수 없다.
-- 웹훅 API 경량화에 맞춰 **요청 1건당 Kafka 1레코드**를 사용한다. Manager는 1~100개 항목을 제한된 병렬성으로 처리하고 전부 완료된 뒤 offset을 완료한다. 배치에 서로 다른 `clientMsgId`가 섞이므로 파티션 순서에 의존하지 않고 항목별 DynamoDB 조건부 전이를 사용한다. 한 항목의 일시 장애는 배치 전체 재처리를 일으킨다. 영구적으로 잘못된 항목의 격리 정책과 Kafka 메시지·HTTP 요청 최대 바이트는 구현 전에 정한다.
+- 웹훅 API 경량화에 맞춰 **요청 1건당 Kafka 1레코드**를 사용한다. Manager는 1~100개 항목을 STEP inbox에 모두 보존한 뒤 offset을 완료한다. 보존 중 일시 장애가 나면 배치 전체를 재전달받고 이미 쓴 항목은 동일 payload로 멱등 확인한다. 업무 판단은 각 항목의 pending 인덱스에서 이어받는다. 현재 보존은 순차 처리이며 제한된 병렬성과 100건 부하 시험이 남았다. 영구적으로 잘못된 항목의 격리 정책과 Kafka 메시지·HTTP 요청 최대 바이트는 구현 전에 정한다.
 - 명시적 비-200 실패와 5초 무응답은 sender가 각각 `source=HTTP_RESPONSE`·`source=HTTP_TIMEOUT`으로 `MSG_RESULT`에 직접 발행한다. 1분 후 재발송은 Manager가 저장된 시도 상태에서 예약한다. HTTP `200 OK` 경로에서 Kafka 발행이 없다는 규칙은 유지한다. 2차 TCP 즉시 응답은 `source=TCP_RESPONSE`로 같은 토픽에 인계한다.
 - 웹훅이 Sender의 DynamoDB `200 OK` 기록보다 먼저 온 경우에도 웹훅이 해당 시도의 최종 결과라는 규칙을 지키는 조건부 갱신. 늦은 sender 기록은 메타데이터만 보충한다.
 - HTTP `200 OK` 뒤 웹훅 미수신 시 만료 판단을 깨우는 주체와 만료·늦은 결과의 경합 기준. 2차 전환 자체는 `secondarySendPayload` 존재 여부로 결정한다.
-- Manager는 접수 시 생성한 `clientMsgId`를 통신사 이동·같은 통신사 재시도에도 그대로 업체에 전달한다. 내부 `attemptId`·회차는 DynamoDB에 저장한다. 업체의 발송 중·성공 시 일정 시간 중복 차단과 실패 후 같은 ID 재사용은 확인된 계약으로 취급하되 정확한 보장 시간·기산 시점은 확인해야 한다. 공통 명령 타입은 바꿨지만 생산·소비 경로는 아직 없다.
+- Manager는 접수 시 생성한 `clientMsgId`를 통신사 이동·같은 통신사 재시도에도 그대로 업체에 전달한다. 내부 `attemptId`·회차는 DynamoDB에 저장한다. 업체의 발송 중·성공 시 일정 시간 중복 차단과 실패 후 같은 ID 재사용은 확인된 계약으로 취급하되 정확한 보장 시간·기산 시점은 확인해야 한다. HTTP 후속 명령의 생산·소비는 연결됐으며 웹훅·발송 전 실패의 후속 명령은 아직 남아 있다.
 - `66002`는 최초 발송 뒤 같은 통신사에 최대 3회 재시도(총 최대 4회)하며, 각 재발송은 실패 판단 1분 이후다. 소진 시 `40001`을 저장한다. HTTP 5초 무응답에도 같은 간격·횟수를 적용하고 소진 시 `40003`을 저장한다. 통신사별 공유 속도 제한, 신규 1차 deadline의 Redis 후보 등록 시점, 재시도 명령의 통신사별 라우팅·지연 예약 방식은 정해야 한다. 기존 단일 sender용 `message.http.retry.v1`을 그대로 신규 경로로 읽지 않는다.
 - 세 통신사 모두 `66001`이면 1차 실패 `40002`를 고정하고 2차 대상 여부를 확인한다. 확인된 통신사의 PostgreSQL 반영 여부는 별도 결정이다. 탐색 순서는 매핑 유무와 관계없이 SKT → KT → LGU+에서 이미 시도한 통신사를 제외한다.
 - 통신사 불일치의 업체별 원본 코드를 `66001`로 매핑하는 표, 중복·늦은 웹훅에 대한 단일 이동 판단, 다음 통신사 명령의 저장 원본·발행 주체.

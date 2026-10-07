@@ -9,6 +9,18 @@ spring:
     timeout-per-shutdown-phase: 30s
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    listener:
+      ack-mode: record
+      concurrency: ${MSG_RESULT_CONCURRENCY:3}
+    consumer:
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      key-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      properties:
+        "[spring.deserializer.key.delegate.class]": org.apache.kafka.common.serialization.StringDeserializer
+        "[spring.deserializer.value.delegate.class]": org.apache.kafka.common.serialization.StringDeserializer
+        "[allow.auto.create.topics]": false
     producer:
       acks: all
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
