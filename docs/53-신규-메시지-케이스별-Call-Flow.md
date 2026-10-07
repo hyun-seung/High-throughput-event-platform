@@ -1,6 +1,6 @@
 # 메시지 접수부터 최종 결과까지: 케이스별 Call Flow
 
-기준: 2026-10-07. **신규 `/api/v1/messages` 경로의 목표 설계**를 한곳에서 읽기 위한 문서다. 정상 흐름과 실패·복구 분기를 함께 그린다. 현재 구현은 API 접수·ORIGIN 저장·`message.received.v1` 발행, 공통 전문·통신사별 토픽, CDC 캐시 준비, PRE-SEND-MANAGER의 Kafka 소비·판단 고정·통신사별 HTTP 명령 발행과 발송 불가 결과 인계, 발송 시도별 Redis 선점 준비 코드, `WEBHOOK-RECEIVE-API`의 1~100건 단일 Kafka 발행, 1차 오류 코드의 순수 후속 판단까지다. 통신사별 sender와 `MSG-RESULT-MANAGER`의 결과 소비·판단은 아직 연결되지 않았다. 이관 전 `delivery.*` 및 `message.http.requested.v1` 구현·검증을 신규 경로의 완료로 읽지 않는다. 구현 상태는 [01 현재 상태](01-현재-구현-상태와-남은-작업.md), 결정 근거는 [ADR-026](adr/ADR-026-MESSAGE-RECEIVED와-통신사별-HTTP-발송-분리.md)·[ADR-027](adr/ADR-027-접수-API-Redis-TPS와-유형별-월-Quota.md)을 따른다.
+기준: 2026-10-07. **신규 `/api/v1/messages` 경로의 목표 설계**를 한곳에서 읽기 위한 문서다. 정상 흐름과 실패·복구 분기를 함께 그린다. 현재 구현은 API 접수·ORIGIN 저장·`message.received.v1` 발행, 공통 전문·통신사별 토픽, CDC 캐시 준비, PRE-SEND-MANAGER의 Kafka 소비·판단 고정·통신사별 HTTP 명령 발행과 발송 불가 결과 인계, 통신사별 sender의 Redis·STEP 선점과 HTTP 응답 기록·실패 인계, `WEBHOOK-RECEIVE-API`의 1~100건 단일 Kafka 발행, 1차 오류 코드의 순수 후속 판단까지다. 통신사별 sender의 명령 소비·HTTP 결과 인계까지 연결됐고, `MSG-RESULT-MANAGER`의 결과 소비·판단은 아직 연결되지 않았다. 이관 전 `delivery.*` 및 `message.http.requested.v1` 구현·검증을 신규 경로의 완료로 읽지 않는다. 구현 상태는 [01 현재 상태](01-현재-구현-상태와-남은-작업.md), 결정 근거는 [ADR-026](adr/ADR-026-MESSAGE-RECEIVED와-통신사별-HTTP-발송-분리.md)·[ADR-027](adr/ADR-027-접수-API-Redis-TPS와-유형별-월-Quota.md)을 따른다.
 
 ## 읽는 순서와 경계
 
@@ -29,7 +29,7 @@
 |---|---|---|
 | 고객 접수 | `MSG-RECEIVE-API` | `messaging-api`에 신규 접수 경로 구현, 기본 비활성화 |
 | 1차 발송 준비 | `PRE-SEND-MANAGER` | 참조 조회·명령 또는 발송 불가 결과를 ORIGIN에 고정하고 Kafka 인계 구현 |
-| 1차 HTTP 발송 | `MSG-SKT-SENDER`, `MSG-KT-SENDER`, `MSG-LGU-SENDER` | 공통 신규 모듈에 ORIGIN·STEP·Redis 발송 전 선점 경계 구현. 통신사별 소비·HTTP 호출·결과 기록은 연결 전 |
+| 1차 HTTP 발송 | `MSG-SKT-SENDER`, `MSG-KT-SENDER`, `MSG-LGU-SENDER` | 공통 `messaging-carrier-http-sender` 실행 JAR을 통신사별 URL·토픽·소비 그룹으로 분리. 명령 소비·Redis/STEP 선점·HTTP 호출·결과 기록과 실패 인계 구현 |
 | 웹훅 접수 | `WEBHOOK-RECEIVE-API` | 독립 `messaging-webhook-receive-api`에 인증·1~100건 검증·`MSG_RESULT` 단일 레코드 발행 구현. 기존 `receipt-api`는 이관 전 경로 |
 | 결과 판단 | `MSG-RESULT-MANAGER` | 신규 경로 구현 전 |
 | 2차 TCP 발송 | `MSG-TCP-SENDER` | 목표 AP명 확정, 신규 경로 구현 전 |
@@ -38,7 +38,17 @@
 
 `messaging-http-sender`는 이전 단일 sender 모듈이고, `messaging-publication-recovery-app`·`messaging-reference-cache`는 각각 최초 Kafka 발행 복구와 CDC 캐시 투영을 돕는 별도 AP다. 현재 `delivery-result-worker`는 최종 이력·고객 통지·정리를 한 모듈에서 수행한다. 신규 `MSG-RESULT-FINALIZED` 연결과 `MSG-COMPLETE-MANAGER`·`MSG-WEBHOOK-SENDER` 분리는 아직 구현 전이다.
 
-신규 `messaging-carrier-http-sender`는 아직 실행 AP가 아닌 발송 전 저장 경계다. 각 명령이 ORIGIN에 고정된 원문과 같을 때만 STEP을 `PENDING`으로 예약하고, Redis의 통신사·시도·회차 키를 선점한 실행만 STEP을 `SENDING`으로 전이한다. Redis 키가 유실돼도 이미 `SENDING`인 호출은 자동 재발송하지 않는다. `SENDING` 이후 종료·무응답의 복구, Redis 선점 TTL, 업체 URL·HTTP 경로 및 비-200 응답 본문 규격을 확정한 뒤 실제 호출·결과 기록·토픽 소비를 연결한다.
+신규 `messaging-carrier-http-sender`는 같은 JAR을 통신사별 Pod에서 실행한다. `MSG_HTTP_CARRIER`·`MSG_HTTP_BASE_URL`·해당 명령 토픽·고유 소비 그룹을 기동 때 확인해 자기 통신사 명령만 소비한다. 각 명령이 ORIGIN에 고정된 원문과 같을 때만 STEP을 `PENDING`으로 예약하고, Redis의 통신사·시도·회차 키를 선점한 실행만 STEP을 `SENDING`으로 전이한다. Redis 키가 유실돼도 이미 `SENDING`인 호출은 자동 재발송하지 않는다. 공통 요청 경로의 현재 기본값은 `/api/v1/messages`이며 Pod 설정으로 바꿀 수 있다. 비-200 응답은 `{status: "4xx", error: {code: "4xxxx", message: "..."}}`의 문자열 코드를 원본으로 보존한다. 불일치·TPS 원본 코드 매핑은 Pod 기동 필수 설정이고, 그 외 6만 대역이 아닌 코드는 임시 공통 실패 `66999`로 정규화한다.
+
+| Pod의 `MSG_HTTP_CARRIER` | 소비 토픽 | 소비 그룹 | URL 설정 |
+|---|---|---|---|
+| `SKT` | `message.skt.http.send.v1` | `messaging-skt-http-sender` | SKT 전용 `MSG_HTTP_BASE_URL` |
+| `KT` | `message.kt.http.send.v1` | `messaging-kt-http-sender` | KT 전용 `MSG_HTTP_BASE_URL` |
+| `LGU` | `message.lgu.http.send.v1` | `messaging-lgu-http-sender` | LGU+ 전용 `MSG_HTTP_BASE_URL` |
+
+로컬 실행 스크립트는 통신사 값으로 토픽·그룹을 자동 설정한다. 실제 업체의 두 원본 코드에 대한 `MSG_HTTP_NOT_OUR_CARRIER_CODES`·`MSG_HTTP_TPS_EXCEEDED_CODES`도 필수이며, 같은 컴퓨터에서 3개 인스턴스를 띄우려면 HTTP·관리 포트를 각각 지정한다.
+
+HTTP `200 OK`면 발송 시각·응답을 STEP에 기록하고 Kafka 결과 없이 종료한다. 비-200과 5초 무응답은 STEP에 관찰을 먼저 고정한 뒤 `MSG_RESULT`에 각각 `HTTP_RESPONSE`·`HTTP_TIMEOUT`으로 발행한다. Kafka ack가 불명확하면 같은 `resultId`를 재발행하고 업체를 다시 호출하지 않는다. `SENDING`에서 프로세스가 끝나 관찰이 없으면 30초 후 타임아웃으로 고정해 복구한다. 실제 업체 접수 여부가 불명확하므로 이후 1분 재발송과 늦은 웹훅의 경합은 결과 Manager가 판단해야 한다. Redis 선점 TTL의 현재 기본값은 30초이며, 업체의 약 2시간 ID 중복 차단 보장 시간과 혼동하지 않는다.
 
 ## 1. 1차 정상 성공
 

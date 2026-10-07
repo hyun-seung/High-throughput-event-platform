@@ -1,17 +1,12 @@
 server:
-  port: ${MESSAGING_PRE_SEND_PORT:8100}
+  port: ${MSG_HTTP_SENDER_PORT:8101}
   shutdown: graceful
 
 spring:
   application:
-    name: messaging-pre-send-manager
+    name: messaging-carrier-http-sender
   lifecycle:
     timeout-per-shutdown-phase: 30s
-  datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:5432/delivery}
-    username: ${DB_USERNAME:delivery}
-    password: ${DB_PASSWORD:delivery}
-    driver-class-name: org.postgresql.Driver
   data:
     redis:
       host: ${REDIS_HOST:localhost}
@@ -23,7 +18,7 @@ spring:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     listener:
       ack-mode: record
-      concurrency: ${MESSAGING_PRE_SEND_CONCURRENCY:3}
+      concurrency: ${MSG_HTTP_SENDER_CONCURRENCY:3}
     consumer:
       auto-offset-reset: earliest
       enable-auto-commit: false
@@ -32,7 +27,7 @@ spring:
       properties:
         "[spring.deserializer.key.delegate.class]": org.apache.kafka.common.serialization.StringDeserializer
         "[spring.deserializer.value.delegate.class]": org.springframework.kafka.support.serializer.JacksonJsonDeserializer
-        "[spring.json.value.default.type]": messaging.common.messages.MessageSubmission
+        "[spring.json.value.default.type]": messaging.common.messages.HttpSendCommand
         "[spring.json.trusted.packages]": messaging.common.messages
         "[allow.auto.create.topics]": false
     producer:
@@ -53,8 +48,19 @@ delivery:
     initialize-tables: false
 
 messaging:
-  pre-send:
-    primary-ttl: ${MESSAGING_PRIMARY_TTL:3h}
+  carrier:
+    sender:
+      carrier: ${MSG_HTTP_CARRIER:}
+      topic: ${MSG_HTTP_TOPIC:}
+      group-id: ${MSG_HTTP_GROUP_ID:}
+      base-url: ${MSG_HTTP_BASE_URL:}
+      request-path: ${MSG_HTTP_REQUEST_PATH:/api/v1/messages}
+      connect-timeout: ${MSG_HTTP_CONNECT_TIMEOUT:2s}
+      response-timeout: ${MSG_HTTP_RESPONSE_TIMEOUT:5s}
+      claim-ttl: ${MSG_HTTP_CLAIM_TTL:30s}
+      recovery-grace: ${MSG_HTTP_RECOVERY_GRACE:30s}
+      not-our-carrier-codes: ${MSG_HTTP_NOT_OUR_CARRIER_CODES:}
+      tps-exceeded-codes: ${MSG_HTTP_TPS_EXCEEDED_CODES:}
 
 management:
   endpoint:
@@ -64,7 +70,7 @@ management:
         add-additional-paths: true
   server:
     address: 127.0.0.1
-    port: ${MESSAGING_PRE_SEND_METRICS_PORT:19093}
+    port: ${MSG_HTTP_SENDER_METRICS_PORT:19091}
   endpoints:
     web:
       exposure:

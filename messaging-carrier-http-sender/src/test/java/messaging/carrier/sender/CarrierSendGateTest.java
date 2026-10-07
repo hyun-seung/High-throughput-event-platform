@@ -45,7 +45,7 @@ class CarrierSendGateTest {
         when(values.setIfAbsent(anyString(), eq("1"), eq(Duration.ofMinutes(10)))).thenReturn(false, true);
         when(attempts.begin(command, NOW)).thenReturn(true);
 
-        assertEquals(CarrierSendGate.Decision.WAIT, gate.claim(command));
+        assertEquals(CarrierSendGate.Decision.CLAIM_BUSY, gate.claim(command));
         assertEquals(CarrierSendGate.Decision.SEND, gate.claim(command));
         verify(attempts, times(1)).begin(command, NOW);
     }
@@ -53,13 +53,14 @@ class CarrierSendGateTest {
     @Test
     void aPreviouslyStartedCallCannotBeSentAgainAfterRedisLoss() {
         when(attempts.reserve(command, NOW)).thenReturn(CarrierHttpAttemptStore.State.SENDING);
-        assertEquals(CarrierSendGate.Decision.WAIT, gate.claim(command));
+        assertEquals(CarrierSendGate.Decision.IN_PROGRESS, gate.claim(command));
         verifyNoInteractions(redisTemplate);
     }
 
     @Test
     void expiredCommandDoesNotTouchStorage() {
         var expired = new HttpSendCommand(command.attemptId(), command.carrier(), 1, NOW, command.request());
+        when(attempts.state(expired)).thenReturn(CarrierHttpAttemptStore.State.INELIGIBLE);
         assertEquals(CarrierSendGate.Decision.INELIGIBLE, gate.claim(expired));
         verify(attempts).state(expired);
         verify(attempts, never()).reserve(any(), any());

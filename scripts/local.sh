@@ -51,8 +51,8 @@ case "${1:-help}" in
   run)
     module="${2:-}"
     case "$module" in
-      messaging-api|messaging-publication-recovery-app|messaging-reference-cache|messaging-webhook-receive-api|messaging-pre-send-manager|messaging-http-sender|delivery-ingress-worker|dispatch-worker|external-api-simulator|receipt-api|delivery-result-worker) ;;
-      *) echo 'Usage: bash scripts/local.sh run <messaging-api|messaging-publication-recovery-app|messaging-reference-cache|messaging-webhook-receive-api|messaging-pre-send-manager|messaging-http-sender|delivery-ingress-worker|dispatch-worker|external-api-simulator|receipt-api|delivery-result-worker>' >&2; exit 2 ;;
+      messaging-api|messaging-publication-recovery-app|messaging-reference-cache|messaging-webhook-receive-api|messaging-pre-send-manager|messaging-carrier-http-sender|messaging-http-sender|delivery-ingress-worker|dispatch-worker|external-api-simulator|receipt-api|delivery-result-worker) ;;
+      *) echo 'Usage: bash scripts/local.sh run <messaging-api|messaging-publication-recovery-app|messaging-reference-cache|messaging-webhook-receive-api|messaging-pre-send-manager|messaging-carrier-http-sender|messaging-http-sender|delivery-ingress-worker|dispatch-worker|external-api-simulator|receipt-api|delivery-result-worker>' >&2; exit 2 ;;
     esac
     export SPRING_PROFILES_ACTIVE=dev
     export KAFKA_BOOTSTRAP_SERVERS="localhost:${KAFKA_HOST_PORT:-9092}"
@@ -72,11 +72,21 @@ case "${1:-help}" in
       messaging-publication-recovery-app) export SERVER_PORT="${PUBLISHER_HTTP_PORT:-8096}" ;;
       messaging-reference-cache) export SERVER_PORT="${MESSAGING_REFERENCE_CACHE_PORT:-8098}" ;;
       messaging-pre-send-manager) export SERVER_PORT="${MESSAGING_PRE_SEND_PORT:-8100}" ;;
+      messaging-carrier-http-sender) export SERVER_PORT="${MSG_HTTP_SENDER_PORT:-8101}" ;;
       messaging-webhook-receive-api) export SERVER_PORT="${MESSAGE_WEBHOOK_PORT:-8099}" ;;
       messaging-http-sender) export SERVER_PORT="${MESSAGING_HTTP_SENDER_PORT:-8097}" ;;
     esac
     if [[ "$module" == messaging-api ]]; then
       : "${JWT_SECRET:?Copy .env.example to .env and set JWT_SECRET}"
+    fi
+    if [[ "$module" == messaging-carrier-http-sender ]]; then
+      : "${MSG_HTTP_CARRIER:?Set MSG_HTTP_CARRIER to SKT, KT or LGU}"
+      : "${MSG_HTTP_BASE_URL:?Set MSG_HTTP_BASE_URL for this carrier}"
+      : "${MSG_HTTP_NOT_OUR_CARRIER_CODES:?Set the provider codes for carrier mismatch}"
+      : "${MSG_HTTP_TPS_EXCEEDED_CODES:?Set the provider codes for TPS excess}"
+      carrier_lower=$(tr '[:upper:]' '[:lower:]' <<< "$MSG_HTTP_CARRIER")
+      export MSG_HTTP_TOPIC="message.${carrier_lower}.http.send.v1"
+      export MSG_HTTP_GROUP_ID="messaging-${carrier_lower}-http-sender"
     fi
     jar="$module/target/$module-1.0-SNAPSHOT.jar"
     [[ -f "$jar" ]] || { echo 'Build first: bash scripts/local.sh build' >&2; exit 1; }

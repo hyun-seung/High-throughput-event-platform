@@ -1,22 +1,26 @@
 package messaging.carrier.sender;
 
 import messaging.common.messages.HttpSendCommand;
+import messaging.common.messages.CarrierHttpResult;
 import messaging.common.messages.MessageOriginCodec;
 import messaging.common.messages.PreSendDispatch;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.services.dynamodb.model.ConditionCheck;
+import software.amazon.awssdk.services.dynamodb.model.ConditionalCheckFailedException;
 import software.amazon.awssdk.services.dynamodb.model.GetItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.Put;
 import software.amazon.awssdk.services.dynamodb.model.TransactWriteItem;
 import software.amazon.awssdk.services.dynamodb.model.TransactionCanceledException;
 import software.amazon.awssdk.services.dynamodb.model.Update;
+import software.amazon.awssdk.services.dynamodb.model.UpdateItemRequest;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 
 import static messaging.common.dynamodb.DynamoDbTableNames.ORIGIN;
 import static messaging.common.dynamodb.DynamoDbTableNames.STEP;
@@ -77,13 +81,14 @@ public class CarrierHttpAttemptStore {
                     originCheck(command),
                     TransactWriteItem.builder().update(Update.builder().tableName(STEP).key(key(command))
                             .conditionExpression("#status = :pending AND command = :command")
-                            .updateExpression("SET #status = :sending, started_at = :started")
+                            .updateExpression("SET #status = :sending, started_at = :started, started_at_ms = :started_ms")
                             .expressionAttributeNames(Map.of("#status", "status"))
                             .expressionAttributeValues(Map.of(
                                     ":pending", s(State.PENDING.name()),
                                     ":command", s(mapper.writeValueAsString(command)),
                                     ":sending", s(State.SENDING.name()),
-                                    ":started", s(now.toString()))).build()).build()));
+                                    ":started", s(now.toString()),
+                                    ":started_ms", AttributeValue.fromN(Long.toString(now.toEpochMilli())))).build()).build()));
             return true;
         } catch (TransactionCanceledException changed) {
             if (!conditional(changed)) throw changed;
@@ -96,6 +101,87 @@ public class CarrierHttpAttemptStore {
     public State state(HttpSendCommand command) {
         var item = read(STEP, key(command));
         return item.isEmpty() ? State.INELIGIBLE : verifiedState(command, item);
+    }
+
+    public Optional<CarrierHttpResult> observation(HttpSendCommand command) {
+        var item = read(STEP, key(command));
+        if (item.isEmpty()) return Optional.empty();
+        verifiedState(command, item);
+        return item.containsKey("http_observation")
+                ? Optional.of(mapper.readValue(item.get("http_observation").s(), CarrierHttpResult.class))
+                : Optional.empty();
+    }
+
+    public CarrierHttpResult record(HttpSendCommand command, CarrierHttpResult result) {
+        verifyResult(command, result);
+        String encoded = mapper.writeValueAsString(result);
+        try {
+            db.updateItem(UpdateItemRequest.builder().tableName(STEP).key(key(command))
+                    .conditionExpression("#status = :sending AND command = :command "
+                            + "AND attribute_not_exists(http_observation)")
+                    .updateExpression("SET #status = :observed, http_observation = :observation, "
+                            + "publish_state = :publication, updated_at = :now")
+                    .expressionAttributeNames(Map.of("#status", "status"))
+                    .expressionAttributeValues(Map.of(
+                            ":sending", s(State.SENDING.name()),
+                            ":command", s(mapper.writeValueAsString(command)),
+                            ":observed", s(State.OBSERVED.name()),
+                            ":observation", s(encoded),
+                            ":publication", s(result.needsPublication() ? "PENDING" : "NONE"),
+                            ":now", s(result.observedAt().toString()))).build());
+            return result;
+        } catch (ConditionalCheckFailedException changed) {
+            var existing = read(STEP, key(command));
+            if (encoded.equals(existing.getOrDefault("http_observation", s("")).s())) return result;
+            throw changed;
+        }
+    }
+
+    /** A crashed in-flight call becomes a timeout observation, never a second direct HTTP call. */
+    public Optional<CarrierHttpResult> recoverStale(HttpSendCommand command, Instant now, Instant cutoff) {
+        var item = read(STEP, key(command));
+        if (item.isEmpty()) return Optional.empty();
+        State state = verifiedState(command, item);
+        if (state == State.OBSERVED) return observation(command);
+        if (state != State.SENDING || !item.containsKey("started_at_ms")
+                || Long.parseLong(item.get("started_at_ms").n()) > cutoff.toEpochMilli()) {
+            return Optional.empty();
+        }
+        var timeout = new CarrierHttpResult(CarrierHttpResult.id(command), command.request().clientMsgId(),
+                command.attemptId(), command.carrier(), command.invocation(), "HTTP_TIMEOUT",
+                CarrierHttpResult.Status.TIMEOUT, null, null, null, null, null, now);
+        try {
+            return Optional.of(record(command, timeout));
+        } catch (ConditionalCheckFailedException competingObservation) {
+            return observation(command);
+        }
+    }
+
+    public void published(HttpSendCommand command, CarrierHttpResult result) {
+        verifyResult(command, result);
+        if (!result.needsPublication()) return;
+        String encoded = mapper.writeValueAsString(result);
+        try {
+            db.updateItem(UpdateItemRequest.builder().tableName(STEP).key(key(command))
+                    .conditionExpression("http_observation = :observation AND publish_state = :pending")
+                    .updateExpression("SET publish_state = :published")
+                    .expressionAttributeValues(Map.of(
+                            ":observation", s(encoded), ":pending", s("PENDING"),
+                            ":published", s("PUBLISHED"))).build());
+        } catch (ConditionalCheckFailedException changed) {
+            var existing = read(STEP, key(command));
+            if (!encoded.equals(existing.getOrDefault("http_observation", s("")).s())
+                    || !"PUBLISHED".equals(existing.getOrDefault("publish_state", s("")).s())) throw changed;
+        }
+    }
+
+    private static void verifyResult(HttpSendCommand command, CarrierHttpResult result) {
+        if (!CarrierHttpResult.id(command).equals(result.resultId())
+                || !command.request().clientMsgId().equals(result.clientMsgId())
+                || !command.attemptId().equals(result.attemptId())
+                || command.carrier() != result.carrier() || command.invocation() != result.invocation()) {
+            throw new IllegalArgumentException("Carrier observation does not match the command");
+        }
     }
 
     private TransactWriteItem originCheck(HttpSendCommand command) {
