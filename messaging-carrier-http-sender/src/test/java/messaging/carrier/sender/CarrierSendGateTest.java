@@ -58,20 +58,31 @@ class CarrierSendGateTest {
     }
 
     @Test
-    void expiredCommandDoesNotTouchStorage() {
+    void expiryThatAlreadyClosedTheMessageIsDecidedByTheAttemptStore() {
         var expired = new HttpSendCommand(command.attemptId(), command.carrier(), 1, NOW, command.request());
-        when(attempts.state(expired)).thenReturn(CarrierHttpAttemptStore.State.INELIGIBLE);
+        when(attempts.reserve(expired, NOW)).thenReturn(CarrierHttpAttemptStore.State.INELIGIBLE);
         assertEquals(CarrierSendGate.Decision.INELIGIBLE, gate.claim(expired));
-        verify(attempts).state(expired);
-        verify(attempts, never()).reserve(any(), any());
+        verify(attempts).reserve(expired, NOW);
         verifyNoInteractions(redisTemplate);
     }
 
     @Test
     void anObservedFailureRemainsPublishableAfterTheSendDeadline() {
         var expired = new HttpSendCommand(command.attemptId(), command.carrier(), 1, NOW, command.request());
-        when(attempts.state(expired)).thenReturn(CarrierHttpAttemptStore.State.OBSERVED);
+        when(attempts.reserve(expired, NOW)).thenReturn(CarrierHttpAttemptStore.State.OBSERVED);
         assertEquals(CarrierSendGate.Decision.OBSERVED, gate.claim(expired));
         verifyNoInteractions(redisTemplate);
+    }
+
+    @Test
+    void retryPastTheOriginalDeadlineMaySendWhileTheMessageIsActive() {
+        var retry = new HttpSendCommand(command.attemptId(), command.carrier(), 2, NOW, command.request());
+        when(attempts.reserve(retry, NOW)).thenReturn(CarrierHttpAttemptStore.State.PENDING);
+        when(redisTemplate.opsForValue()).thenReturn(values);
+        when(values.setIfAbsent(anyString(), eq("1"), eq(Duration.ofMinutes(10)))).thenReturn(true);
+        when(attempts.begin(retry, NOW)).thenReturn(true);
+
+        assertEquals(CarrierSendGate.Decision.SEND, gate.claim(retry));
+        verify(attempts).begin(retry, NOW);
     }
 }

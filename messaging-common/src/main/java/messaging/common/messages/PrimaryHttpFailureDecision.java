@@ -16,7 +16,7 @@ public final class PrimaryHttpFailureDecision {
     public record FailPrimary(int errorCode) implements Action { }
 
     /**
-     * The caller must check the persisted invocation, active stage and original deadline before
+     * The caller must check the persisted invocation and active stage before
      * applying this decision. A Kafka replay of one result must not create another invocation.
      */
     public static Action decide(int normalizedErrorCode, HttpCarrier currentCarrier, int invocation,

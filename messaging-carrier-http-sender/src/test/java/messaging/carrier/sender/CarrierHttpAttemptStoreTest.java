@@ -64,6 +64,21 @@ class CarrierHttpAttemptStoreTest {
     }
 
     @Test
+    void expiryThatAlreadyClosedTheOriginPreventsClaimingAnAttempt() {
+        var closed = new HashMap<>(MessageOriginCodec.encode(admission, mapper));
+        closed.put("pre_send_dispatch", AttributeValue.fromS(
+                mapper.writeValueAsString(new PreSendDispatch(command, null))));
+        closed.put("status", AttributeValue.fromS("EXPIRED"));
+        when(db.getItem(any(software.amazon.awssdk.services.dynamodb.model.GetItemRequest.class)))
+                .thenReturn(GetItemResponse.builder().item(closed).build());
+
+        assertEquals(CarrierHttpAttemptStore.State.INELIGIBLE,
+                store.reserve(command, NOW.plusSeconds(3600)));
+        assertFalse(store.begin(command, NOW.plusSeconds(3600)));
+        verify(db, never()).transactWriteItems(any(Consumer.class));
+    }
+
+    @Test
     @SuppressWarnings({"unchecked", "rawtypes"})
     void followupRequiresCurrentFrozenDecisionAndDueTime() {
         var first = new HttpSendCommand("attempt-skt", HttpCarrier.SKT, 1, command.deadlineAt(),

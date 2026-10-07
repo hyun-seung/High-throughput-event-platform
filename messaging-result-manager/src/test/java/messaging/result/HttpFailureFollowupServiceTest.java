@@ -167,15 +167,32 @@ class HttpFailureFollowupServiceTest {
     }
 
     @Test
-    void retryThatWouldMissTheFirstSendDeadlineIsNotFrozen() {
+    void retryAfterTheFirstSendDeadlineIsFrozenWhileTheMessageIsActive() {
         var soonExpired = new HttpSendCommand(first.attemptId(), first.carrier(), 1,
                 NOW.plusSeconds(30), first.request());
         var failure = failed(soonExpired, 66002);
         reads(origin(soonExpired), observation(soonExpired, failure));
         when(db.query(any(QueryRequest.class))).thenReturn(QueryResponse.builder()
                 .items(observation(soonExpired, failure)).build());
+        when(commands.freeze(eq(admission.clientMsgId()), isNull(), any(FollowupHttpCommand.class)))
+                .thenAnswer(call -> call.getArgument(2));
 
-        assertInstanceOf(HttpFailureFollowupService.Expired.class, service.process(failure));
+        var stored = assertInstanceOf(HttpFailureFollowupService.FollowupStored.class,
+                service.process(failure)).value();
+        assertEquals(NOW.plusSeconds(60), stored.notBefore());
+        assertEquals(2, stored.command().invocation());
+    }
+
+    @Test
+    void expiryThatAlreadyClosedTheMessagePreventsAnotherRetry() {
+        var expired = new HttpSendCommand(first.attemptId(), first.carrier(), 1,
+                NOW.minusSeconds(1), first.request());
+        var failure = failed(expired, 66002);
+        var closed = origin(expired);
+        closed.put("status", AttributeValue.fromS("EXPIRED"));
+        reads(closed, observation(expired, failure));
+
+        assertInstanceOf(HttpFailureFollowupService.Ignored.class, service.process(failure));
         verifyNoInteractions(commands);
     }
 

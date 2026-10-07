@@ -15,7 +15,7 @@ public record FollowupHttpCommand(String decisionId, HttpSendCommand command, In
         Objects.requireNonNull(decisionId);
         Objects.requireNonNull(command);
         Objects.requireNonNull(notBefore);
-        if (decisionId.isBlank() || notBefore.isAfter(command.deadlineAt())) {
+        if (decisionId.isBlank()) {
             throw new IllegalArgumentException("Invalid follow-up HTTP command authorization");
         }
     }

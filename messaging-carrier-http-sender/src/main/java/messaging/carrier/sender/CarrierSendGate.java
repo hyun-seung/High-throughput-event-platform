@@ -33,13 +33,6 @@ public class CarrierSendGate {
         if (command.carrier() != carrier) {
             throw new IllegalArgumentException("HTTP command addressed to another carrier pod");
         }
-        if (!clock.instant().isBefore(command.deadlineAt())) {
-            return switch (attempts.state(command)) {
-                case OBSERVED -> Decision.OBSERVED;
-                case SENDING -> Decision.IN_PROGRESS;
-                default -> Decision.INELIGIBLE;
-            };
-        }
         var state = attempts.reserve(command, clock.instant());
         if (state == CarrierHttpAttemptStore.State.INELIGIBLE) return Decision.INELIGIBLE;
         if (state == CarrierHttpAttemptStore.State.OBSERVED) return Decision.OBSERVED;

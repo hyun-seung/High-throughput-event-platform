@@ -14,7 +14,6 @@ import software.amazon.awssdk.services.dynamodb.model.QueryRequest;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.time.Clock;
-import java.time.Instant;
 import java.util.EnumSet;
 import java.util.Map;
 import java.util.Objects;
@@ -25,11 +24,10 @@ import static messaging.common.dynamodb.DynamoDbTableNames.STEP;
 
 /** Verifies the current HTTP observation and freezes its next command when one is allowed. */
 public class HttpFailureFollowupService {
-    public sealed interface Outcome permits FollowupStored, PrimaryFailurePending, Expired, Ignored { }
+    public sealed interface Outcome permits FollowupStored, PrimaryFailurePending, Ignored { }
     public record FollowupStored(FollowupHttpCommand value) implements Outcome { }
     /** The first-send failure still needs secondary/finalization processing. */
     public record PrimaryFailurePending(int errorCode) implements Outcome { }
-    public record Expired() implements Outcome { }
     public record Ignored() implements Outcome { }
 
     private final DynamoDbClient db;
@@ -64,7 +62,7 @@ public class HttpFailureFollowupService {
         if (!matches(result, current)) return new Ignored();
         verifyObserved(current, result);
 
-        Instant now = clock.instant();
+        var now = clock.instant();
         PrimaryHttpFailureDecision.Action action = result.status() == CarrierHttpResult.Status.TIMEOUT
                 ? PrimaryHttpFailureDecision.decideNoResponse(result.carrier(), result.invocation(), now)
                 : PrimaryHttpFailureDecision.decide(result.normalizedErrorCode(), result.carrier(),
@@ -73,9 +71,6 @@ public class HttpFailureFollowupService {
             return new PrimaryFailurePending(failure.errorCode());
         }
         var send = (PrimaryHttpFailureDecision.Send) action;
-        if (!now.isBefore(current.deadlineAt()) || !send.notBefore().isBefore(current.deadlineAt())) {
-            return new Expired();
-        }
         var next = new HttpSendCommand(HttpSendCommand.attemptId(result.clientMsgId(), send.carrier()),
                 send.carrier(), send.invocation(), current.deadlineAt(), current.request());
         var followup = new FollowupHttpCommand(result.resultId(), next, send.notBefore());

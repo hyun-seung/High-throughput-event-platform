@@ -92,14 +92,28 @@ class FollowupHttpDispatcherTest {
     }
 
     @Test
-    void expiredCommandRemainsVisibleForFailureResolution() {
+    void commandPastTheOriginalDeadlineStillPublishesWhileActive() throws Exception {
         reads(step(), origin());
+        when(kafka.send(anyString(), anyString(), any(HttpSendCommand.class)))
+                .thenReturn(CompletableFuture.completedFuture(null));
 
-        assertThrows(IllegalStateException.class, () -> dispatcher.dispatch(
+        dispatcher.dispatch(
                 FollowupHttpCommand.key(followup.command()),
-                followup.command().deadlineAt().toEpochMilli()));
+                followup.command().deadlineAt().toEpochMilli());
+        verify(kafka).send(MessageTopics.KT_HTTP_SEND, clientMsgId, followup.command());
+        verify(db).updateItem(any(UpdateItemRequest.class));
+    }
+
+    @Test
+    void expiryThatAlreadyClosedTheMessageDiscardsItsDueCommand() throws Exception {
+        var closed = origin();
+        closed.put("status", AttributeValue.fromS("EXPIRED"));
+        reads(step(), closed);
+
+        dispatcher.dispatch(FollowupHttpCommand.key(followup.command()),
+                followup.command().deadlineAt().toEpochMilli());
         verifyNoInteractions(kafka);
-        verify(db, never()).updateItem(any(UpdateItemRequest.class));
+        verify(db).updateItem(any(UpdateItemRequest.class));
     }
 
     private Map<String, AttributeValue> step() {

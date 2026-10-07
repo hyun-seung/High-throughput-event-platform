@@ -92,9 +92,6 @@ public class FollowupHttpDispatcher {
             markDone(key, stored, now);
             return;
         }
-        if (now >= followup.command().deadlineAt().toEpochMilli()) {
-            throw new IllegalStateException("Due follow-up command expired before publication: " + clientMsgId);
-        }
         try {
             kafka.send(MessageTopics.httpSend(followup.command().carrier()), clientMsgId, followup.command()).get();
         } catch (InterruptedException interrupted) {
