@@ -6,7 +6,7 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
 import java.time.Duration;
 
 @ConfigurationProperties("messaging.tcp.sender")
-public record TcpSenderProperties(@DefaultValue("false") boolean enabled, String host,
+public record TcpSenderProperties(@DefaultValue("true") boolean enabled, String host,
                                   @DefaultValue("18091") int port,
                                   @DefaultValue("2s") Duration connectTimeout,
                                   @DefaultValue("5s") Duration responseTimeout,

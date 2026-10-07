@@ -50,7 +50,7 @@ delivery:
 messaging:
   tcp:
     sender:
-      enabled: ${MSG_TCP_SENDER_ENABLED:false}
+      enabled: ${MSG_TCP_SENDER_ENABLED:true}
       host: ${MSG_TCP_PROVIDER_HOST:localhost}
       port: ${MSG_TCP_PROVIDER_PORT:18091}
       connect-timeout: ${MSG_TCP_CONNECT_TIMEOUT:2s}

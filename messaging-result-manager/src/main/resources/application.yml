@@ -50,7 +50,7 @@ messaging:
         poll-ms: ${MSG_RESULT_EXPIRY_BACKFILL_POLL_MS:1000}
         page-size: ${MSG_RESULT_EXPIRY_BACKFILL_PAGE_SIZE:100}
     outbox:
-      enabled: ${MSG_RESULT_OUTBOX_ENABLED:false}
+      enabled: ${MSG_RESULT_OUTBOX_ENABLED:true}
       initial-delay-ms: ${MSG_RESULT_OUTBOX_INITIAL_DELAY_MS:5000}
       poll-ms: ${MSG_RESULT_OUTBOX_POLL_MS:5000}
       page-size: ${MSG_RESULT_OUTBOX_PAGE_SIZE:100}

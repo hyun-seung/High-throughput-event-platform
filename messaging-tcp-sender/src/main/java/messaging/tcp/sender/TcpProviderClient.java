@@ -50,7 +50,7 @@ public class TcpProviderClient {
                 }
                 return result(command, TcpSendResult.Status.SUCCESS, null, reply.code());
             }
-            return result(command, TcpSendResult.Status.FAILED, 70001, reply.code());
+            return result(command, TcpSendResult.Status.FAILED, providerFailureCode(reply.code()), reply.code());
         } catch (TcpFrames.InvalidFrameException malformed) {
             return result(command, TcpSendResult.Status.INVALID_RESPONSE, 40005, null);
         } catch (IOException failure) {
@@ -62,6 +62,15 @@ public class TcpProviderClient {
 
     public TcpSendResult timeout(SecondarySendCommand command) {
         return result(command, TcpSendResult.Status.TIMEOUT, 40004, null);
+    }
+
+    private static int providerFailureCode(String code) {
+        if (code.length() == 5 && code.chars().allMatch(character -> character >= '0' && character <= '9')) {
+            int numericCode = Integer.parseInt(code);
+            if (numericCode >= 70000 && numericCode <= 79999) return numericCode;
+        }
+        // The local simulator still returns text codes until the provider wire contract is available.
+        return 70001;
     }
 
     private TcpSendResult result(SecondarySendCommand command, TcpSendResult.Status status,

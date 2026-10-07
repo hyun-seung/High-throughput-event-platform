@@ -1,6 +1,6 @@
 # 메시지 접수부터 최종 결과까지: 케이스별 Call Flow
 
-기준: 2026-10-07. **신규 `/api/v1/messages` 경로의 목표 설계**를 한곳에서 읽기 위한 문서다. 정상 흐름과 실패·복구 분기를 함께 그린다. 현재 구현은 API 접수·ORIGIN 저장·`message.received.v1` 발행, 공통 전문·통신사별 토픽, CDC 캐시 준비, PRE-SEND-MANAGER의 Kafka 소비·판단 고정·통신사별 HTTP 명령 발행과 발송 불가 결과 인계, 통신사별 sender의 Redis·STEP 선점과 HTTP 응답 기록·실패 인계, `WEBHOOK-RECEIVE-API`의 1~100건 단일 Kafka 발행까지다. `MSG-RESULT-MANAGER`는 혼합 `MSG_RESULT`를 소비해 항목별 STEP inbox에 보존하고 HTTP 실패·타임아웃의 후속 통신사·재시도 판단까지 연결했다. 웹훅 실패의 `66001` 이동·`66002` 재시도도 pending 인덱스의 재확인 경로에 연결했다. 웹훅 성공·발송 전 실패·HTTP/웹훅 재시도 소진은 ORIGIN의 1차 결정을 조건부 고정하고 STEP에 후속 인계 대기 항목을 남긴다. 최종 결과의 `MSG-RESULT-FINALIZED`와 2차의 `message.tcp.requested.v1` 발행기는 구현했다. TCP Sender의 임시 규격 송신과 `TCP_RESPONSE`의 최종 판단·완료/고객 웹훅 인계도 구현했다. 실제 업체 TCP 규격 검증 전이므로 결과 outbox와 TCP 소비는 기본 비활성이다. 고객 대상 `WEBHOOK-SEND` 인계와 1차 만료 처리는 구현됐다. 이관 전 `delivery.*` 구현·검증을 신규 경로의 완료로 읽지 않는다. 구현 상태는 [01 현재 상태](01-현재-구현-상태와-남은-작업.md), 결정 근거는 [ADR-026](adr/ADR-026-MESSAGE-RECEIVED와-통신사별-HTTP-발송-분리.md)·[ADR-027](adr/ADR-027-접수-API-Redis-TPS와-유형별-월-Quota.md)을 따른다.
+기준: 2026-10-07. **신규 `/api/v1/messages` 경로의 목표 설계**를 한곳에서 읽기 위한 문서다. 정상 흐름과 실패·복구 분기를 함께 그린다. 현재 구현은 API 접수·ORIGIN 저장·`message.received.v1` 발행, 공통 전문·통신사별 토픽, CDC 캐시 준비, PRE-SEND-MANAGER의 Kafka 소비·판단 고정·통신사별 HTTP 명령 발행과 발송 불가 결과 인계, 통신사별 sender의 Redis·STEP 선점과 HTTP 응답 기록·실패 인계, `WEBHOOK-RECEIVE-API`의 1~100건 단일 Kafka 발행까지다. `MSG-RESULT-MANAGER`는 혼합 `MSG_RESULT`를 소비해 항목별 STEP inbox에 보존하고 HTTP 실패·타임아웃의 후속 통신사·재시도 판단까지 연결했다. 웹훅 실패의 `66001` 이동·`66002` 재시도도 pending 인덱스의 재확인 경로에 연결했다. 웹훅 성공·발송 전 실패·HTTP/웹훅 재시도 소진은 ORIGIN의 1차 결정을 조건부 고정하고 STEP에 후속 인계 대기 항목을 남긴다. 최종 결과의 `MSG-RESULT-FINALIZED`와 2차의 `message.tcp.requested.v1` 발행기는 구현했다. TCP Sender의 임시 규격 송신과 `TCP_RESPONSE`의 최종 판단·완료/고객 웹훅 인계도 구현했다. 결과 outbox와 TCP Sender 소비는 기본 활성이다. 실제 업체 연동 전 TCP 규격 검증이 필요하다. 고객 대상 `WEBHOOK-SEND` 인계와 1차 만료 처리는 구현됐다. 이관 전 `delivery.*` 구현·검증을 신규 경로의 완료로 읽지 않는다. 구현 상태는 [01 현재 상태](01-현재-구현-상태와-남은-작업.md), 결정 근거는 [ADR-026](adr/ADR-026-MESSAGE-RECEIVED와-통신사별-HTTP-발송-분리.md)·[ADR-027](adr/ADR-027-접수-API-Redis-TPS와-유형별-월-Quota.md)을 따른다.
 
 ## 읽는 순서와 경계
 
@@ -31,8 +31,8 @@
 | 1차 발송 준비 | `PRE-SEND-MANAGER` | 참조 조회·명령 또는 발송 불가 결과를 ORIGIN에 고정하고 Kafka 인계 구현 |
 | 1차 HTTP 발송 | `MSG-SKT-SENDER`, `MSG-KT-SENDER`, `MSG-LGU-SENDER` | 공통 `messaging-carrier-http-sender` 실행 JAR을 통신사별 URL·토픽·소비 그룹으로 분리. 명령 소비·Redis/STEP 선점·HTTP 호출·결과 기록과 실패 인계 구현 |
 | 웹훅 접수 | `WEBHOOK-RECEIVE-API` | 독립 `messaging-webhook-receive-api`에 인증·1~100건 검증·`MSG_RESULT` 단일 레코드 발행 구현. 기존 `receipt-api`는 이관 전 경로 |
-| 결과 판단 | `MSG-RESULT-MANAGER` | 혼합 `MSG_RESULT` 소비·source/key 검사·메시지별 STEP inbox 보존·HTTP 실패의 후속 발송 판단 연결. 웹훅 실패의 통신사 이동·동일 통신사 재시도 연결. 웹훅 성공·발송 전 실패·1차 소진의 ORIGIN 결정 고정. 최종/2차 토픽 발행기는 준비됐으나 소비 AP 준비 전까지 기본 비활성 |
-| 2차 TCP 발송 | `MSG-TCP-SENDER` | 임시 TCP 규격 발송·결과 보존·MSG_RESULT 인계 구현, 기본 비활성 |
+| 결과 판단 | `MSG-RESULT-MANAGER` | 혼합 `MSG_RESULT` 소비·source/key 검사·메시지별 STEP inbox 보존·HTTP 실패의 후속 발송 판단 연결. 웹훅 실패의 통신사 이동·동일 통신사 재시도 연결. 웹훅 성공·발송 전 실패·1차 소진의 ORIGIN 결정 고정. 최종/2차 토픽 발행 기본 활성 |
+| 2차 TCP 발송 | `MSG-TCP-SENDER` | 임시 TCP 규격 발송·결과 보존·MSG_RESULT 인계 구현, 기본 활성 |
 | 1차 성공 과금·메시지 발송 이력·DynamoDB 정리 | `MSG-COMPLETE-MANAGER` | 독립 `messaging-complete-manager`가 `MSG-RESULT-FINALIZED`의 1차 최종 결과를 SQL 이력·과금 대상 기록으로 원자 저장. 소비 기본 비활성, 금액 산정은 하지 않으며 DynamoDB 정리는 후속 작업 |
 | 고객 결과 웹훅 발송 | `MSG-WEBHOOK-SENDER` | `WEBHOOK-SEND` 소비 목표. 현재 `delivery-result-worker`의 통지 책임을 분리해야 함 |
 
@@ -288,7 +288,7 @@ sequenceDiagram
 
 ### 5.1 MSG-RESULT-MANAGER의 처리 경계와 후속 연결
 
-`MSG-RESULT-MANAGER`는 **발송 결과를 메시지별 다음 상태와 다음 명령으로 바꾸는 AP**다. 입력은 `WEBHOOK-RECEIVE-API`가 `MSG_RESULT`에 넣은 1~100건 웹훅 배치, 통신사별 sender가 직접 넣은 명시적 비-200·5초 무응답 단건, `MSG-TCP-SENDER`가 넣은 TCP 즉시 응답 단건이다. HTTP `200 OK`만 받은 시점에는 Manager 입력이 없다. 결과가 오지 않은 실행은 별도 만료 판단 작업이 DynamoDB 기준으로 찾아 Manager와 같은 조건부 판단 경계로 인계한다. TCP 응답은 Manager가 송신 관찰과 대조해 2차 최종 판단을 고정하고 `MSG-RESULT-FINALIZED`·`WEBHOOK-SEND`로 인계한다. 실제 업체 규격 검증 전까지 `MSG_TCP_SENDER_ENABLED=false`가 기본값이다.
+`MSG-RESULT-MANAGER`는 **발송 결과를 메시지별 다음 상태와 다음 명령으로 바꾸는 AP**다. 입력은 `WEBHOOK-RECEIVE-API`가 `MSG_RESULT`에 넣은 1~100건 웹훅 배치, 통신사별 sender가 직접 넣은 명시적 비-200·5초 무응답 단건, `MSG-TCP-SENDER`가 넣은 TCP 즉시 응답 단건이다. HTTP `200 OK`만 받은 시점에는 Manager 입력이 없다. 결과가 오지 않은 실행은 별도 만료 판단 작업이 DynamoDB 기준으로 찾아 Manager와 같은 조건부 판단 경계로 인계한다. TCP 응답은 Manager가 송신 관찰과 대조해 2차 최종 판단을 고정하고 `MSG-RESULT-FINALIZED`·`WEBHOOK-SEND`로 인계한다. TCP Sender 소비는 기본 활성이다. 실제 업체 연동 전 TCP 규격 검증이 필요하다.
 
 현재 입력 코덱은 타입 헤더 없는 JSON의 `source`로 `WEBHOOK` 묶음, `HTTP_RESPONSE`·`HTTP_TIMEOUT` 단건, `PRE_SEND` 발송 불가 단건을 구별하고 각 레코드의 Kafka key를 각각 `traceId` 또는 `clientMsgId`와 대조한다. HTTP `200 OK` 결과 레코드나 알 수 없는 출처는 거절한다. 아직 Kafka 소비자를 붙이지 않았으므로 이 코덱은 offset을 완료하거나 업무 결과를 확정하지 않는다. `TCP_RESPONSE`는 별도 `TcpSendResult`로 해석해 STEP inbox에 보존한다.
 
@@ -312,7 +312,7 @@ sequenceDiagram
 
 `MSG-COMPLETE-MANAGER`는 **결과를 다시 판단하지 않는다.** 이미 고정된 결과로 `TBL_MSG_HIST` 발송 이력을 저장하고, 1차 발송의 최종 성공이면 `TBL_CDR_HIST` 과금을 저장한 뒤 DynamoDB 데이터 삭제를 시도한다. 고객 결과 웹훅은 `MSG-RESULT-MANAGER`가 `WEBHOOK-SEND`로 직접 인계하고 `MSG-WEBHOOK-SENDER`가 발송한다. 웹훅 배치의 offset은 1~100개 항목 모두가 STEP inbox에 내구성 있게 저장된 뒤 완료한다. 각 항목의 후속 업무 판단은 inbox 인덱스에서 이어받아야 한다.
 
-미결정 경계는 2차 TCP 전문의 상세 필드·응답 코드 매핑, 5초 무응답 때 실제 접수 후 늦게 올 수 있는 웹훅과 재발송의 경합, 영구적으로 잘못된 웹훅 배치 항목의 격리 방식이다. 신규 Manager의 inbox 소비·HTTP 실패와 웹훅 실패의 통신사 이동·재시도 승인, 통신사별 Sender는 연결됐다. 웹훅 성공·발송 전 실패·1차 소진은 ORIGIN과 STEP의 1차 결정으로 고정된다. 해당 결정의 최종/2차 토픽 발행기는 저장된 불변 전문을 사용하며 기본 비활성이다. TCP Sender·고객 웹훅 실제 발송은 아직 연결되지 않았다. 완료 Manager의 1차 최종 결과 SQL 저장과 결과 Manager의 `WEBHOOK-SEND` 발행·복구 상태는 구현했다.
+미결정 경계는 2차 TCP 전문의 상세 필드·응답 코드 매핑, 5초 무응답 때 실제 접수 후 늦게 올 수 있는 웹훅과 재발송의 경합, 영구적으로 잘못된 웹훅 배치 항목의 격리 방식이다. 신규 Manager의 inbox 소비·HTTP 실패와 웹훅 실패의 통신사 이동·재시도 승인, 통신사별 Sender는 연결됐다. 웹훅 성공·발송 전 실패·1차 소진은 ORIGIN과 STEP의 1차 결정으로 고정된다. 해당 결정의 최종/2차 토픽 발행기는 저장된 불변 전문을 사용하며 기본 활성이다. TCP Sender는 즉시 응답을 인계한다. 고객 웹훅 발송은 별도 AP에 연결됐으나 소비와 URL 설정은 별도로 활성화해야 한다. 완료 Manager의 1차 최종 결과 SQL 저장과 결과 Manager의 `WEBHOOK-SEND` 발행·복구 상태는 구현했다.
 
 ## 6. 웹훅 미수신과 1차 만료
 
@@ -338,7 +338,7 @@ Redis 일정이 유실돼도 DynamoDB 조회로 누락을 찾는다. 인증·형
 
 ## 7. 2차 TCP 발송
 
-2차 TCP는 **1차 실패가 확정되고 최초 요청에 `secondarySendPayload`가 있을 때** 선택한다. 전문이 없으면 1차 실패를 최종화하고 고객 결과 웹훅을 발행한다. `40001`(66002 소진), `40002`(세 통신사 불일치), `40003`(HTTP 무응답 소진), 그 밖의 6만 대역 실패에 같은 존재 여부 기준을 적용한다. 2차 명령은 현재 `message.tcp.requested.v1`에서 `MSG-TCP-SENDER`가 소비한다. Sender는 ORIGIN의 `SECONDARY_PENDING`과 명령을 대조하고 STEP에 시도를 예약한 다음 Redis에서 2차 시도 중복을 선점해 TCP로 발송한다. **업체가 같은 호출에서 거의 즉시 결과를 준다고 가정하고**, 받은 응답을 DynamoDB에 기록한 후 `MSG_RESULT`에 `source=TCP_RESPONSE`로 인계한다. Kafka ack 불명확 때는 저장된 결과만 다시 발행하며 업체 호출을 반복하지 않는다. 2차 업체 웹훅은 이 경로에 없다. 현재 TCP 전문은 기존 로컬 시뮬레이터의 4바이트 길이+JSON 형식을 재사용하는 임시 어댑터다. 실제 업체 규격 분석 전의 임시 매핑은 `RECEIVED`→성공, 거절→`70001`, 무응답→`40004`, 잘못된 응답→`40005`다. Manager는 TCP 응답을 2차 최종 성공·실패로 고정해 이력과 고객 웹훅에 인계한다. 실제 업체 규격 검증 전까지 Sender 소비는 비활성으로 둔다.
+2차 TCP는 **1차 실패가 확정되고 최초 요청에 `secondarySendPayload`가 있을 때** 선택한다. 전문이 없으면 1차 실패를 최종화하고 고객 결과 웹훅을 발행한다. `40001`(66002 소진), `40002`(세 통신사 불일치), `40003`(HTTP 무응답 소진), 그 밖의 6만 대역 실패에 같은 존재 여부 기준을 적용한다. 2차 명령은 현재 `message.tcp.requested.v1`에서 `MSG-TCP-SENDER`가 소비한다. Sender는 ORIGIN의 `SECONDARY_PENDING`과 명령을 대조하고 STEP에 시도를 예약한 다음 Redis에서 2차 시도 중복을 선점해 TCP로 발송한다. **업체가 같은 호출에서 거의 즉시 결과를 준다고 가정하고**, 받은 응답을 DynamoDB에 기록한 후 `MSG_RESULT`에 `source=TCP_RESPONSE`로 인계한다. Kafka ack 불명확 때는 저장된 결과만 다시 발행하며 업체 호출을 반복하지 않는다. 2차 업체 웹훅은 이 경로에 없다. 현재 TCP 전문은 기존 로컬 시뮬레이터의 4바이트 길이+JSON 형식을 재사용하는 임시 어댑터다. 실제 업체 규격 분석 전의 임시 매핑은 `RECEIVED`→성공, 숫자 7만 대역 거절→그대로 보존, 문자열 거절→`70001`, 무응답→우리 코드 `40004`, 잘못된 응답→우리 코드 `40005`다. Manager는 TCP 응답을 2차 최종 성공·실패로 고정해 이력과 고객 웹훅에 인계한다. Sender 소비는 기본 활성이다. 실제 업체 연동 전 TCP 규격을 검증해야 한다.
 
 ```mermaid
 sequenceDiagram

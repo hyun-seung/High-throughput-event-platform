@@ -67,6 +67,25 @@ class TcpProviderClientTest {
     }
 
     @Test
+    void numericProviderFailureKeepsItsSevenTenThousandsCode() throws Exception {
+        var command = command();
+        try (var server = new ServerSocket(0)) {
+            var exchange = CompletableFuture.runAsync(() -> {
+                try (var socket = server.accept()) {
+                    var request = mapper.readValue(TcpFrames.read(socket.getInputStream()), TcpDeliveryRequest.class);
+                    TcpFrames.write(socket.getOutputStream(), mapper.writeValueAsBytes(new TcpDeliveryResponse(
+                            request.deliveryId(), request.attemptId(), false, NOW, "71234")));
+                } catch (Exception failure) { throw new RuntimeException(failure); }
+            });
+            var result = client(server.getLocalPort()).send(command);
+            exchange.get();
+            assertEquals(TcpSendResult.Status.FAILED, result.status());
+            assertEquals(71234, result.errorCode());
+            assertEquals("71234", result.providerCode());
+        }
+    }
+
+    @Test
     void mismatchedAttemptCannotBeAccepted() throws Exception {
         var command = command();
         try (var server = new ServerSocket(0)) {
