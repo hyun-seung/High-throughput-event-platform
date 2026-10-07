@@ -2,8 +2,8 @@ package messaging.tcp.sender;
 
 import messaging.common.messages.SecondarySendCommand;
 import messaging.common.messages.TcpSendResult;
-import messaging.common.tcp.TcpDeliveryRequest;
-import messaging.common.tcp.TcpDeliveryResponse;
+import messaging.common.tcp.MessagingTcpRequest;
+import messaging.common.tcp.MessagingTcpResponse;
 import messaging.common.tcp.TcpFrames;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.json.JsonMapper;
@@ -13,7 +13,7 @@ import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.time.Clock;
 
-/** Temporary length-prefixed JSON adapter until the second provider's wire specification is analyzed. */
+/** Provisional length-prefixed JSON adapter for the second provider. */
 @Component
 public class TcpProviderClient {
     private final TcpSenderProperties properties;
@@ -28,9 +28,8 @@ public class TcpProviderClient {
 
     public TcpSendResult send(SecondarySendCommand command) {
         var submission = command.submission();
-        var request = new TcpDeliveryRequest(submission.clientMsgId(), command.attemptId(),
-                submission.clientId(), submission.messageCategory().name(),
-                submission.secondarySendPayload(), submission.receivedAt(), 1);
+        var request = new MessagingTcpRequest(submission.clientMsgId(), submission.clientId(),
+                submission.messageCategory().name(), submission.secondarySendPayload(), clock.instant());
         byte[] body = mapper.writeValueAsBytes(request);
         if (body.length > TcpFrames.MAX_BYTES) return result(command, TcpSendResult.Status.INVALID_RESPONSE, 40005, null);
         try (var socket = new Socket()) {
@@ -38,19 +37,22 @@ public class TcpProviderClient {
                     Math.toIntExact(properties.connectTimeout().toMillis()));
             socket.setSoTimeout(Math.toIntExact(properties.responseTimeout().toMillis()));
             TcpFrames.write(socket.getOutputStream(), body);
-            var reply = mapper.readValue(TcpFrames.read(socket.getInputStream()), TcpDeliveryResponse.class);
-            if (reply == null || !submission.clientMsgId().equals(reply.deliveryId())
-                    || !command.attemptId().equals(reply.attemptId()) || reply.accepted() == null
-                    || reply.code() == null || reply.code().length() > 64 || reply.processedAt() == null) {
+            var reply = mapper.readValue(TcpFrames.read(socket.getInputStream()), MessagingTcpResponse.class);
+            if (reply == null || !submission.clientMsgId().equals(reply.clientMsgId())
+                    || reply.status() == null || reply.processedAt() == null) {
                 return result(command, TcpSendResult.Status.INVALID_RESPONSE, 40005, null);
             }
-            if (reply.accepted()) {
-                if (!"RECEIVED".equals(reply.code())) {
-                    return result(command, TcpSendResult.Status.INVALID_RESPONSE, 40005, reply.code());
-                }
-                return result(command, TcpSendResult.Status.SUCCESS, null, reply.code());
+            if ("success".equals(reply.status()) && reply.error() == null) {
+                return result(command, TcpSendResult.Status.SUCCESS, null, null);
             }
-            return result(command, TcpSendResult.Status.FAILED, providerFailureCode(reply.code()), reply.code());
+            if ("fail".equals(reply.status()) && reply.error() != null
+                    && reply.error().code() != null && reply.error().code() >= 70000
+                    && reply.error().code() <= 79999 && reply.error().message() != null
+                    && !reply.error().message().isBlank()) {
+                int code = reply.error().code();
+                return result(command, TcpSendResult.Status.FAILED, code, Integer.toString(code));
+            }
+            return result(command, TcpSendResult.Status.INVALID_RESPONSE, 40005, null);
         } catch (TcpFrames.InvalidFrameException malformed) {
             return result(command, TcpSendResult.Status.INVALID_RESPONSE, 40005, null);
         } catch (IOException failure) {
@@ -62,15 +64,6 @@ public class TcpProviderClient {
 
     public TcpSendResult timeout(SecondarySendCommand command) {
         return result(command, TcpSendResult.Status.TIMEOUT, 40004, null);
-    }
-
-    private static int providerFailureCode(String code) {
-        if (code.length() == 5 && code.chars().allMatch(character -> character >= '0' && character <= '9')) {
-            int numericCode = Integer.parseInt(code);
-            if (numericCode >= 70000 && numericCode <= 79999) return numericCode;
-        }
-        // The local simulator still returns text codes until the provider wire contract is available.
-        return 70001;
     }
 
     private TcpSendResult result(SecondarySendCommand command, TcpSendResult.Status status,

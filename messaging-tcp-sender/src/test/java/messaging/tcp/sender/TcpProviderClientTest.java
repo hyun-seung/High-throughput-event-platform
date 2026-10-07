@@ -5,8 +5,8 @@ import messaging.common.messages.MessageSubmission;
 import messaging.common.messages.PrimaryStageDecision;
 import messaging.common.messages.SecondarySendCommand;
 import messaging.common.messages.TcpSendResult;
-import messaging.common.tcp.TcpDeliveryRequest;
-import messaging.common.tcp.TcpDeliveryResponse;
+import messaging.common.tcp.MessagingTcpRequest;
+import messaging.common.tcp.MessagingTcpResponse;
 import messaging.common.tcp.TcpFrames;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.json.JsonMapper;
@@ -32,17 +32,18 @@ class TcpProviderClientTest {
         try (var server = new ServerSocket(0)) {
             var exchange = CompletableFuture.supplyAsync(() -> {
                 try (var socket = server.accept()) {
-                    var request = mapper.readValue(TcpFrames.read(socket.getInputStream()), TcpDeliveryRequest.class);
-                    TcpFrames.write(socket.getOutputStream(), mapper.writeValueAsBytes(new TcpDeliveryResponse(
-                            request.deliveryId(), request.attemptId(), true, NOW, "RECEIVED")));
+                    var request = mapper.readValue(TcpFrames.read(socket.getInputStream()), MessagingTcpRequest.class);
+                    TcpFrames.write(socket.getOutputStream(), mapper.writeValueAsBytes(new MessagingTcpResponse(
+                            request.clientMsgId(), "success", null, NOW)));
                     return request;
                 } catch (Exception failure) { throw new RuntimeException(failure); }
             });
             var result = client(server.getLocalPort()).send(command);
             assertEquals(TcpSendResult.Status.SUCCESS, result.status());
             assertNull(result.errorCode());
-            assertEquals(ID, exchange.get().deliveryId());
-            assertEquals(command.attemptId(), exchange.get().attemptId());
+            assertEquals(ID, exchange.get().clientMsgId());
+            assertEquals(command.submission().clientId(), exchange.get().clientId());
+            assertEquals(command.submission().messageCategory().name(), exchange.get().messageCategory());
             assertEquals(command.submission().secondarySendPayload(), exchange.get().payload());
         }
     }
@@ -53,16 +54,16 @@ class TcpProviderClientTest {
         try (var server = new ServerSocket(0)) {
             var exchange = CompletableFuture.runAsync(() -> {
                 try (var socket = server.accept()) {
-                    var request = mapper.readValue(TcpFrames.read(socket.getInputStream()), TcpDeliveryRequest.class);
-                    TcpFrames.write(socket.getOutputStream(), mapper.writeValueAsBytes(new TcpDeliveryResponse(
-                            request.deliveryId(), request.attemptId(), false, NOW, "REJECTED")));
+                    var request = mapper.readValue(TcpFrames.read(socket.getInputStream()), MessagingTcpRequest.class);
+                    TcpFrames.write(socket.getOutputStream(), mapper.writeValueAsBytes(new MessagingTcpResponse(
+                            request.clientMsgId(), "fail", new MessagingTcpResponse.Error(70001, "Rejected"), NOW)));
                 } catch (Exception failure) { throw new RuntimeException(failure); }
             });
             var result = client(server.getLocalPort()).send(command);
             exchange.get();
             assertEquals(TcpSendResult.Status.FAILED, result.status());
             assertEquals(70001, result.errorCode());
-            assertEquals("REJECTED", result.providerCode());
+            assertEquals("70001", result.providerCode());
         }
     }
 
@@ -72,9 +73,9 @@ class TcpProviderClientTest {
         try (var server = new ServerSocket(0)) {
             var exchange = CompletableFuture.runAsync(() -> {
                 try (var socket = server.accept()) {
-                    var request = mapper.readValue(TcpFrames.read(socket.getInputStream()), TcpDeliveryRequest.class);
-                    TcpFrames.write(socket.getOutputStream(), mapper.writeValueAsBytes(new TcpDeliveryResponse(
-                            request.deliveryId(), request.attemptId(), false, NOW, "71234")));
+                    var request = mapper.readValue(TcpFrames.read(socket.getInputStream()), MessagingTcpRequest.class);
+                    TcpFrames.write(socket.getOutputStream(), mapper.writeValueAsBytes(new MessagingTcpResponse(
+                            request.clientMsgId(), "fail", new MessagingTcpResponse.Error(71234, "Rejected"), NOW)));
                 } catch (Exception failure) { throw new RuntimeException(failure); }
             });
             var result = client(server.getLocalPort()).send(command);
@@ -86,14 +87,32 @@ class TcpProviderClientTest {
     }
 
     @Test
-    void mismatchedAttemptCannotBeAccepted() throws Exception {
+    void failureOutsideSecondProviderRangeIsInvalidResponse() throws Exception {
+        var command = command();
+        try (var server = new ServerSocket(0)) {
+            var exchange = CompletableFuture.runAsync(() -> {
+                try (var socket = server.accept()) {
+                    var request = mapper.readValue(TcpFrames.read(socket.getInputStream()), MessagingTcpRequest.class);
+                    TcpFrames.write(socket.getOutputStream(), mapper.writeValueAsBytes(new MessagingTcpResponse(
+                            request.clientMsgId(), "fail", new MessagingTcpResponse.Error(66001, "Wrong range"), NOW)));
+                } catch (Exception failure) { throw new RuntimeException(failure); }
+            });
+            var result = client(server.getLocalPort()).send(command);
+            exchange.get();
+            assertEquals(TcpSendResult.Status.INVALID_RESPONSE, result.status());
+            assertEquals(40005, result.errorCode());
+        }
+    }
+
+    @Test
+    void mismatchedClientMsgIdCannotBeAccepted() throws Exception {
         var command = command();
         try (var server = new ServerSocket(0)) {
             var exchange = CompletableFuture.runAsync(() -> {
                 try (var socket = server.accept()) {
                     TcpFrames.read(socket.getInputStream());
-                    TcpFrames.write(socket.getOutputStream(), mapper.writeValueAsBytes(new TcpDeliveryResponse(
-                            ID, "another-attempt", true, NOW, "RECEIVED")));
+                    TcpFrames.write(socket.getOutputStream(), mapper.writeValueAsBytes(new MessagingTcpResponse(
+                            "another-client-msg-id", "success", null, NOW)));
                 } catch (Exception failure) { throw new RuntimeException(failure); }
             });
             var result = client(server.getLocalPort()).send(command);

@@ -3,6 +3,8 @@ package external.api.simulator.tcp;
 import messaging.common.tcp.TcpDeliveryRequest;
 import messaging.common.tcp.TcpDeliveryResponse;
 import messaging.common.tcp.TcpFrames;
+import messaging.common.tcp.MessagingTcpRequest;
+import messaging.common.tcp.MessagingTcpResponse;
 import external.api.simulator.delivery.dto.ProviderDispatchRequest;
 import external.api.simulator.delivery.service.SimulatorLedger;
 import external.api.simulator.receipt.SimulatorReceiptSender;
@@ -16,6 +18,7 @@ import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.HashMap;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -90,7 +93,18 @@ public class TcpSimulatorServer implements SmartLifecycle, AutoCloseable {
             while (running && !socket.isClosed()) {
                 timeout = timeouts.schedule(() -> closeSocket(socket), properties.exchangeTimeoutMillis(), TimeUnit.MILLISECONDS);
                 socket.setSoTimeout(properties.exchangeTimeoutMillis());
-                var request = mapper.readValue(TcpFrames.read(socket.getInputStream()), TcpDeliveryRequest.class);
+                byte[] frame = TcpFrames.read(socket.getInputStream());
+                var fields = mapper.readValue(frame, Map.class);
+                if (fields.containsKey("clientMsgId")) {
+                    var request = mapper.readValue(frame, MessagingTcpRequest.class);
+                    var response = messagingResponse(request);
+                    if (response == null) return;
+                    TcpFrames.write(socket.getOutputStream(), mapper.writeValueAsBytes(response));
+                    if (!timeout.cancel(false)) return;
+                    timeout = null;
+                    continue;
+                }
+                var request = mapper.readValue(frame, TcpDeliveryRequest.class);
                 if (request == null || request.attemptId() == null || request.payload() == null) return;
                 Object mode = request.payload().getOrDefault("simulatorTcpMode", "normal");
                 if (!Set.of("normal", "close-after-effect", "wrong-attempt").contains(mode)) return;
@@ -122,6 +136,30 @@ public class TcpSimulatorServer implements SmartLifecycle, AutoCloseable {
             active.remove(socket);
             capacity.release();
         }
+    }
+
+    private MessagingTcpResponse messagingResponse(MessagingTcpRequest request) {
+        if (request == null || request.clientMsgId() == null || request.clientMsgId().isBlank()
+                || request.clientId() == null || request.messageCategory() == null
+                || request.payload() == null || request.requestedAt() == null) return null;
+        Object mode = request.payload().getOrDefault("simulatorTcpMode", "normal");
+        if (!Set.of("normal", "close-after-effect", "wrong-client-msg-id").contains(mode)) return null;
+        Object selectedCode = request.payload().get("simulatorTcpErrorCode");
+        if (selectedCode != null && (!(selectedCode instanceof Number number)
+                || number.intValue() < 70000 || number.intValue() > 79999
+                || number.doubleValue() != number.intValue())) return null;
+        var payload = new HashMap<>(request.payload());
+        payload.remove("forceFail");
+        payload.put("simulatorResultCode", selectedCode == null ? "ACCEPTED" : "REJECTED");
+        var providerRequest = new ProviderDispatchRequest(request.clientMsgId(), request.clientId(),
+                request.messageCategory(), payload, request.requestedAt(), 1);
+        var received = ledger.receive("tcp:" + request.clientMsgId(), providerRequest);
+        if (mode.equals("close-after-effect")) return null;
+        int errorCode = selectedCode == null ? 70001 : ((Number) selectedCode).intValue();
+        return new MessagingTcpResponse(mode.equals("wrong-client-msg-id") ? "unrelated" : request.clientMsgId(),
+                received.accepted() ? "success" : "fail",
+                received.accepted() ? null : new MessagingTcpResponse.Error(errorCode, "Simulated TCP rejection"),
+                received.processedAt());
     }
 
     public int port() { return server.getLocalPort(); }
