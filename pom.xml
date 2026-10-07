@@ -30,6 +30,7 @@
         <module>messaging-carrier-http-sender</module>
         <module>messaging-result-manager</module>
         <module>messaging-complete-manager</module>
+        <module>messaging-webhook-sender</module>
         <module>common-security</module>
         <module>messaging-common</module>
         <module>delivery-ingress-worker</module>

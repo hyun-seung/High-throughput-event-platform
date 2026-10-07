@@ -1,0 +1,63 @@
+server:
+  port: ${MSG_WEBHOOK_SENDER_PORT:8104}
+  shutdown: graceful
+
+spring:
+  application:
+    name: messaging-webhook-sender
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/delivery}
+    username: ${DB_USERNAME:delivery}
+    password: ${DB_PASSWORD:delivery}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      schema: ${MSG_WEBHOOK_DB_SCHEMA:messaging_webhook}
+      maximum-pool-size: 8
+      connection-timeout: 3000
+  flyway:
+    default-schema: ${MSG_WEBHOOK_DB_SCHEMA:messaging_webhook}
+    schemas: ${MSG_WEBHOOK_DB_SCHEMA:messaging_webhook}
+    clean-disabled: true
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    listener:
+      ack-mode: record
+      concurrency: ${MSG_WEBHOOK_CONSUMER_CONCURRENCY:3}
+    consumer:
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      key-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      properties:
+        "[spring.deserializer.key.delegate.class]": org.apache.kafka.common.serialization.StringDeserializer
+        "[spring.deserializer.value.delegate.class]": org.apache.kafka.common.serialization.StringDeserializer
+        "[allow.auto.create.topics]": false
+
+messaging:
+  webhook:
+    sender:
+      enabled: ${MSG_WEBHOOK_SENDER_ENABLED:false}
+      poll-ms: ${MSG_WEBHOOK_POLL_MS:100}
+      concurrency: ${MSG_WEBHOOK_CONCURRENCY:4}
+      batch-window: ${MSG_WEBHOOK_BATCH_WINDOW:100ms}
+      max-batch-bytes: ${MSG_WEBHOOK_MAX_BATCH_BYTES:262144}
+      http-timeout: ${MSG_WEBHOOK_HTTP_TIMEOUT:3s}
+      lease: ${MSG_WEBHOOK_LEASE:30s}
+      retry-delay: ${MSG_WEBHOOK_RETRY_DELAY:1s}
+      max-retry-delay: ${MSG_WEBHOOK_MAX_RETRY_DELAY:60s}
+
+management:
+  endpoint:
+    health:
+      probes:
+        enabled: true
+        add-additional-paths: true
+  server:
+    address: 127.0.0.1
+    port: ${MSG_WEBHOOK_SENDER_METRICS_PORT:19096}
+  endpoints:
+    web:
+      exposure:
+        include: health
