@@ -27,7 +27,8 @@ public class HttpFailureFollowupService {
     public sealed interface Outcome permits FollowupStored, PrimaryFailurePending, Ignored { }
     public record FollowupStored(FollowupHttpCommand value) implements Outcome { }
     /** The first-send failure still needs secondary/finalization processing. */
-    public record PrimaryFailurePending(int errorCode) implements Outcome { }
+    public record PrimaryFailurePending(int errorCode, String previousDecisionId,
+                                        HttpSendCommand command) implements Outcome { }
     public record Ignored() implements Outcome { }
 
     private final DynamoDbClient db;
@@ -68,7 +69,7 @@ public class HttpFailureFollowupService {
                 : PrimaryHttpFailureDecision.decide(result.normalizedErrorCode(), result.carrier(),
                 result.invocation(), attempted(result.clientMsgId()), now);
         if (action instanceof PrimaryHttpFailureDecision.FailPrimary failure) {
-            return new PrimaryFailurePending(failure.errorCode());
+            return new PrimaryFailurePending(failure.errorCode(), previousDecision, current);
         }
         var send = (PrimaryHttpFailureDecision.Send) action;
         var next = new HttpSendCommand(HttpSendCommand.attemptId(result.clientMsgId(), send.carrier()),

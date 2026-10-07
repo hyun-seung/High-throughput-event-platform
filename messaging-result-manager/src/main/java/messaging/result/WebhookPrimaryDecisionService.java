@@ -27,8 +27,9 @@ public class WebhookPrimaryDecisionService {
     public sealed interface Outcome permits FollowupStored, SuccessPending, PrimaryFailurePending,
             AwaitingHttp, Ignored { }
     public record FollowupStored(FollowupHttpCommand value) implements Outcome { }
-    public record SuccessPending() implements Outcome { }
-    public record PrimaryFailurePending(int errorCode) implements Outcome { }
+    public record SuccessPending(String previousDecisionId, HttpSendCommand command) implements Outcome { }
+    public record PrimaryFailurePending(int errorCode, String previousDecisionId,
+                                        HttpSendCommand command) implements Outcome { }
     public record AwaitingHttp() implements Outcome { }
     public record Ignored() implements Outcome { }
 
@@ -79,11 +80,11 @@ public class WebhookPrimaryDecisionService {
         var http = mapper.readValue(observation.s(), CarrierHttpResult.class);
         if (http.status() == CarrierHttpResult.Status.FAILED) return new Ignored();
 
-        if ("success".equals(webhook.result().status())) return new SuccessPending();
+        if ("success".equals(webhook.result().status())) return new SuccessPending(previousDecision, current);
         var action = PrimaryHttpFailureDecision.decide(webhook.result().error().code(),
                 current.carrier(), current.invocation(), attempted(item.clientMsgId()), clock.instant());
         if (action instanceof PrimaryHttpFailureDecision.FailPrimary failed) {
-            return new PrimaryFailurePending(failed.errorCode());
+            return new PrimaryFailurePending(failed.errorCode(), previousDecision, current);
         }
         var send = (PrimaryHttpFailureDecision.Send) action;
         var next = new HttpSendCommand(HttpSendCommand.attemptId(item.clientMsgId(), send.carrier()),

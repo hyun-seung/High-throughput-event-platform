@@ -30,6 +30,10 @@ public class ResultManagerConfiguration {
         return new WebhookPrimaryDecisionService(db, mapper, commands, clock);
     }
 
+    @Bean PrimaryStageDecisionStore primaryStageDecisionStore(DynamoDbClient db, JsonMapper mapper, Clock clock) {
+        return new PrimaryStageDecisionStore(db, mapper, clock);
+    }
+
     @Bean DefaultErrorHandler resultErrorHandler() {
         var handler = new DefaultErrorHandler(new FixedBackOff(1000L, FixedBackOff.UNLIMITED_ATTEMPTS));
         handler.setClassifications(Map.of(Exception.class, true), true);

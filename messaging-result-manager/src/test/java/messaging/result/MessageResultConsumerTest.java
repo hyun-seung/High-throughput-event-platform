@@ -76,7 +76,8 @@ class MessageResultConsumerTest {
         var failure = new CarrierHttpResult("result-2", ID, "attempt-1", HttpCarrier.KT, 4,
                 "HTTP_RESPONSE", CarrierHttpResult.Status.FAILED, 400, "4xx", "41001", 66002,
                 "tps", NOW);
-        when(http.process(failure)).thenReturn(new HttpFailureFollowupService.PrimaryFailurePending(40001));
+        when(http.process(failure)).thenReturn(new HttpFailureFollowupService.PrimaryFailurePending(
+                40001, null, mock(messaging.common.messages.HttpSendCommand.class)));
 
         consumer.receive(record(ID, failure));
         consumer.receive(record(ID, PreSendFailure.of(ID, PreSendFailure.Reason.CONTRACT_MISSING, NOW)));
