@@ -173,7 +173,7 @@ flowchart TD
 
 계약 원본과 번호 매핑 원본은 PostgreSQL이며 CDC가 Redis를 갱신한다. **계약 캐시 누락은 PostgreSQL 조회, 번호→통신사 캐시 누락은 SKT 첫 발송**으로 처리한다. 번호 매핑 누락 때문에 접수를 거절하거나 통신사 찾기를 위해 PostgreSQL을 인라인 조회하지 않는다. `messaging-pre-send-manager`에는 ORIGIN 원문과 접수 레코드가 일치할 때 첫 통신사를 조건부로 저장하고, 재전달에서는 그 값을 우선 재사용하는 코드가 있다. 이 저장은 경로 고정이며 발송 중복 선점은 아니다. 한 번 발행한 *통신사 시도*의 전문·`attemptId`는 Kafka 재전달 중 바꾸지 않는다. 현재 계약 테이블에 발송 전문 생성에 필요한 모든 정보가 있는 것도 아니므로 계약·설정 스키마는 추가 설계가 필요하다.
 
-`messaging-pre-send-manager`는 `message.received.v1`을 소비해 계약의 존재·활성 여부, 1차 기한, ORIGIN의 활성 여부를 확인한다. 정상 건의 `HttpSendCommand`는 같은 `clientMsgId`·통신사에 대해 결정적인 `attemptId`, 최초 인입 +3시간 기한과 원본 발송 payload를 사용한다. 명령 또는 발송 불가 사유(`CONTRACT_MISSING`·`CONTRACT_DISABLED`·`PRIMARY_EXPIRED`)를 ORIGIN의 `pre_send_dispatch`에 조건부로 고정한 후 해당 통신사 토픽 또는 `MSG_RESULT`에 발행한다. 발송 불가 레코드는 `source=PRE_SEND`, 고정 `clientMsgId`·`resultId`, 사유와 관찰 시각을 담는다. Kafka 저장 확인 뒤 접수 offset을 완료하며 발행 실패·ack 불명 때는 고정된 내용을 다시 발행한다. 이미 끝난 ORIGIN은 새 명령을 발행하지 않는다. 현 계약 테이블에 없는 발송 설정 필드는 규격 확정 뒤 추가해야 한다. 발송 불가 사유의 최종 고객 오류 코드·2차 발송 여부는 `MSG-RESULT-MANAGER` 구현 전에 확정해야 한다.
+`messaging-pre-send-manager`는 `message.received.v1`을 소비해 계약의 존재·활성 여부, 1차 기한, ORIGIN의 활성 여부를 확인한다. 정상 건의 `HttpSendCommand`는 같은 `clientMsgId`·통신사에 대해 결정적인 `attemptId`, 최초 인입 +3시간 기한과 원본 발송 payload를 사용한다. 명령 또는 발송 불가 사유(`CONTRACT_MISSING`·`CONTRACT_DISABLED`·`PRIMARY_EXPIRED`)를 ORIGIN의 `pre_send_dispatch`에 조건부로 고정한 후 해당 통신사 토픽 또는 `MSG_RESULT`에 발행한다. 발송 불가 레코드는 `source=PRE_SEND`, 고정 `clientMsgId`·`resultId`, 사유와 관찰 시각을 담는다. Kafka 저장 확인 뒤 접수 offset을 완료하며 발행 실패·ack 불명 때는 고정된 내용을 다시 발행한다. 이미 끝난 ORIGIN은 새 명령을 발행하지 않는다. 현 계약 테이블에 없는 발송 설정 필드는 규격 확정 뒤 추가해야 한다. 발송 불가 사유가 계약 누락·비활성·1차 기한 만료 중 무엇이든 ORIGIN에 `secondarySendPayload`가 있으면 2차 TCP로 인계하고, 없으면 최종 실패로 처리한다. 최종 고객 오류 코드는 별도로 배정해야 한다.
 
 현재 소비 오류는 무제한 재시도하여 offset을 건너뛰지 않는다. 영구 불량 레코드가 있으면 해당 파티션이 멈추므로 격리·DLT 및 운영 재처리 경로가 필요하다. Kafka 발행 ack가 불명확해 같은 명령이 중복될 수 있으므로 통신사별 Sender는 고정 `attemptId`·회차와 저장 상태를 기준으로 중복 발송을 막아야 한다.
 
@@ -223,7 +223,7 @@ flowchart TD
 | 명시적 비-200 | 응답 실패 코드·시도 정보를 DynamoDB에 기록하고 sender가 `MSG_RESULT`에 `source=HTTP_RESPONSE`로 직접 발행. 이 발송의 웹훅은 오지 않음 | 업체 원본 코드를 6만 대역 코드로 바꾸는 매핑표 |
 | 5초 무응답 | sender가 `source=HTTP_TIMEOUT`으로 `MSG_RESULT`에 발행하고 Manager가 1분 뒤 동일 통신사·동일 `clientMsgId` 재발송 예약. 최초 1회+재시도 최대 3회 소진 시 `40003` 1차 실패 | 업체가 실제 접수했을 가능성과 늦은 웹훅 경합 |
 
-비-200 실패 코드도 웹훅 실패 코드처럼 Manager가 분류한다. `66001`이면 다음 미시도 통신사, `66002`이면 실패 판단 1분 뒤 동일 통신사에 새 회차로 재발송한다. 각각 소진하면 `40002`·`40001`로 1차 실패를 저장한다. 그 외 6만 대역 실패는 즉시 1차 실패로 저장한다. 타임아웃은 업체 코드 없이 별도 `HTTP_TIMEOUT` 결과로 처리하며 1분 뒤 최대 3회 재발송하고 소진하면 `40003`으로 닫는다. 모든 1차 실패는 `secondarySendPayload`가 있으면 2차 TCP로 인계하고 없으면 최종 실패와 고객 웹훅으로 인계한다. `MSG_RESULT` 발행 실패·ack 불명은 DynamoDB의 동일 `resultId`·발행 대기 상태에서 복구하며 발행 실패만으로 업체를 다시 호출하지 않는다.
+비-200 실패 코드도 웹훅 실패 코드처럼 Manager가 분류한다. `66001`이면 다음 미시도 통신사, `66002`이면 실패 판단 1분 뒤 동일 통신사에 새 회차로 재발송한다. 각각 소진하면 `40002`·`40001`로 1차 실패를 저장한다. 그 외 6만 대역 실패는 즉시 1차 실패로 저장한다. 타임아웃은 업체 코드 없이 별도 `HTTP_TIMEOUT` 결과로 처리하며 1분 뒤 최대 3회 재발송하고 소진하면 `40003`으로 닫는다. 실패 시점에 계산한 1분 뒤 재발송 시각이 최초 인입 +3시간의 1차 기한 이상이면 그 재시도는 발송하지 않고 1차 만료 실패로 인계한다. 예를 들어 인입 후 2시간 59분 30초에 `66002`를 받았다면 3시간 30초의 재시도는 수행하지 않는다. 모든 1차 실패는 `secondarySendPayload`가 있으면 2차 TCP로 인계하고 없으면 최종 실패와 고객 웹훅으로 인계한다. `MSG_RESULT` 발행 실패·ack 불명은 DynamoDB의 동일 `resultId`·발행 대기 상태에서 복구하며 발행 실패만으로 업체를 다시 호출하지 않는다.
 
 공통 `PrimaryHttpFailureDecision`은 `66001`·`66002`·다른 6만 대역 실패와 5초 무응답에 대한 다음 통신사·회차·1차 실패 코드를 계산한다. 이는 순수 판단이며 활성 상태·기한·중복 결과를 확인하고 DynamoDB에 고정·Kafka에 발행하는 책임은 신규 Manager에 남아 있다.
 
