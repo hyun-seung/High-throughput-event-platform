@@ -4,6 +4,7 @@ import messaging.common.messages.HttpCarrier;
 import messaging.common.messages.CarrierHttpResult;
 import messaging.common.messages.HttpProviderRequest;
 import messaging.common.messages.HttpSendCommand;
+import messaging.common.messages.FollowupHttpCommand;
 import messaging.common.messages.MessageCategory;
 import messaging.common.messages.MessageOriginCodec;
 import messaging.common.messages.MessageSubmission;
@@ -14,11 +15,13 @@ import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.services.dynamodb.model.GetItemResponse;
 import software.amazon.awssdk.services.dynamodb.model.ConditionalCheckFailedException;
 import software.amazon.awssdk.services.dynamodb.model.UpdateItemRequest;
+import software.amazon.awssdk.services.dynamodb.model.TransactWriteItemsRequest;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -58,6 +61,60 @@ class CarrierHttpAttemptStoreTest {
                 .thenReturn(GetItemResponse.builder().item(Map.of()).build());
         assertEquals(CarrierHttpAttemptStore.State.INELIGIBLE, store.reserve(command, NOW));
         verify(db, never()).transactWriteItems(any(java.util.function.Consumer.class));
+    }
+
+    @Test
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    void followupRequiresCurrentFrozenDecisionAndDueTime() {
+        var first = new HttpSendCommand("attempt-skt", HttpCarrier.SKT, 1, command.deadlineAt(),
+                command.request());
+        var followup = new FollowupHttpCommand("result-1", command, NOW.plusSeconds(60));
+        var origin = new HashMap<>(MessageOriginCodec.encode(admission, mapper));
+        origin.put("pre_send_dispatch", AttributeValue.fromS(
+                mapper.writeValueAsString(new PreSendDispatch(first, null))));
+        origin.put("result_decision_id", AttributeValue.fromS(followup.decisionId()));
+        var authorization = new HashMap<>(FollowupHttpCommand.key(command));
+        authorization.put("decision_id", AttributeValue.fromS(followup.decisionId()));
+        authorization.put("authorization", AttributeValue.fromS(mapper.writeValueAsString(followup)));
+        when(db.getItem(any(software.amazon.awssdk.services.dynamodb.model.GetItemRequest.class)))
+                .thenAnswer(call -> {
+                    var request = call.getArgument(0,
+                            software.amazon.awssdk.services.dynamodb.model.GetItemRequest.class);
+                    return GetItemResponse.builder().item(request.tableName().equals(
+                            messaging.common.dynamodb.DynamoDbTableNames.ORIGIN) ? origin : authorization).build();
+                });
+
+        assertThrows(IllegalStateException.class, () -> store.reserve(command, NOW));
+        assertEquals(CarrierHttpAttemptStore.State.PENDING, store.reserve(command, NOW.plusSeconds(60)));
+        assertTrue(store.begin(command, NOW.plusSeconds(60)));
+
+        var captures = org.mockito.ArgumentCaptor.forClass(Consumer.class);
+        verify(db, times(2)).transactWriteItems(captures.capture());
+        for (Object captured : captures.getAllValues()) {
+            var builder = TransactWriteItemsRequest.builder();
+            ((Consumer<TransactWriteItemsRequest.Builder>) captured).accept(builder);
+            var writes = builder.build().transactItems();
+            assertEquals(3, writes.size());
+            assertTrue(writes.get(0).conditionCheck().conditionExpression().contains("result_decision_id = :decision"));
+            assertTrue(writes.get(1).conditionCheck().conditionExpression().contains("authorization = :authorization"));
+        }
+
+        origin.put("result_decision_id", AttributeValue.fromS("newer-result"));
+        assertEquals(CarrierHttpAttemptStore.State.INELIGIBLE, store.reserve(command, NOW.plusSeconds(60)));
+    }
+
+    @Test
+    void forgedFollowupCommandCannotReserveAnAttempt() {
+        var first = new HttpSendCommand("attempt-skt", HttpCarrier.SKT, 1, command.deadlineAt(),
+                command.request());
+        var origin = new HashMap<>(MessageOriginCodec.encode(admission, mapper));
+        origin.put("pre_send_dispatch", AttributeValue.fromS(
+                mapper.writeValueAsString(new PreSendDispatch(first, null))));
+        when(db.getItem(any(software.amazon.awssdk.services.dynamodb.model.GetItemRequest.class)))
+                .thenReturn(GetItemResponse.builder().item(origin).build(),
+                        GetItemResponse.builder().item(Map.of()).build());
+        assertThrows(IllegalStateException.class, () -> store.reserve(command, NOW));
+        verify(db, never()).transactWriteItems(any(Consumer.class));
     }
 
     @Test
