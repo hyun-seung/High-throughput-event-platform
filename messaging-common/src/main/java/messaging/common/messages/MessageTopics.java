@@ -10,6 +10,8 @@ public final class MessageTopics {
     public static final String MSG_RESULT = "MSG_RESULT";
     /** Final business result produced by MSG-RESULT-MANAGER. */
     public static final String MSG_RESULT_FINALIZED = "MSG-RESULT-FINALIZED";
+    /** Final customer notification command consumed by MSG-WEBHOOK-SENDER. */
+    public static final String WEBHOOK_SEND = "WEBHOOK-SEND";
     public static final String TCP_SEND = "message.tcp.requested.v1";
 
     public static String httpSend(HttpCarrier carrier) {

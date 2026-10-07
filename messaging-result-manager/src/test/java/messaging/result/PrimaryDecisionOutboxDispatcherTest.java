@@ -1,5 +1,6 @@
 package messaging.result;
 
+import messaging.common.messages.CustomerWebhookSendCommand;
 import messaging.common.messages.FinalizedMessageResult;
 import messaging.common.messages.MessageCategory;
 import messaging.common.messages.MessageResultInboxIndex;
@@ -39,20 +40,72 @@ class PrimaryDecisionOutboxDispatcherTest {
             kafka, Clock.fixed(NOW, ZoneOffset.UTC), 100);
 
     @Test
-    void successPublishesFinalizedResultBeforeRemovingTheDueIndex() throws Exception {
+    void successPublishesFinalizedAndCustomerWebhookWithSeparateDurableCheckpoints() throws Exception {
         var decision = decision(PrimaryStageDecision.Kind.SUCCESS, false);
         var submission = submission(false);
         var item = outbox(decision, submission);
         reads(item);
         when(kafka.send(eq(MessageTopics.MSG_RESULT_FINALIZED), eq(ID), any()))
                 .thenReturn(CompletableFuture.completedFuture(null));
+        when(kafka.send(eq(MessageTopics.WEBHOOK_SEND), eq(ID), any()))
+                .thenReturn(CompletableFuture.completedFuture(null));
 
         dispatcher.dispatch(key(item), NOW.toEpochMilli());
 
         verify(kafka).send(MessageTopics.MSG_RESULT_FINALIZED, ID,
                 new FinalizedMessageResult(decision, submission));
-        verify(db).updateItem(argThat((UpdateItemRequest request) ->
+        verify(kafka).send(MessageTopics.WEBHOOK_SEND, ID,
+                CustomerWebhookSendCommand.from(new FinalizedMessageResult(decision, submission)));
+        var updates = org.mockito.ArgumentCaptor.forClass(UpdateItemRequest.class);
+        verify(db, times(2)).updateItem(updates.capture());
+        assertTrue(updates.getAllValues().get(0).updateExpression().contains("finalized_published_at_ms"));
+        assertFalse(updates.getAllValues().get(0).updateExpression().contains("REMOVE #bucket"));
+        assertTrue(updates.getAllValues().get(1).updateExpression().contains("REMOVE #bucket, #due"));
+        var order = inOrder(kafka, db);
+        order.verify(kafka).send(MessageTopics.MSG_RESULT_FINALIZED, ID,
+                new FinalizedMessageResult(decision, submission));
+        order.verify(db).updateItem(argThat((UpdateItemRequest request) ->
+                request.updateExpression().contains("finalized_published_at_ms")));
+        order.verify(kafka).send(MessageTopics.WEBHOOK_SEND, ID,
+                CustomerWebhookSendCommand.from(new FinalizedMessageResult(decision, submission)));
+        order.verify(db).updateItem(argThat((UpdateItemRequest request) ->
                 request.updateExpression().contains("REMOVE #bucket, #due")));
+    }
+
+    @Test
+    void restartAfterFinalizedPublicationSendsOnlyCustomerWebhook() throws Exception {
+        var decision = decision(PrimaryStageDecision.Kind.FAILURE, false);
+        var submission = submission(false);
+        var item = outbox(decision, submission);
+        item.put("status", AttributeValue.fromS("FINALIZED_PUBLISHED"));
+        item.put("finalized_published_at_ms", AttributeValue.fromN(Long.toString(NOW.toEpochMilli())));
+        reads(item);
+        when(kafka.send(eq(MessageTopics.WEBHOOK_SEND), eq(ID), any()))
+                .thenReturn(CompletableFuture.completedFuture(null));
+
+        dispatcher.dispatch(key(item), NOW.toEpochMilli());
+
+        verify(kafka, never()).send(eq(MessageTopics.MSG_RESULT_FINALIZED), anyString(), any());
+        verify(kafka).send(MessageTopics.WEBHOOK_SEND, ID,
+                CustomerWebhookSendCommand.from(new FinalizedMessageResult(decision, submission)));
+        verify(db).updateItem(argThat((UpdateItemRequest request) ->
+                request.conditionExpression().contains("finalized_published_at_ms")));
+    }
+
+    @Test
+    void uncertainCustomerWebhookAcknowledgementKeepsTheIntermediateStateDue() {
+        var item = outbox(decision(PrimaryStageDecision.Kind.SUCCESS, false), submission(false));
+        reads(item);
+        when(kafka.send(eq(MessageTopics.MSG_RESULT_FINALIZED), eq(ID), any()))
+                .thenReturn(CompletableFuture.completedFuture(null));
+        when(kafka.send(eq(MessageTopics.WEBHOOK_SEND), eq(ID), any()))
+                .thenReturn(CompletableFuture.failedFuture(new IllegalStateException("Kafka unavailable")));
+
+        assertThrows(ExecutionException.class, () -> dispatcher.dispatch(key(item), NOW.toEpochMilli()));
+
+        verify(db).updateItem(argThat((UpdateItemRequest request) ->
+                request.updateExpression().contains("finalized_published_at_ms")));
+        verify(db, times(1)).updateItem(any(UpdateItemRequest.class));
     }
 
     @Test
@@ -68,6 +121,7 @@ class PrimaryDecisionOutboxDispatcherTest {
 
         verify(kafka).send(MessageTopics.TCP_SEND, ID,
                 SecondarySendCommand.from(decision, submission));
+        verify(kafka, never()).send(eq(MessageTopics.WEBHOOK_SEND), anyString(), any());
         verify(db).updateItem(any(UpdateItemRequest.class));
     }
 

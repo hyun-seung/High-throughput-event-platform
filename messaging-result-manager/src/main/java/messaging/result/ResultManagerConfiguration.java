@@ -47,6 +47,13 @@ public class ResultManagerConfiguration {
 
     @Bean
     @ConditionalOnProperty(prefix = "messaging.result.outbox", name = "enabled", havingValue = "true")
+    NewTopic customerWebhookTopic(@Value("${messaging.result.outbox.partitions:3}") int partitions,
+                                  @Value("${messaging.result.outbox.replicas:1}") int replicas) {
+        return outputTopic(MessageTopics.WEBHOOK_SEND, partitions, replicas);
+    }
+
+    @Bean
+    @ConditionalOnProperty(prefix = "messaging.result.outbox", name = "enabled", havingValue = "true")
     NewTopic secondarySendTopic(@Value("${messaging.result.outbox.partitions:3}") int partitions,
                                 @Value("${messaging.result.outbox.replicas:1}") int replicas) {
         return outputTopic(MessageTopics.TCP_SEND, partitions, replicas);

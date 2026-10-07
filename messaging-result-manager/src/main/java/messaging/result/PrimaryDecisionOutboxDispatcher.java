@@ -1,5 +1,6 @@
 package messaging.result;
 
+import messaging.common.messages.CustomerWebhookSendCommand;
 import messaging.common.messages.FinalizedMessageResult;
 import messaging.common.messages.MessageResultInboxIndex;
 import messaging.common.messages.MessageSubmission;
@@ -29,7 +30,7 @@ import java.util.concurrent.ExecutionException;
 
 import static messaging.common.dynamodb.DynamoDbTableNames.STEP;
 
-/** Publishes the frozen primary decision without depending on a live ORIGIN item. */
+/** Publishes the frozen primary decision and independently resumes final and customer handoffs. */
 @Component
 @ConditionalOnProperty(prefix = "messaging.result.outbox", name = "enabled", havingValue = "true")
 public class PrimaryDecisionOutboxDispatcher {
@@ -85,7 +86,8 @@ public class PrimaryDecisionOutboxDispatcher {
 
     void dispatch(Map<String, AttributeValue> key, long now) throws ExecutionException, InterruptedException {
         var item = read(key);
-        if (item == null || !"PENDING".equals(item.getOrDefault("status", s("")).s())
+        String status = item == null ? "" : item.getOrDefault("status", s("")).s();
+        if (!("PENDING".equals(status) || "FINALIZED_PUBLISHED".equals(status))
                 || !item.containsKey(MessageResultInboxIndex.BUCKET)
                 || Long.parseLong(item.get(MessageResultInboxIndex.DUE).n()) > now) return;
         var decision = mapper.readValue(item.get("result_payload").s(), PrimaryStageDecision.class);
@@ -95,28 +97,63 @@ public class PrimaryDecisionOutboxDispatcher {
                 || !decision.clientMsgId().equals(submission.clientMsgId())) {
             throw new IllegalStateException("Primary decision outbox identity mismatch");
         }
-        String topic = decision.secondaryRequired() ? MessageTopics.TCP_SEND : MessageTopics.MSG_RESULT_FINALIZED;
-        Object value = decision.secondaryRequired()
-                ? SecondarySendCommand.from(decision, submission)
-                : new FinalizedMessageResult(decision, submission);
+        if (decision.secondaryRequired()) {
+            if (!"PENDING".equals(status)) throw new IllegalStateException("Secondary outbox has final topic state");
+            send(MessageTopics.TCP_SEND, decision.clientMsgId(), SecondarySendCommand.from(decision, submission));
+            markPublished(key, item, now, "PENDING", false);
+            return;
+        }
+        var finalized = new FinalizedMessageResult(decision, submission);
+        if ("PENDING".equals(status)) {
+            send(MessageTopics.MSG_RESULT_FINALIZED, decision.clientMsgId(), finalized);
+            markFinalizedPublished(key, item, now);
+        }
+        send(MessageTopics.WEBHOOK_SEND, decision.clientMsgId(), CustomerWebhookSendCommand.from(finalized));
+        markPublished(key, item, now, "FINALIZED_PUBLISHED", true);
+    }
+
+    private void send(String topic, String clientMsgId, Object value)
+            throws ExecutionException, InterruptedException {
         try {
-            kafka.send(topic, decision.clientMsgId(), value).get();
+            kafka.send(topic, clientMsgId, value).get();
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
             throw interrupted;
         }
-        markPublished(key, item, now);
     }
 
-    private void markPublished(Map<String, AttributeValue> key, Map<String, AttributeValue> item, long now) {
+    private void markFinalizedPublished(Map<String, AttributeValue> key, Map<String, AttributeValue> item, long now) {
         try {
             db.updateItem(UpdateItemRequest.builder().tableName(STEP).key(key)
                     .conditionExpression("#status = :pending AND result_payload = :payload "
                             + "AND submission_payload = :submission AND #bucket = :bucket AND #due = :due")
+                    .updateExpression("SET #status = :next, finalized_published_at_ms = :now")
+                    .expressionAttributeNames(Map.of("#status", "status", "#bucket", MessageResultInboxIndex.BUCKET,
+                            "#due", MessageResultInboxIndex.DUE))
+                    .expressionAttributeValues(Map.of(":pending", s("PENDING"), ":next", s("FINALIZED_PUBLISHED"),
+                            ":payload", item.get("result_payload"), ":submission", item.get("submission_payload"),
+                            ":bucket", item.get(MessageResultInboxIndex.BUCKET),
+                            ":due", item.get(MessageResultInboxIndex.DUE),
+                            ":now", AttributeValue.fromN(Long.toString(now)))).build());
+        } catch (ConditionalCheckFailedException changed) {
+            var latest = read(key);
+            String status = latest == null ? "" : latest.getOrDefault("status", s("")).s();
+            if (!("FINALIZED_PUBLISHED".equals(status) || "PUBLISHED".equals(status))
+                    || !samePayload(item, latest)) throw changed;
+        }
+    }
+
+    private void markPublished(Map<String, AttributeValue> key, Map<String, AttributeValue> item,
+                               long now, String expectedStatus, boolean finalized) {
+        try {
+            db.updateItem(UpdateItemRequest.builder().tableName(STEP).key(key)
+                    .conditionExpression("#status = :expected AND result_payload = :payload "
+                            + "AND submission_payload = :submission AND #bucket = :bucket AND #due = :due"
+                            + (finalized ? " AND attribute_exists(finalized_published_at_ms)" : ""))
                     .updateExpression("SET #status = :published, published_at_ms = :now REMOVE #bucket, #due")
                     .expressionAttributeNames(Map.of("#status", "status", "#bucket", MessageResultInboxIndex.BUCKET,
                             "#due", MessageResultInboxIndex.DUE))
-                    .expressionAttributeValues(Map.of(":pending", s("PENDING"), ":published", s("PUBLISHED"),
+                    .expressionAttributeValues(Map.of(":expected", s(expectedStatus), ":published", s("PUBLISHED"),
                             ":payload", item.get("result_payload"), ":submission", item.get("submission_payload"),
                             ":bucket", item.get(MessageResultInboxIndex.BUCKET),
                             ":due", item.get(MessageResultInboxIndex.DUE),
@@ -124,9 +161,13 @@ public class PrimaryDecisionOutboxDispatcher {
         } catch (ConditionalCheckFailedException changed) {
             var latest = read(key);
             if (latest == null || !"PUBLISHED".equals(latest.getOrDefault("status", s("")).s())
-                    || !item.get("result_payload").equals(latest.get("result_payload"))
-                    || !item.get("submission_payload").equals(latest.get("submission_payload"))) throw changed;
+                    || !samePayload(item, latest)) throw changed;
         }
+    }
+
+    private static boolean samePayload(Map<String, AttributeValue> expected, Map<String, AttributeValue> current) {
+        return expected.get("result_payload").equals(current.get("result_payload"))
+                && expected.get("submission_payload").equals(current.get("submission_payload"));
     }
 
     private Map<String, AttributeValue> read(Map<String, AttributeValue> key) {
