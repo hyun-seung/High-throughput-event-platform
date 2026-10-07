@@ -31,7 +31,7 @@
 | 1차 발송 준비 | `PRE-SEND-MANAGER` | 참조 조회·명령 또는 발송 불가 결과를 ORIGIN에 고정하고 Kafka 인계 구현 |
 | 1차 HTTP 발송 | `MSG-SKT-SENDER`, `MSG-KT-SENDER`, `MSG-LGU-SENDER` | 공통 `messaging-carrier-http-sender` 실행 JAR을 통신사별 URL·토픽·소비 그룹으로 분리. 명령 소비·Redis/STEP 선점·HTTP 호출·결과 기록과 실패 인계 구현 |
 | 웹훅 접수 | `WEBHOOK-RECEIVE-API` | 독립 `messaging-webhook-receive-api`에 인증·1~100건 검증·`MSG_RESULT` 단일 레코드 발행 구현. 기존 `receipt-api`는 이관 전 경로 |
-| 결과 판단 | `MSG-RESULT-MANAGER` | 신규 경로 구현 전 |
+| 결과 판단 | `MSG-RESULT-MANAGER` | `messaging-result-manager`에 혼합 `MSG_RESULT` 전문의 `source`·Kafka key 검증 코드 준비. Kafka 소비·상태 판단·후속 발행은 구현 전 |
 | 2차 TCP 발송 | `MSG-TCP-SENDER` | 목표 AP명 확정, 신규 경로 구현 전 |
 | 1차 성공 과금·메시지 발송 이력·DynamoDB 정리 | `MSG-COMPLETE-MANAGER` | 목표 AP명. `TBL_CDR_HIST`·`TBL_MSG_HIST`는 신규 경로에 아직 미구현 |
 | 고객 결과 웹훅 발송 | `MSG-WEBHOOK-SENDER` | `WEBHOOK-SEND` 소비 목표. 현재 `delivery-result-worker`의 통지 책임을 분리해야 함 |
@@ -291,6 +291,8 @@ sequenceDiagram
 ### 5.1 MSG-RESULT-MANAGER의 처리 경계와 후속 연결
 
 `MSG-RESULT-MANAGER`는 **발송 결과를 메시지별 다음 상태와 다음 명령으로 바꾸는 AP**다. 입력은 `WEBHOOK-RECEIVE-API`가 `MSG_RESULT`에 넣은 1~100건 웹훅 배치, 통신사별 sender가 직접 넣은 명시적 비-200·5초 무응답 단건, `MSG-TCP-SENDER`가 넣은 TCP 즉시 응답 단건이다. HTTP `200 OK`만 받은 시점에는 Manager 입력이 없다. 결과가 오지 않은 실행은 별도 만료 판단 작업이 DynamoDB 기준으로 찾아 Manager와 같은 조건부 판단 경계로 인계한다.
+
+현재 입력 코덱은 타입 헤더 없는 JSON의 `source`로 `WEBHOOK` 묶음, `HTTP_RESPONSE`·`HTTP_TIMEOUT` 단건, `PRE_SEND` 발송 불가 단건을 구별하고 각 레코드의 Kafka key를 각각 `traceId` 또는 `clientMsgId`와 대조한다. HTTP `200 OK` 결과 레코드나 알 수 없는 출처는 거절한다. 아직 Kafka 소비자를 붙이지 않았으므로 이 코덱은 offset을 완료하거나 업무 결과를 확정하지 않는다. `TCP_RESPONSE`는 실제 TCP 결과 전문이 확정될 때 추가해야 한다.
 
 각 입력 항목의 처리 순서는 다음과 같다. 웹훅 배치의 Kafka key인 `traceId`는 요청 추적용이고, **업무 식별자는 항목의 `clientMsgId`**다. 명시적 비-200 레코드는 sender가 기록한 내부 `attemptId`·`invocation`으로 시도를 식별한다. 웹훅 자체에는 이 값이 없다.
 
