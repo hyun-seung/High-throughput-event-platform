@@ -11,16 +11,20 @@ import messaging.common.messages.MessageWebhookResult;
 import messaging.common.messages.PreSendDispatch;
 import messaging.common.messages.PreSendFailure;
 import messaging.common.messages.PrimaryStageDecision;
+import messaging.common.messages.PrimaryExpiryIndex;
 import org.junit.jupiter.api.Test;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.services.dynamodb.model.GetItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.GetItemResponse;
+import software.amazon.awssdk.services.dynamodb.model.QueryRequest;
+import software.amazon.awssdk.services.dynamodb.model.QueryResponse;
 import software.amazon.awssdk.services.dynamodb.model.TransactWriteItemsRequest;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.Duration;
 import java.time.ZoneOffset;
 import java.util.HashMap;
 import java.util.Map;
@@ -110,6 +114,65 @@ class PrimaryStageDecisionStoreTest {
         verify(db, never()).transactWriteItems(any(Consumer.class));
     }
 
+    @Test
+    void elapsedDeadlineFreezesExpiryWhenNoEarlierResultIsPending() {
+        var expired = overdueOrigin();
+        reads(expired);
+
+        assertEquals(PrimaryStageDecisionStore.Outcome.STORED, store.fromExpiry(ID));
+
+        var writes = writes();
+        assertEquals("PRIMARY_EXPIRED", writes.get(0).update().expressionAttributeValues().get(":next").s());
+        assertTrue(writes.get(0).update().updateExpression().contains("REMOVE #expiryBucket, #expiryDue"));
+        var decision = mapper.readValue(writes.get(1).put().item().get("result_payload").s(),
+                PrimaryStageDecision.class);
+        assertEquals("PRIMARY_EXPIRED", decision.reason());
+        assertEquals(PrimaryStageDecision.Kind.FAILURE, decision.kind());
+    }
+
+    @Test
+    void resultCapturedBeforeTheDeadlineGetsDecidedBeforeExpiry() {
+        var expired = overdueOrigin();
+        reads(expired);
+        when(db.query(any(QueryRequest.class))).thenReturn(QueryResponse.builder().items(Map.of(
+                "status", AttributeValue.fromS("PENDING"),
+                "received_at", AttributeValue.fromS(NOW.minus(Duration.ofHours(3)).toString()))).build());
+
+        assertEquals(PrimaryStageDecisionStore.Outcome.WAITING, store.fromExpiry(ID));
+        verify(db, never()).transactWriteItems(any(Consumer.class));
+    }
+
+    @Test
+    void expiredMessageWithoutPreSendDispatchStillClosesAndKeepsSecondaryHandoff() {
+        var expired = overdueOrigin();
+        expired.remove("pre_send_dispatch");
+        expired.put("secondary_send_payload", AttributeValue.fromS("{\"text\":\"backup\"}"));
+        reads(expired);
+
+        assertEquals(PrimaryStageDecisionStore.Outcome.STORED, store.fromExpiry(ID));
+
+        var writes = writes();
+        assertEquals("SECONDARY_PENDING", writes.get(0).update().expressionAttributeValues().get(":next").s());
+        assertTrue(writes.get(0).update().conditionExpression().contains("attribute_not_exists(pre_send_dispatch)"));
+        var decision = mapper.readValue(writes.get(1).put().item().get("result_payload").s(),
+                PrimaryStageDecision.class);
+        assertEquals("PRIMARY_EXPIRY", decision.source());
+        assertTrue(decision.secondaryRequired());
+    }
+
+    private Map<String, AttributeValue> overdueOrigin() {
+        var receivedAt = NOW.minus(Duration.ofHours(3)).minusSeconds(1);
+        var overdue = new MessageSubmission(ID, 42L, "customer-id", "01012345678",
+                MessageCategory.GENERAL, Map.of("text", "hello"), null, receivedAt);
+        var origin = new HashMap<>(MessageOriginCodec.encode(overdue, mapper));
+        var first = new HttpSendCommand(HttpSendCommand.attemptId(ID, HttpCarrier.SKT), HttpCarrier.SKT,
+                1, receivedAt.plus(PrimaryExpiryIndex.TTL), new HttpProviderRequest(ID, 42L, "GENERAL",
+                "01012345678", overdue.payload(), receivedAt));
+        origin.put("pre_send_dispatch", AttributeValue.fromS(
+                mapper.writeValueAsString(new PreSendDispatch(first, null))));
+        return origin;
+    }
+
     private MessageResultInboxStore.Item webhook(String status, Integer code) {
         var result = new MessageWebhookResult(ID, status,
                 code == null ? null : new MessageWebhookResult.Error(code, "failure"));
@@ -129,6 +192,7 @@ class PrimaryStageDecisionStoreTest {
         when(db.getItem(any(GetItemRequest.class))).thenAnswer(call -> GetItemResponse.builder().item(
                 call.getArgument(0, GetItemRequest.class).tableName().equals(
                         messaging.common.dynamodb.DynamoDbTableNames.ORIGIN) ? origin : Map.of()).build());
+        when(db.query(any(QueryRequest.class))).thenReturn(QueryResponse.builder().build());
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})

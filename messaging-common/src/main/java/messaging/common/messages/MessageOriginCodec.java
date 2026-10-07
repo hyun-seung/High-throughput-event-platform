@@ -40,6 +40,7 @@ public final class MessageOriginCodec {
         item.put("updated_at", AttributeValue.fromS(event.receivedAt().toString()));
         item.put("status", AttributeValue.fromS(STATUS_RECEIVED));
         MessagePublicationIndex.add(item, event);
+        PrimaryExpiryIndex.add(item, event);
         return item;
     }
 

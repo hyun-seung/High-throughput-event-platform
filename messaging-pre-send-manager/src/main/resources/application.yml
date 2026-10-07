@@ -52,10 +52,6 @@ delivery:
     endpoint: ${DYNAMODB_ENDPOINT:http://localhost:8000}
     initialize-tables: false
 
-messaging:
-  pre-send:
-    primary-ttl: ${MESSAGING_PRIMARY_TTL:3h}
-
 management:
   endpoint:
     health:

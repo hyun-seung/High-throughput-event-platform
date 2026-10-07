@@ -1,5 +1,6 @@
 package messaging.pre.send;
 
+import messaging.common.messages.PrimaryExpiryIndex;
 import messaging.pre.send.reference.InitialCarrierStore;
 import messaging.pre.send.reference.PreSendPreparation;
 import messaging.pre.send.reference.PreSendReferenceReader;
@@ -16,7 +17,6 @@ import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.time.Clock;
-import java.time.Duration;
 import java.util.Map;
 
 import static messaging.common.messages.MessageTopics.*;
@@ -34,8 +34,8 @@ public class PreSendConfiguration {
     }
 
     @Bean PreSendPreparation preSendPreparation(PreSendReferenceReader references, InitialCarrierStore carriers,
-                                               Clock clock, @Value("${messaging.pre-send.primary-ttl:3h}") Duration ttl) {
-        return new PreSendPreparation(references, carriers, clock, ttl);
+                                               Clock clock) {
+        return new PreSendPreparation(references, carriers, clock, PrimaryExpiryIndex.TTL);
     }
 
     @Bean PreSendDecisionStore preSendDecisionStore(DynamoDbClient db, JsonMapper mapper,

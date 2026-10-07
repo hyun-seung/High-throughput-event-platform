@@ -29,6 +29,9 @@ class MessageOriginCodecTest {
         assertEquals(MessagePublicationIndex.bucket(original.clientMsgId()), item.get(MessagePublicationIndex.BUCKET).s());
         assertEquals(Long.toString(original.receivedAt().plusSeconds(60).toEpochMilli()),
                 item.get(MessagePublicationIndex.DUE).n());
+        assertEquals(PrimaryExpiryIndex.bucket(original.clientMsgId()), item.get(PrimaryExpiryIndex.BUCKET).s());
+        assertEquals(Long.toString(original.receivedAt().plus(PrimaryExpiryIndex.TTL).toEpochMilli()),
+                item.get(PrimaryExpiryIndex.DEADLINE).n());
         assertEquals(original, MessageOriginCodec.decode(item, mapper));
     }
 

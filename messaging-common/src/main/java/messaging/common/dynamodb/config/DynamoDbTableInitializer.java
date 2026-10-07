@@ -5,6 +5,7 @@ import messaging.common.lifecycle.LifecycleIndex;
 import messaging.common.messages.MessagePublicationIndex;
 import messaging.common.messages.FollowupDispatchIndex;
 import messaging.common.messages.MessageResultInboxIndex;
+import messaging.common.messages.PrimaryExpiryIndex;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
@@ -36,7 +37,10 @@ public class DynamoDbTableInitializer implements ApplicationRunner {
 
     private void createIfMissing(String table) {
         if (tableExists(table)) {
-            if (ORIGIN.equals(table)) createPublicationIndexIfMissing();
+            if (ORIGIN.equals(table)) {
+                createPublicationIndexIfMissing();
+                createPrimaryExpiryIndexIfMissing();
+            }
             if (STEP.equals(table)) {
                 createFollowupIndexIfMissing();
                 createResultInboxIndexIfMissing();
@@ -54,7 +58,9 @@ public class DynamoDbTableInitializer implements ApplicationRunner {
         if (ORIGIN.equals(table)) {
             definitions.add(AttributeDefinition.builder().attributeName(MessagePublicationIndex.BUCKET).attributeType(ScalarAttributeType.S).build());
             definitions.add(AttributeDefinition.builder().attributeName(MessagePublicationIndex.DUE).attributeType(ScalarAttributeType.N).build());
+            definitions.addAll(PrimaryExpiryIndex.attributes());
             indexes.add(MessagePublicationIndex.definition());
+            indexes.add(PrimaryExpiryIndex.definition());
         } else {
             definitions.addAll(FollowupDispatchIndex.attributes());
             definitions.addAll(MessageResultInboxIndex.attributes());
@@ -90,6 +96,20 @@ public class DynamoDbTableInitializer implements ApplicationRunner {
                                 .indexName(MessagePublicationIndex.NAME)
                                 .keySchema(MessagePublicationIndex.definition().keySchema())
                                 .projection(MessagePublicationIndex.definition().projection()).build()).build()));
+        dynamoDbClient.waiter().waitUntilTableExists(builder -> builder.tableName(ORIGIN));
+    }
+
+    private void createPrimaryExpiryIndexIfMissing() {
+        var description = dynamoDbClient.describeTable(builder -> builder.tableName(ORIGIN)).table();
+        if (description.globalSecondaryIndexes().stream()
+                .anyMatch(index -> PrimaryExpiryIndex.NAME.equals(index.indexName()))) return;
+        dynamoDbClient.updateTable(builder -> builder.tableName(ORIGIN)
+                .attributeDefinitions(PrimaryExpiryIndex.attributes())
+                .globalSecondaryIndexUpdates(GlobalSecondaryIndexUpdate.builder()
+                        .create(CreateGlobalSecondaryIndexAction.builder()
+                                .indexName(PrimaryExpiryIndex.NAME)
+                                .keySchema(PrimaryExpiryIndex.definition().keySchema())
+                                .projection(PrimaryExpiryIndex.definition().projection()).build()).build()));
         dynamoDbClient.waiter().waitUntilTableExists(builder -> builder.tableName(ORIGIN));
     }
 

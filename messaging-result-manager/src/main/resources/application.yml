@@ -40,6 +40,10 @@ delivery:
 
 messaging:
   result:
+    expiry:
+      initial-delay-ms: ${MSG_RESULT_EXPIRY_INITIAL_DELAY_MS:5000}
+      poll-ms: ${MSG_RESULT_EXPIRY_POLL_MS:5000}
+      page-size: ${MSG_RESULT_EXPIRY_PAGE_SIZE:100}
     outbox:
       enabled: ${MSG_RESULT_OUTBOX_ENABLED:false}
       initial-delay-ms: ${MSG_RESULT_OUTBOX_INITIAL_DELAY_MS:5000}
