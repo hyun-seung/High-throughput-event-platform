@@ -53,12 +53,14 @@ public class FollowupHttpCommandStore {
                             + "AND attribute_not_exists(completion_event_id) AND "
                             + (previousDecisionId == null
                             ? "attribute_not_exists(#decision)" : "#decision = :previous"))
-                    .updateExpression("SET #decision = :next")
-                    .expressionAttributeNames(Map.of("#status", "status", "#decision", FollowupHttpCommand.CURRENT_DECISION));
+                    .updateExpression("SET #decision = :next, #command = :command")
+                    .expressionAttributeNames(Map.of("#status", "status", "#decision", FollowupHttpCommand.CURRENT_DECISION,
+                            "#command", FollowupHttpCommand.CURRENT_COMMAND));
             var values = new HashMap<String, AttributeValue>();
             values.put(":delivery", s(clientMsgId));
             values.put(":received", s(MessageOriginCodec.STATUS_RECEIVED));
             values.put(":next", s(followup.decisionId()));
+            values.put(":command", s(mapper.writeValueAsString(followup.command())));
             if (previousDecisionId != null) values.put(":previous", s(previousDecisionId));
             update.expressionAttributeValues(values);
             db.transactWriteItems(builder -> builder.transactItems(
@@ -72,6 +74,8 @@ public class FollowupHttpCommandStore {
             var origin = read(ORIGIN, MessageOriginCodec.key(clientMsgId));
             var stored = read(STEP, FollowupHttpCommand.key(followup.command()));
             if (followup.decisionId().equals(origin.getOrDefault(FollowupHttpCommand.CURRENT_DECISION, s("")).s())
+                    && mapper.writeValueAsString(followup.command()).equals(
+                    origin.getOrDefault(FollowupHttpCommand.CURRENT_COMMAND, s("")).s())
                     && encoded.equals(stored.getOrDefault("authorization", s("")).s())) return followup;
             throw new IllegalStateException("Follow-up HTTP decision conflicts with stored state", changed);
         }

@@ -18,6 +18,11 @@ public class ResultManagerConfiguration {
         return new FollowupHttpCommandStore(db, mapper);
     }
 
+    @Bean HttpFailureFollowupService httpFailureFollowupService(DynamoDbClient db, JsonMapper mapper,
+                                                                FollowupHttpCommandStore commands, Clock clock) {
+        return new HttpFailureFollowupService(db, mapper, commands, clock);
+    }
+
     @Bean FollowupHttpDispatcher followupHttpDispatcher(DynamoDbClient db, JsonMapper mapper,
                                                         KafkaTemplate<String, HttpSendCommand> kafka, Clock clock,
                                                         @Value("${messaging.result.followup.page-size:100}") int pageSize) {

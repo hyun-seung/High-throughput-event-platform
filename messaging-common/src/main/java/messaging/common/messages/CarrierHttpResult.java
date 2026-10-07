@@ -38,8 +38,12 @@ public record CarrierHttpResult(String resultId, String clientMsgId, String atte
     }
 
     public static String id(HttpSendCommand command) {
-        return UUID.nameUUIDFromBytes(("carrier-http-result:" + command.request().clientMsgId() + ":"
-                + command.attemptId() + ":" + command.invocation()).getBytes(StandardCharsets.UTF_8)).toString();
+        return id(command.request().clientMsgId(), command.attemptId(), command.invocation());
+    }
+
+    public static String id(String clientMsgId, String attemptId, int invocation) {
+        return UUID.nameUUIDFromBytes(("carrier-http-result:" + clientMsgId + ":"
+                + attemptId + ":" + invocation).getBytes(StandardCharsets.UTF_8)).toString();
     }
 
     public boolean needsPublication() { return status != Status.ACCEPTED; }

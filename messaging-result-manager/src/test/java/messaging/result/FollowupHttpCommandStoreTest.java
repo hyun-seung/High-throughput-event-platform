@@ -46,6 +46,8 @@ class FollowupHttpCommandStoreTest {
         assertEquals(2, writes.size());
         assertTrue(writes.get(0).update().conditionExpression().contains("attribute_not_exists(#decision)"));
         assertEquals("result-1", writes.get(0).update().expressionAttributeValues().get(":next").s());
+        assertEquals(JsonMapper.builder().build().writeValueAsString(followup.command()),
+                writes.get(0).update().expressionAttributeValues().get(":command").s());
         assertEquals("result-1", writes.get(1).put().item().get("decision_id").s());
         assertEquals(followup.notBefore().toEpochMilli(),
                 Long.parseLong(writes.get(1).put().item().get("not_before_ms").n()));
@@ -66,6 +68,8 @@ class FollowupHttpCommandStoreTest {
     void lostTransactionAcknowledgementLoadsTheSameFrozenCommand() {
         var origin = new HashMap<>(MessageOriginCodec.key(clientMsgId));
         origin.put(FollowupHttpCommand.CURRENT_DECISION, AttributeValue.fromS(followup.decisionId()));
+        origin.put(FollowupHttpCommand.CURRENT_COMMAND,
+                AttributeValue.fromS(JsonMapper.builder().build().writeValueAsString(followup.command())));
         var command = new HashMap<>(FollowupHttpCommand.key(followup.command()));
         command.put("authorization", AttributeValue.fromS(JsonMapper.builder().build().writeValueAsString(followup)));
         when(db.transactWriteItems(any(Consumer.class))).thenThrow(TransactionCanceledException.builder()

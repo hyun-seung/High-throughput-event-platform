@@ -9,6 +9,7 @@ import java.util.Objects;
 /** One result decision authorizes exactly one later carrier HTTP command. */
 public record FollowupHttpCommand(String decisionId, HttpSendCommand command, Instant notBefore) {
     public static final String CURRENT_DECISION = "result_decision_id";
+    public static final String CURRENT_COMMAND = "result_current_http_command";
 
     public FollowupHttpCommand {
         Objects.requireNonNull(decisionId);

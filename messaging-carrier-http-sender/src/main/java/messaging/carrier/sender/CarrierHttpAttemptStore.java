@@ -275,9 +275,7 @@ public class CarrierHttpAttemptStore {
     }
 
     static Map<String, AttributeValue> key(HttpSendCommand command) {
-        return Map.of("pk", s("DELIVERY#" + command.request().clientMsgId()),
-                "sk", s("HTTP#" + command.carrier().name() + "#" + command.attemptId()
-                        + "#" + command.invocation()));
+        return command.stepKey();
     }
 
     private static AttributeValue s(String value) { return AttributeValue.fromS(value); }

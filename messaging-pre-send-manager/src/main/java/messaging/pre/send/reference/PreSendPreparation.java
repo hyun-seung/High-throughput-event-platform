@@ -4,13 +4,11 @@ import messaging.common.messages.HttpProviderRequest;
 import messaging.common.messages.HttpSendCommand;
 import messaging.common.messages.MessageSubmission;
 
-import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.UUID;
 
 /** Prepares one stable first-send command from an admitted message and current references. */
 public final class PreSendPreparation {
@@ -50,8 +48,7 @@ public final class PreSendPreparation {
                 () -> references.firstCarrier(admission.recipientNumber()));
         if (selected.isEmpty()) return new Inactive();
         CarrierResolution route = selected.get();
-        String attemptId = UUID.nameUUIDFromBytes(("primary-http:" + admission.clientMsgId() + ":"
-                + route.carrier().name()).getBytes(StandardCharsets.UTF_8)).toString();
+        String attemptId = HttpSendCommand.attemptId(admission.clientMsgId(), route.carrier());
         HttpProviderRequest request = new HttpProviderRequest(admission.clientMsgId(), admission.clientId(),
                 admission.messageCategory().name(), admission.recipientNumber(), admission.payload(),
                 admission.receivedAt());
