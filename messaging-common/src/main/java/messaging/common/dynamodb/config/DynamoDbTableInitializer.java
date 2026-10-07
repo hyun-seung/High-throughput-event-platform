@@ -3,6 +3,7 @@ package messaging.common.dynamodb.config;
 import lombok.RequiredArgsConstructor;
 import messaging.common.lifecycle.LifecycleIndex;
 import messaging.common.messages.MessagePublicationIndex;
+import messaging.common.messages.FollowupDispatchIndex;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
@@ -35,6 +36,7 @@ public class DynamoDbTableInitializer implements ApplicationRunner {
     private void createIfMissing(String table) {
         if (tableExists(table)) {
             if (ORIGIN.equals(table)) createPublicationIndexIfMissing();
+            if (STEP.equals(table)) createFollowupIndexIfMissing();
             log.debug("DynamoDB table already exists. table={}", table);
             return;
         }
@@ -49,6 +51,9 @@ public class DynamoDbTableInitializer implements ApplicationRunner {
             definitions.add(AttributeDefinition.builder().attributeName(MessagePublicationIndex.BUCKET).attributeType(ScalarAttributeType.S).build());
             definitions.add(AttributeDefinition.builder().attributeName(MessagePublicationIndex.DUE).attributeType(ScalarAttributeType.N).build());
             indexes.add(MessagePublicationIndex.definition());
+        } else {
+            definitions.addAll(FollowupDispatchIndex.attributes());
+            indexes.add(FollowupDispatchIndex.definition());
         }
         var requestBuilder = CreateTableRequest.builder()
                 .tableName(table)
@@ -80,6 +85,20 @@ public class DynamoDbTableInitializer implements ApplicationRunner {
                                 .keySchema(MessagePublicationIndex.definition().keySchema())
                                 .projection(MessagePublicationIndex.definition().projection()).build()).build()));
         dynamoDbClient.waiter().waitUntilTableExists(builder -> builder.tableName(ORIGIN));
+    }
+
+    private void createFollowupIndexIfMissing() {
+        var description = dynamoDbClient.describeTable(builder -> builder.tableName(STEP)).table();
+        if (description.globalSecondaryIndexes().stream()
+                .anyMatch(index -> FollowupDispatchIndex.NAME.equals(index.indexName()))) return;
+        dynamoDbClient.updateTable(builder -> builder.tableName(STEP)
+                .attributeDefinitions(FollowupDispatchIndex.attributes())
+                .globalSecondaryIndexUpdates(GlobalSecondaryIndexUpdate.builder()
+                        .create(CreateGlobalSecondaryIndexAction.builder()
+                                .indexName(FollowupDispatchIndex.NAME)
+                                .keySchema(FollowupDispatchIndex.definition().keySchema())
+                                .projection(FollowupDispatchIndex.definition().projection()).build()).build()));
+        dynamoDbClient.waiter().waitUntilTableExists(builder -> builder.tableName(STEP));
     }
 
     private boolean tableExists(String table) {

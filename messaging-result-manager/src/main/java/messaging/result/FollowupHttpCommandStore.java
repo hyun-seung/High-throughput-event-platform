@@ -1,6 +1,7 @@
 package messaging.result;
 
 import messaging.common.messages.FollowupHttpCommand;
+import messaging.common.messages.FollowupDispatchIndex;
 import messaging.common.messages.MessageOriginCodec;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
@@ -44,6 +45,7 @@ public class FollowupHttpCommandStore {
         item.put("decision_id", s(followup.decisionId()));
         item.put("authorization", s(encoded));
         item.put("not_before_ms", AttributeValue.fromN(Long.toString(followup.notBefore().toEpochMilli())));
+        FollowupDispatchIndex.add(item, clientMsgId, followup.notBefore().toEpochMilli());
         try {
             var update = Update.builder().tableName(ORIGIN).key(MessageOriginCodec.key(clientMsgId))
                     .conditionExpression("delivery_id = :delivery AND #status = :received "

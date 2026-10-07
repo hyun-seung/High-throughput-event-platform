@@ -1,6 +1,7 @@
 package messaging.result;
 
 import messaging.common.messages.FollowupHttpCommand;
+import messaging.common.messages.FollowupDispatchIndex;
 import messaging.common.messages.HttpCarrier;
 import messaging.common.messages.HttpProviderRequest;
 import messaging.common.messages.HttpSendCommand;
@@ -48,6 +49,10 @@ class FollowupHttpCommandStoreTest {
         assertEquals("result-1", writes.get(1).put().item().get("decision_id").s());
         assertEquals(followup.notBefore().toEpochMilli(),
                 Long.parseLong(writes.get(1).put().item().get("not_before_ms").n()));
+        assertEquals(FollowupDispatchIndex.bucket(clientMsgId),
+                writes.get(1).put().item().get(FollowupDispatchIndex.BUCKET).s());
+        assertEquals(followup.notBefore().toEpochMilli(),
+                Long.parseLong(writes.get(1).put().item().get(FollowupDispatchIndex.DUE).n()));
     }
 
     @Test
