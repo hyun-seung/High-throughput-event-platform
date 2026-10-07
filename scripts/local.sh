@@ -51,8 +51,8 @@ case "${1:-help}" in
   run)
     module="${2:-}"
     case "$module" in
-      messaging-api|messaging-publication-recovery-app|messaging-reference-cache|messaging-webhook-receive-api|messaging-pre-send-manager|messaging-carrier-http-sender|messaging-result-manager|messaging-http-sender|delivery-ingress-worker|dispatch-worker|external-api-simulator|receipt-api|delivery-result-worker) ;;
-      *) echo 'Usage: bash scripts/local.sh run <messaging-api|messaging-publication-recovery-app|messaging-reference-cache|messaging-webhook-receive-api|messaging-pre-send-manager|messaging-carrier-http-sender|messaging-result-manager|messaging-http-sender|delivery-ingress-worker|dispatch-worker|external-api-simulator|receipt-api|delivery-result-worker>' >&2; exit 2 ;;
+      messaging-api|messaging-publication-recovery-app|messaging-reference-cache|messaging-webhook-receive-api|messaging-pre-send-manager|messaging-carrier-http-sender|messaging-result-manager|delivery-ingress-worker|dispatch-worker|external-api-simulator|receipt-api|delivery-result-worker) ;;
+      *) echo 'Usage: bash scripts/local.sh run <messaging-api|messaging-publication-recovery-app|messaging-reference-cache|messaging-webhook-receive-api|messaging-pre-send-manager|messaging-carrier-http-sender|messaging-result-manager|delivery-ingress-worker|dispatch-worker|external-api-simulator|receipt-api|delivery-result-worker>' >&2; exit 2 ;;
     esac
     export SPRING_PROFILES_ACTIVE=dev
     export KAFKA_BOOTSTRAP_SERVERS="localhost:${KAFKA_HOST_PORT:-9092}"
@@ -75,7 +75,6 @@ case "${1:-help}" in
       messaging-carrier-http-sender) export SERVER_PORT="${MSG_HTTP_SENDER_PORT:-8101}" ;;
       messaging-result-manager) export SERVER_PORT="${MSG_RESULT_MANAGER_PORT:-8102}" ;;
       messaging-webhook-receive-api) export SERVER_PORT="${MESSAGE_WEBHOOK_PORT:-8099}" ;;
-      messaging-http-sender) export SERVER_PORT="${MESSAGING_HTTP_SENDER_PORT:-8097}" ;;
     esac
     if [[ "$module" == messaging-api ]]; then
       : "${JWT_SECRET:?Copy .env.example to .env and set JWT_SECRET}"

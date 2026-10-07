@@ -19,9 +19,5 @@ public final class MessageTopics {
         };
     }
 
-    /** Legacy direct-to-sender topic; the new admission path does not publish here. */
-    public static final String HTTP_REQUESTED = "message.http.requested.v1";
-    public static final String HTTP_OUTCOME = "message.http.outcome.v1";
-
     private MessageTopics() { }
 }
