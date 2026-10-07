@@ -51,8 +51,8 @@ case "${1:-help}" in
   run)
     module="${2:-}"
     case "$module" in
-      messaging-api|messaging-publication-recovery-app|messaging-reference-cache|messaging-webhook-receive-api|messaging-pre-send-manager|messaging-carrier-http-sender|messaging-result-manager|delivery-ingress-worker|dispatch-worker|external-api-simulator|receipt-api|delivery-result-worker) ;;
-      *) echo 'Usage: bash scripts/local.sh run <messaging-api|messaging-publication-recovery-app|messaging-reference-cache|messaging-webhook-receive-api|messaging-pre-send-manager|messaging-carrier-http-sender|messaging-result-manager|delivery-ingress-worker|dispatch-worker|external-api-simulator|receipt-api|delivery-result-worker>' >&2; exit 2 ;;
+      messaging-api|messaging-publication-recovery-app|messaging-reference-cache|messaging-webhook-receive-api|messaging-pre-send-manager|messaging-carrier-http-sender|messaging-result-manager|messaging-complete-manager|delivery-ingress-worker|dispatch-worker|external-api-simulator|receipt-api|delivery-result-worker) ;;
+      *) echo 'Usage: bash scripts/local.sh run <messaging-api|messaging-publication-recovery-app|messaging-reference-cache|messaging-webhook-receive-api|messaging-pre-send-manager|messaging-carrier-http-sender|messaging-result-manager|messaging-complete-manager|delivery-ingress-worker|dispatch-worker|external-api-simulator|receipt-api|delivery-result-worker>' >&2; exit 2 ;;
     esac
     export SPRING_PROFILES_ACTIVE=dev
     export KAFKA_BOOTSTRAP_SERVERS="localhost:${KAFKA_HOST_PORT:-9092}"
@@ -74,6 +74,7 @@ case "${1:-help}" in
       messaging-pre-send-manager) export SERVER_PORT="${MESSAGING_PRE_SEND_PORT:-8100}" ;;
       messaging-carrier-http-sender) export SERVER_PORT="${MSG_HTTP_SENDER_PORT:-8101}" ;;
       messaging-result-manager) export SERVER_PORT="${MSG_RESULT_MANAGER_PORT:-8102}" ;;
+      messaging-complete-manager) export SERVER_PORT="${MSG_COMPLETE_MANAGER_PORT:-8103}" ;;
       messaging-webhook-receive-api) export SERVER_PORT="${MESSAGE_WEBHOOK_PORT:-8099}" ;;
     esac
     if [[ "$module" == messaging-api ]]; then

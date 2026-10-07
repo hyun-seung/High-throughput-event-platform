@@ -1,0 +1,55 @@
+server:
+  port: ${MSG_COMPLETE_MANAGER_PORT:8103}
+  shutdown: graceful
+
+spring:
+  application:
+    name: messaging-complete-manager
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/delivery}
+    username: ${DB_USERNAME:delivery}
+    password: ${DB_PASSWORD:delivery}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      schema: ${MSG_COMPLETE_DB_SCHEMA:messaging_completion}
+      maximum-pool-size: 6
+      connection-timeout: 3000
+  flyway:
+    default-schema: ${MSG_COMPLETE_DB_SCHEMA:messaging_completion}
+    schemas: ${MSG_COMPLETE_DB_SCHEMA:messaging_completion}
+    clean-disabled: true
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    listener:
+      ack-mode: record
+      concurrency: ${MSG_COMPLETE_CONCURRENCY:3}
+    consumer:
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      key-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      properties:
+        "[spring.deserializer.key.delegate.class]": org.apache.kafka.common.serialization.StringDeserializer
+        "[spring.deserializer.value.delegate.class]": org.apache.kafka.common.serialization.StringDeserializer
+        "[allow.auto.create.topics]": false
+
+messaging:
+  complete:
+    consumer:
+      enabled: ${MSG_COMPLETE_CONSUMER_ENABLED:false}
+
+management:
+  endpoint:
+    health:
+      probes:
+        enabled: true
+        add-additional-paths: true
+  server:
+    address: 127.0.0.1
+    port: ${MSG_COMPLETE_MANAGER_METRICS_PORT:19095}
+  endpoints:
+    web:
+      exposure:
+        include: health

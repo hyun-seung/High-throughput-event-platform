@@ -29,6 +29,7 @@
         <module>messaging-pre-send-manager</module>
         <module>messaging-carrier-http-sender</module>
         <module>messaging-result-manager</module>
+        <module>messaging-complete-manager</module>
         <module>common-security</module>
         <module>messaging-common</module>
         <module>delivery-ingress-worker</module>

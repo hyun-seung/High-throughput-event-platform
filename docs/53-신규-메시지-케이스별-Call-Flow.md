@@ -33,10 +33,10 @@
 | 웹훅 접수 | `WEBHOOK-RECEIVE-API` | 독립 `messaging-webhook-receive-api`에 인증·1~100건 검증·`MSG_RESULT` 단일 레코드 발행 구현. 기존 `receipt-api`는 이관 전 경로 |
 | 결과 판단 | `MSG-RESULT-MANAGER` | 혼합 `MSG_RESULT` 소비·source/key 검사·메시지별 STEP inbox 보존·HTTP 실패의 후속 발송 판단 연결. 웹훅 실패의 통신사 이동·동일 통신사 재시도 연결. 웹훅 성공·발송 전 실패·1차 소진의 ORIGIN 결정 고정. 최종/2차 토픽 발행기는 준비됐으나 소비 AP 준비 전까지 기본 비활성 |
 | 2차 TCP 발송 | `MSG-TCP-SENDER` | 목표 AP명 확정, 신규 경로 구현 전 |
-| 1차 성공 과금·메시지 발송 이력·DynamoDB 정리 | `MSG-COMPLETE-MANAGER` | 목표 AP명. `TBL_CDR_HIST`·`TBL_MSG_HIST`는 신규 경로에 아직 미구현 |
+| 1차 성공 과금·메시지 발송 이력·DynamoDB 정리 | `MSG-COMPLETE-MANAGER` | 독립 `messaging-complete-manager`가 `MSG-RESULT-FINALIZED`의 1차 최종 결과를 SQL 이력·과금 대상 기록으로 원자 저장. 소비 기본 비활성, 금액 산정·DynamoDB 정리는 후속 작업 |
 | 고객 결과 웹훅 발송 | `MSG-WEBHOOK-SENDER` | `WEBHOOK-SEND` 소비 목표. 현재 `delivery-result-worker`의 통지 책임을 분리해야 함 |
 
-이전 단일 `messaging-http-sender` 모듈은 제거했으며, `messaging-publication-recovery-app`·`messaging-reference-cache`는 각각 최초 Kafka 발행 복구와 CDC 캐시 투영을 돕는 별도 AP다. 현재 `delivery-result-worker`는 최종 이력·고객 통지·정리를 한 모듈에서 수행한다. 신규 `MSG-RESULT-FINALIZED` 연결과 `MSG-COMPLETE-MANAGER`·`MSG-WEBHOOK-SENDER` 분리는 아직 구현 전이다.
+이전 단일 `messaging-http-sender` 모듈은 제거했으며, `messaging-publication-recovery-app`·`messaging-reference-cache`는 각각 최초 Kafka 발행 복구와 CDC 캐시 투영을 돕는 별도 AP다. 현재 `delivery-result-worker`는 최종 이력·고객 통지·정리를 한 모듈에서 수행한다. 신규 `MSG-COMPLETE-MANAGER`의 1차 최종 결과 소비·SQL 저장은 구현했고, `MSG-WEBHOOK-SENDER`와 2차 최종 결과 연결은 아직 구현 전이다.
 
 신규 `messaging-carrier-http-sender`는 같은 JAR을 통신사별 Pod에서 실행한다. `MSG_HTTP_CARRIER`·`MSG_HTTP_BASE_URL`·해당 명령 토픽·고유 소비 그룹을 기동 때 확인해 자기 통신사 명령만 소비한다. 각 명령이 ORIGIN에 고정된 원문과 같을 때만 STEP을 `PENDING`으로 예약하고, Redis의 통신사·시도·회차 키를 선점한 실행만 STEP을 `SENDING`으로 전이한다. Redis 키가 유실돼도 이미 `SENDING`인 호출은 자동 재발송하지 않는다. 공통 요청 경로의 현재 기본값은 `/api/v1/messages`이며 Pod 설정으로 바꿀 수 있다. 비-200 응답은 `{status: "4xx", error: {code: "4xxxx", message: "..."}}`의 문자열 코드를 원본으로 보존한다. 불일치·TPS 원본 코드 매핑은 Pod 기동 필수 설정이고, 그 외 6만 대역이 아닌 코드는 임시 공통 실패 `66999`로 정규화한다.
 
@@ -409,9 +409,11 @@ flowchart LR
 
 `TBL_MSG_HIST`는 메시지당 최종 행 1건으로 확정한다. 통신사 이동·`66002` 재시도처럼 여러 시도의 개별 이력이 운영에 필요하다면 이 최종 행의 보존 가능한 상세 정보 또는 별도 시도 이력 저장소를 추가할 수 있다. 최종 행의 필수 내용은 `clientMsgId`, 고객 메시지 식별자, 최종 상태·코드, 최종 통신사/2차 업체, 최종 시각과 고객 조회·늦은 웹훅 대조에 필요한 참조값이다. 과금액·요금 기준 시점·계약 버전은 재처리 때 바뀌지 않도록 CDR에 고정해야 한다. 두 이력 테이블이 같은 PostgreSQL DB라는 현재 가정이 다르면 원자 저장 대신 별도의 대사·복구 방식이 필요하다.
 
+현재 완료 AP의 `TBL_CDR_HIST`는 과금 대상 여부와 식별자·통신사·시각을 보존한다. 금액·요율 정책이 아직 없어 실제 청구 금액은 기록하지 않으며, 요금 계산과 계약 버전 고정은 별도 구현이 필요하다. `MSG-RESULT-FINALIZED` 소비 후 SQL commit 전에 오류가 나면 Kafka offset을 완료하지 않고 재전달받는다. DynamoDB 삭제는 고객 웹훅 인계가 안전하게 저장되는 시점까지 연결하지 않는다.
+
 **현재 저장소 코드에는 DynamoDB TTL 설정이 없다.** `ORIGIN`·`STEP` 초기화 코드가 TTL을 활성화하지 않고, 신규 ORIGIN 저장 코드도 TTL 속성을 쓰지 않는다. 외부에서 TTL을 별도로 설정했는지는 확인되지 않았다. TTL에 맡기려면 두 테이블의 TTL 속성과 각 항목의 만료 시각을 추가하고, 최종 결과의 SQL 인계·복구 기간보다 먼저 만료되지 않도록 해야 한다. AWS 문서에 따르면 [TTL은 만료 항목을 백그라운드에서 삭제하며 삭제 전까지 읽기에 나타날 수 있다](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/ttl-expired-items.html). 따라서 TTL은 삭제 실패의 저장 공간 정리 수단으로 쓰고, 업무상 완료·과금·중복 여부는 SQL 고유 키와 최종 결과 상태로 판단한다. 업체 웹훅에는 최대 만료 기간이 없으므로 정리 후 늦게 온 결과를 구분할 SQL 참조 정보도 필요하다.
 
-현재 `delivery-result-worker`는 **이전 경로**의 `delivery_history`·통지·정리 예약을 처리한다. 새 `TBL_MSG_HIST`·`TBL_CDR_HIST`·`TBL_WEBHOOK_HIST` 저장, 과금 `clientMsgId` 고유 제약, `WEBHOOK-SEND` 생산·소비, DynamoDB TTL 설정은 아직 구현되지 않았다.
+현재 `delivery-result-worker`는 **이전 경로**의 `delivery_history`·통지·정리 예약을 처리한다. 새 `messaging-complete-manager`는 별도 PostgreSQL `messaging_completion` 스키마에 `TBL_MSG_HIST`·`TBL_CDR_HIST`와 `clientMsgId` 기본 키를 만들고 1차 최종 결과를 원자 저장한다. `MSG_COMPLETE_CONSUMER_ENABLED=false`가 기본값이며 금액 산정·DynamoDB 정리, `TBL_WEBHOOK_HIST`, `WEBHOOK-SEND` 생산·소비, DynamoDB TTL 설정은 아직 구현되지 않았다.
 
 ## 9. 중간 종료와 저장소 장애
 
