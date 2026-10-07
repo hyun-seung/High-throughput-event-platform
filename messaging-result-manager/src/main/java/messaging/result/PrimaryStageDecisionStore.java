@@ -129,6 +129,7 @@ public class PrimaryStageDecisionStore {
         outbox.put("result_id", s(item.resultId()));
         outbox.put("source", s("PRIMARY_DECISION"));
         outbox.put("result_payload", s(encoded));
+        outbox.put("submission_payload", s(mapper.writeValueAsString(MessageOriginCodec.decode(origin, mapper))));
         outbox.put("status", s("PENDING"));
         outbox.put("received_at", s(decision.decidedAt().toString()));
         MessageResultInboxIndex.add(outbox, item.clientMsgId(), decision.decidedAt().toEpochMilli());

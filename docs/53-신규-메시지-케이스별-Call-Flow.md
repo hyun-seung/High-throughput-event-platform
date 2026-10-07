@@ -1,6 +1,6 @@
 # 메시지 접수부터 최종 결과까지: 케이스별 Call Flow
 
-기준: 2026-10-07. **신규 `/api/v1/messages` 경로의 목표 설계**를 한곳에서 읽기 위한 문서다. 정상 흐름과 실패·복구 분기를 함께 그린다. 현재 구현은 API 접수·ORIGIN 저장·`message.received.v1` 발행, 공통 전문·통신사별 토픽, CDC 캐시 준비, PRE-SEND-MANAGER의 Kafka 소비·판단 고정·통신사별 HTTP 명령 발행과 발송 불가 결과 인계, 통신사별 sender의 Redis·STEP 선점과 HTTP 응답 기록·실패 인계, `WEBHOOK-RECEIVE-API`의 1~100건 단일 Kafka 발행까지다. `MSG-RESULT-MANAGER`는 혼합 `MSG_RESULT`를 소비해 항목별 STEP inbox에 보존하고 HTTP 실패·타임아웃의 후속 통신사·재시도 판단까지 연결했다. 웹훅 실패의 `66001` 이동·`66002` 재시도도 pending 인덱스의 재확인 경로에 연결했다. 웹훅 성공·발송 전 실패·HTTP/웹훅 재시도 소진은 ORIGIN의 1차 결정을 조건부 고정하고 STEP에 후속 인계 대기 항목을 남긴다. 최종/2차 토픽 발행과 1차 만료 처리는 아직 연결되지 않았다. 이관 전 `delivery.*` 구현·검증을 신규 경로의 완료로 읽지 않는다. 구현 상태는 [01 현재 상태](01-현재-구현-상태와-남은-작업.md), 결정 근거는 [ADR-026](adr/ADR-026-MESSAGE-RECEIVED와-통신사별-HTTP-발송-분리.md)·[ADR-027](adr/ADR-027-접수-API-Redis-TPS와-유형별-월-Quota.md)을 따른다.
+기준: 2026-10-07. **신규 `/api/v1/messages` 경로의 목표 설계**를 한곳에서 읽기 위한 문서다. 정상 흐름과 실패·복구 분기를 함께 그린다. 현재 구현은 API 접수·ORIGIN 저장·`message.received.v1` 발행, 공통 전문·통신사별 토픽, CDC 캐시 준비, PRE-SEND-MANAGER의 Kafka 소비·판단 고정·통신사별 HTTP 명령 발행과 발송 불가 결과 인계, 통신사별 sender의 Redis·STEP 선점과 HTTP 응답 기록·실패 인계, `WEBHOOK-RECEIVE-API`의 1~100건 단일 Kafka 발행까지다. `MSG-RESULT-MANAGER`는 혼합 `MSG_RESULT`를 소비해 항목별 STEP inbox에 보존하고 HTTP 실패·타임아웃의 후속 통신사·재시도 판단까지 연결했다. 웹훅 실패의 `66001` 이동·`66002` 재시도도 pending 인덱스의 재확인 경로에 연결했다. 웹훅 성공·발송 전 실패·HTTP/웹훅 재시도 소진은 ORIGIN의 1차 결정을 조건부 고정하고 STEP에 후속 인계 대기 항목을 남긴다. 최종 결과의 `MSG-RESULT-FINALIZED`와 2차의 `message.tcp.requested.v1` 발행기는 구현했지만, 신규 소비 AP가 없으므로 기본 비활성이다. 고객 대상 `WEBHOOK-SEND` 인계와 1차 만료 처리는 아직 연결되지 않았다. 이관 전 `delivery.*` 구현·검증을 신규 경로의 완료로 읽지 않는다. 구현 상태는 [01 현재 상태](01-현재-구현-상태와-남은-작업.md), 결정 근거는 [ADR-026](adr/ADR-026-MESSAGE-RECEIVED와-통신사별-HTTP-발송-분리.md)·[ADR-027](adr/ADR-027-접수-API-Redis-TPS와-유형별-월-Quota.md)을 따른다.
 
 ## 읽는 순서와 경계
 
@@ -31,7 +31,7 @@
 | 1차 발송 준비 | `PRE-SEND-MANAGER` | 참조 조회·명령 또는 발송 불가 결과를 ORIGIN에 고정하고 Kafka 인계 구현 |
 | 1차 HTTP 발송 | `MSG-SKT-SENDER`, `MSG-KT-SENDER`, `MSG-LGU-SENDER` | 공통 `messaging-carrier-http-sender` 실행 JAR을 통신사별 URL·토픽·소비 그룹으로 분리. 명령 소비·Redis/STEP 선점·HTTP 호출·결과 기록과 실패 인계 구현 |
 | 웹훅 접수 | `WEBHOOK-RECEIVE-API` | 독립 `messaging-webhook-receive-api`에 인증·1~100건 검증·`MSG_RESULT` 단일 레코드 발행 구현. 기존 `receipt-api`는 이관 전 경로 |
-| 결과 판단 | `MSG-RESULT-MANAGER` | 혼합 `MSG_RESULT` 소비·source/key 검사·메시지별 STEP inbox 보존·HTTP 실패의 후속 발송 판단 연결. 웹훅 실패의 통신사 이동·동일 통신사 재시도 연결. 웹훅 성공·발송 전 실패·1차 소진의 ORIGIN 결정 고정. 최종/2차 토픽 인계는 대기 |
+| 결과 판단 | `MSG-RESULT-MANAGER` | 혼합 `MSG_RESULT` 소비·source/key 검사·메시지별 STEP inbox 보존·HTTP 실패의 후속 발송 판단 연결. 웹훅 실패의 통신사 이동·동일 통신사 재시도 연결. 웹훅 성공·발송 전 실패·1차 소진의 ORIGIN 결정 고정. 최종/2차 토픽 발행기는 준비됐으나 소비 AP 준비 전까지 기본 비활성 |
 | 2차 TCP 발송 | `MSG-TCP-SENDER` | 목표 AP명 확정, 신규 경로 구현 전 |
 | 1차 성공 과금·메시지 발송 이력·DynamoDB 정리 | `MSG-COMPLETE-MANAGER` | 목표 AP명. `TBL_CDR_HIST`·`TBL_MSG_HIST`는 신규 경로에 아직 미구현 |
 | 고객 결과 웹훅 발송 | `MSG-WEBHOOK-SENDER` | `WEBHOOK-SEND` 소비 목표. 현재 `delivery-result-worker`의 통지 책임을 분리해야 함 |
@@ -314,7 +314,7 @@ sequenceDiagram
 
 `MSG-COMPLETE-MANAGER`는 **결과를 다시 판단하지 않는다.** 이미 고정된 결과로 `TBL_MSG_HIST` 발송 이력을 저장하고, 1차 발송의 최종 성공이면 `TBL_CDR_HIST` 과금을 저장한 뒤 DynamoDB 데이터 삭제를 시도한다. 고객 결과 웹훅은 `MSG-RESULT-MANAGER`가 `WEBHOOK-SEND`로 직접 인계하고 `MSG-WEBHOOK-SENDER`가 발송한다. 웹훅 배치의 offset은 1~100개 항목 모두가 STEP inbox에 내구성 있게 저장된 뒤 완료한다. 각 항목의 후속 업무 판단은 inbox 인덱스에서 이어받아야 한다.
 
-미결정 경계는 2차 TCP 전문의 상세 필드·응답 코드 매핑, 5초 무응답 때 실제 접수 후 늦게 올 수 있는 웹훅과 재발송의 경합, 영구적으로 잘못된 웹훅 배치 항목의 격리 방식이다. 신규 Manager의 inbox 소비·HTTP 실패와 웹훅 실패의 통신사 이동·재시도 승인, 통신사별 Sender는 연결됐다. 웹훅 성공·발송 전 실패·1차 소진은 ORIGIN과 STEP의 1차 결정으로 고정된다. 해당 결정의 최종/2차 토픽 발행과 TCP Sender는 아직 연결되지 않았다.
+미결정 경계는 2차 TCP 전문의 상세 필드·응답 코드 매핑, 5초 무응답 때 실제 접수 후 늦게 올 수 있는 웹훅과 재발송의 경합, 영구적으로 잘못된 웹훅 배치 항목의 격리 방식이다. 신규 Manager의 inbox 소비·HTTP 실패와 웹훅 실패의 통신사 이동·재시도 승인, 통신사별 Sender는 연결됐다. 웹훅 성공·발송 전 실패·1차 소진은 ORIGIN과 STEP의 1차 결정으로 고정된다. 해당 결정의 최종/2차 토픽 발행기는 저장된 불변 전문을 사용하며 기본 비활성이다. TCP Sender·Complete Manager·고객 웹훅 발행은 아직 연결되지 않았다.
 
 ## 6. 웹훅 미수신과 1차 만료
 

@@ -40,6 +40,11 @@ delivery:
 
 messaging:
   result:
+    outbox:
+      enabled: ${MSG_RESULT_OUTBOX_ENABLED:false}
+      initial-delay-ms: ${MSG_RESULT_OUTBOX_INITIAL_DELAY_MS:5000}
+      poll-ms: ${MSG_RESULT_OUTBOX_POLL_MS:5000}
+      page-size: ${MSG_RESULT_OUTBOX_PAGE_SIZE:100}
     followup:
       initial-delay-ms: ${MSG_RESULT_FOLLOWUP_INITIAL_DELAY_MS:5000}
       poll-ms: ${MSG_RESULT_FOLLOWUP_POLL_MS:5000}
