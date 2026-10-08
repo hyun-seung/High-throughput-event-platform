@@ -131,7 +131,7 @@ public class PrimaryStageDecisionStore {
                     .keyConditionExpression("pk = :pk AND begins_with(sk, :prefix)")
                     .expressionAttributeValues(Map.of(":pk", s("DELIVERY#" + clientMsgId),
                             ":prefix", s("RESULT_INBOX#")))
-                    .exclusiveStartKey(cursor).build());
+                    .exclusiveStartKey(cursor.isEmpty() ? null : cursor).build());
             for (var item : page.items()) {
                 if ("PENDING".equals(item.getOrDefault("status", s("")).s())
                         && Instant.parse(item.get("received_at").s()).toEpochMilli() <= deadlineMs) return true;

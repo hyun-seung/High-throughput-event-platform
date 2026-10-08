@@ -68,7 +68,7 @@ public class OriginPublicationRecovery {
                         "#due", MessagePublicationIndex.DUE))
                 .expressionAttributeValues(Map.of(":bucket", AttributeValue.fromS(bucket),
                         ":now", AttributeValue.fromN(Long.toString(now))))
-                .exclusiveStartKey(cursors.getOrDefault(shard, Map.of()))
+                .exclusiveStartKey(cursors.get(shard))
                 .limit(pageSize).build();
         var page = db.query(request);
         for (var candidate : page.items()) recover(candidate);

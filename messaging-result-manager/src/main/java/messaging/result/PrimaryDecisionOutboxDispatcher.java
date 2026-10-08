@@ -67,7 +67,7 @@ public class PrimaryDecisionOutboxDispatcher {
                         "#due", MessageResultInboxIndex.DUE))
                 .expressionAttributeValues(Map.of(":bucket", s("message-result-v1-" + shard),
                         ":now", AttributeValue.fromN(Long.toString(now))))
-                .exclusiveStartKey(cursors.getOrDefault(shard, Map.of())).limit(pageSize).build());
+                .exclusiveStartKey(cursors.get(shard)).limit(pageSize).build());
         for (var candidate : page.items()) {
             if (!candidate.get("sk").s().startsWith("PRIMARY_DECISION#")
                     && !candidate.get("sk").s().startsWith("SECONDARY_DECISION#")) continue;

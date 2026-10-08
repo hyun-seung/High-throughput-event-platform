@@ -101,7 +101,7 @@ public class HttpFailureFollowupService {
                     .keyConditionExpression("pk = :pk AND begins_with(sk, :prefix)")
                     .expressionAttributeValues(Map.of(":pk", s("DELIVERY#" + clientMsgId),
                             ":prefix", s("HTTP#")))
-                    .exclusiveStartKey(cursor).build());
+                    .exclusiveStartKey(cursor.isEmpty() ? null : cursor).build());
             for (var item : page.items()) {
                 if ("OBSERVED".equals(item.getOrDefault("status", s("")).s())) {
                     carriers.add(HttpCarrier.valueOf(item.get("carrier").s()));

@@ -63,6 +63,7 @@ class PrimaryExpiryBackfillTest {
         var scans = org.mockito.ArgumentCaptor.forClass(ScanRequest.class);
         verify(db, times(2)).scan(scans.capture());
         assertEquals(25, scans.getAllValues().get(0).limit());
+        assertFalse(scans.getAllValues().get(0).hasExclusiveStartKey());
         assertEquals(cursor, scans.getAllValues().get(1).exclusiveStartKey());
         verify(db).updateItem(any(software.amazon.awssdk.services.dynamodb.model.UpdateItemRequest.class));
     }

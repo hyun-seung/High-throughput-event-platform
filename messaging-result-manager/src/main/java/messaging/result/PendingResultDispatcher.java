@@ -67,7 +67,7 @@ public class PendingResultDispatcher {
                         "#due", MessageResultInboxIndex.DUE))
                 .expressionAttributeValues(Map.of(":bucket", s("message-result-v1-" + shard),
                         ":now", AttributeValue.fromN(Long.toString(now.toEpochMilli()))))
-                .exclusiveStartKey(cursors.getOrDefault(shard, Map.of())).limit(pageSize).build());
+                .exclusiveStartKey(cursors.get(shard)).limit(pageSize).build());
         for (var candidate : page.items()) {
             try {
                 dispatch(Map.of("pk", candidate.get("pk"), "sk", candidate.get("sk")), now);

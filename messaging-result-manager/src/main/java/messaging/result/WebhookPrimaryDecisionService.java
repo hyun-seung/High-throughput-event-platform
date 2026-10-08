@@ -101,7 +101,7 @@ public class WebhookPrimaryDecisionService {
                     .keyConditionExpression("pk = :pk AND begins_with(sk, :prefix)")
                     .expressionAttributeValues(Map.of(":pk", s("DELIVERY#" + clientMsgId),
                             ":prefix", s("HTTP#")))
-                    .exclusiveStartKey(cursor).build());
+                    .exclusiveStartKey(cursor.isEmpty() ? null : cursor).build());
             for (var recorded : page.items()) {
                 if ("OBSERVED".equals(recorded.getOrDefault("status", s("")).s())) {
                     carriers.add(HttpCarrier.valueOf(recorded.get("carrier").s()));
@@ -119,7 +119,7 @@ public class WebhookPrimaryDecisionService {
                     .keyConditionExpression("pk = :pk AND begins_with(sk, :prefix)")
                     .expressionAttributeValues(Map.of(":pk", s("DELIVERY#" + clientMsgId),
                             ":prefix", s("HTTP_COMMAND#")))
-                    .exclusiveStartKey(cursor).build());
+                    .exclusiveStartKey(cursor.isEmpty() ? null : cursor).build());
             for (var recorded : page.items()) {
                 if (resultId.equals(recorded.getOrDefault("decision_id", s("")).s())) return true;
             }

@@ -49,7 +49,7 @@ public class PrimaryExpiryBackfill {
                         + "#bucket, #due, #deadline")
                 .expressionAttributeNames(Map.of("#status", "status", "#bucket", PrimaryExpiryIndex.BUCKET,
                         "#due", PrimaryExpiryIndex.DUE, "#deadline", PrimaryExpiryIndex.DEADLINE))
-                .exclusiveStartKey(cursor).limit(pageSize).build());
+                .exclusiveStartKey(cursor.isEmpty() ? null : cursor).limit(pageSize).build());
         for (var item : page.items()) {
             examined++;
             var update = plan(item);

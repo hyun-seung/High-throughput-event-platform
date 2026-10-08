@@ -52,7 +52,7 @@ public class PrimaryExpiryDispatcher {
                         "#due", PrimaryExpiryIndex.DUE))
                 .expressionAttributeValues(Map.of(":bucket", s("message-primary-expiry-v1-" + shard),
                         ":now", AttributeValue.fromN(Long.toString(now.toEpochMilli()))))
-                .exclusiveStartKey(cursors.getOrDefault(shard, Map.of())).limit(pageSize).build());
+                .exclusiveStartKey(cursors.get(shard)).limit(pageSize).build());
         for (var candidate : page.items()) {
             try {
                 dispatch(candidate, now);

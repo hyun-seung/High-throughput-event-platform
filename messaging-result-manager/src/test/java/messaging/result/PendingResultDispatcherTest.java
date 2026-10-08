@@ -3,9 +3,12 @@ package messaging.result;
 import messaging.common.messages.CarrierHttpResult;
 import messaging.common.messages.HttpCarrier;
 import messaging.common.messages.HttpSendCommand;
+import messaging.common.messages.MessageResultInboxIndex;
 import org.junit.jupiter.api.Test;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
+import software.amazon.awssdk.services.dynamodb.model.QueryRequest;
+import software.amazon.awssdk.services.dynamodb.model.QueryResponse;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.time.Clock;
@@ -13,6 +16,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.Mockito.*;
 
 class PendingResultDispatcherTest {
@@ -21,13 +25,25 @@ class PendingResultDispatcherTest {
     private final WebhookPrimaryDecisionService decisions = mock(WebhookPrimaryDecisionService.class);
     private final HttpFailureFollowupService http = mock(HttpFailureFollowupService.class);
     private final PrimaryStageDecisionStore terminal = mock(PrimaryStageDecisionStore.class);
+    private final DynamoDbClient db = mock(DynamoDbClient.class);
     private final JsonMapper mapper = JsonMapper.builder().build();
-    private final PendingResultDispatcher dispatcher = new PendingResultDispatcher(mock(DynamoDbClient.class),
+    private final PendingResultDispatcher dispatcher = new PendingResultDispatcher(db,
             inbox, decisions, http, terminal, mock(SecondaryResultService.class),
             mapper, Clock.fixed(NOW, ZoneOffset.UTC), 100);
     private final MessageResultInboxStore.Item item = new MessageResultInboxStore.Item("a".repeat(32),
             "result-1", "WEBHOOK", "{}", NOW);
     private final Map<String, AttributeValue> key = item.key();
+
+    @Test
+    void firstPageQueriesOmitExclusiveStartKey() {
+        when(db.query(any(QueryRequest.class))).thenReturn(QueryResponse.builder().build());
+
+        dispatcher.poll();
+
+        var requests = org.mockito.ArgumentCaptor.forClass(QueryRequest.class);
+        verify(db, times(MessageResultInboxIndex.SHARDS)).query(requests.capture());
+        requests.getAllValues().forEach(request -> assertFalse(request.hasExclusiveStartKey()));
+    }
 
     @Test
     void acceptedFailureFollowupIsMarkedProcessed() {

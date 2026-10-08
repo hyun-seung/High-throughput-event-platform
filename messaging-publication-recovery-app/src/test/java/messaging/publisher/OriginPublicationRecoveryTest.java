@@ -1,6 +1,7 @@
 package messaging.publisher;
 
 import messaging.common.messages.MessageOriginCodec;
+import messaging.common.messages.MessagePublicationIndex;
 import messaging.common.messages.MessageSubmission;
 import messaging.common.messages.MessageTopics;
 import messaging.common.messages.MessageCategory;
@@ -22,6 +23,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
@@ -35,6 +37,17 @@ class OriginPublicationRecoveryTest {
     private final MessageSubmission event = new MessageSubmission("00000000-0000-0000-0000-000000000001", 42,
             "client-1", "01012345678", MessageCategory.GENERAL, Map.of("message", "hello"), null,
             Instant.parse("2026-10-02T00:00:00Z"));
+
+    @Test
+    void firstPageQueriesOmitExclusiveStartKey() {
+        when(db.query(any(QueryRequest.class))).thenReturn(QueryResponse.builder().build());
+
+        recovery.poll();
+
+        var requests = org.mockito.ArgumentCaptor.forClass(QueryRequest.class);
+        verify(db, times(MessagePublicationIndex.SHARDS)).query(requests.capture());
+        requests.getAllValues().forEach(request -> assertFalse(request.hasExclusiveStartKey()));
+    }
 
     @Test
     void replaysOnlyAnActiveOriginWithoutStepEvidence() {

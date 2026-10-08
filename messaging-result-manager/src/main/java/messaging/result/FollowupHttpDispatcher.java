@@ -57,7 +57,7 @@ public class FollowupHttpDispatcher {
                         "#due", FollowupDispatchIndex.DUE))
                 .expressionAttributeValues(Map.of(":bucket", s(FollowupDispatchIndex.bucket(shard)),
                         ":now", AttributeValue.fromN(Long.toString(now))))
-                .exclusiveStartKey(cursors.getOrDefault(shard, Map.of())).limit(pageSize).build());
+                .exclusiveStartKey(cursors.get(shard)).limit(pageSize).build());
         for (var candidate : page.items()) {
             try {
                 dispatch(candidate, now);
