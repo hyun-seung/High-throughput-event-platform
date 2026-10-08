@@ -43,6 +43,8 @@ class TcpProviderClientTest {
             assertNull(result.errorCode());
             assertEquals(ID, exchange.get().clientMsgId());
             assertEquals(command.submission().clientId(), exchange.get().clientId());
+            assertEquals(command.submission().messageId(), exchange.get().messageId());
+            assertEquals(command.submission().recipientNumber(), exchange.get().recipientNumber());
             assertEquals(command.submission().messageCategory().name(), exchange.get().messageCategory());
             assertEquals(command.submission().secondarySendPayload(), exchange.get().payload());
         }

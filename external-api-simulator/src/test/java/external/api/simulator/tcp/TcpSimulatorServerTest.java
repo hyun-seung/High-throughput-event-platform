@@ -115,7 +115,7 @@ class TcpSimulatorServerTest {
         try (var socket = new Socket("127.0.0.1", server.port())) {
             socket.setSoTimeout(2000);
             TcpFrames.write(socket.getOutputStream(), mapper.writeValueAsBytes(new MessagingTcpRequest(
-                    clientMsgId, 1L, "GENERAL", payload, Instant.now())));
+                    clientMsgId, 1L, "customer-message", "01012345678", "GENERAL", payload, Instant.now())));
             return mapper.readValue(TcpFrames.read(socket.getInputStream()), MessagingTcpResponse.class);
         }
     }

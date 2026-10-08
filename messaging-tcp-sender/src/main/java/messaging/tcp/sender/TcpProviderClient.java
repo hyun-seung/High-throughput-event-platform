@@ -29,6 +29,7 @@ public class TcpProviderClient {
     public TcpSendResult send(SecondarySendCommand command) {
         var submission = command.submission();
         var request = new MessagingTcpRequest(submission.clientMsgId(), submission.clientId(),
+                submission.messageId(), submission.recipientNumber(),
                 submission.messageCategory().name(), submission.secondarySendPayload(), clock.instant());
         byte[] body = mapper.writeValueAsBytes(request);
         if (body.length > TcpFrames.MAX_BYTES) return result(command, TcpSendResult.Status.INVALID_RESPONSE, 40005, null);
