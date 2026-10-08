@@ -95,8 +95,15 @@ def events(path: Path) -> list[dict]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
 
 
+def kafka_record_count(topic: str, client_msg_id: str, env: dict[str, str]) -> int:
+    output = run(["docker", "compose", "exec", "-T", "kafka",
+                  "/opt/kafka/bin/kafka-console-consumer.sh", "--bootstrap-server", "localhost:29092",
+                  "--topic", topic, "--from-beginning", "--timeout-ms", "1500"], env)
+    return sum(client_msg_id in line for line in output.splitlines())
+
+
 def verify_flow(env: dict[str, str], event_file: Path, client_id: int,
-                scenario: str, timeout: int) -> str:
+                scenario: str, timeout: int, observe: bool = False) -> str:
     api = f"http://127.0.0.1:{env.get('DELIVERY_API_PORT', '8080')}"
     status, auth = post_json(api + "/api/v1/auth/token",
                              {"username": "local-user", "password": "local-password"})
@@ -125,10 +132,16 @@ def verify_flow(env: dict[str, str], event_file: Path, client_id: int,
     client_msg_id = message["clientMsgId"]
     if not re.fullmatch(r"[0-9a-f]{32}", client_msg_id):
         raise AssertionError("Invalid clientMsgId from admission")
+    if observe:
+        print(f"[인입] HTTP 202, clientId={client_id}, messageId={message_id}, "
+              f"clientMsgId={client_msg_id}, recipient={recipient}", flush=True)
+        print(f"[접수 제어] TPS count={tps_count}, 월 quota 사용량={before + 1}", flush=True)
 
     deadline = time.monotonic() + timeout
     dynamodb_endpoint = f"http://127.0.0.1:{env.get('DYNAMODB_HOST_PORT', '8000')}/"
     first_timeout_checked = False
+    seen_requests = seen_callbacks = seen_tcp = seen_customer = 0
+    seen_history = seen_webhook_status = ""
     while time.monotonic() < deadline:
         found = events(event_file)
         requests = [event for event in found if event["kind"] == "carrier_request"
@@ -140,6 +153,23 @@ def verify_flow(env: dict[str, str], event_file: Path, client_id: int,
                             for item in event["body"].get("results", []))]
         tcp_requests = [event for event in found if event["kind"] == "tcp_request"
                         and event["clientMsgId"] == client_msg_id]
+        if observe:
+            for item in requests[seen_requests:]:
+                print(f"[1차 발송] {item['carrier']} HTTP 요청 수신, "
+                      f"회차={item['invocation']}, clientMsgId={client_msg_id}", flush=True)
+            seen_requests = len(requests)
+            for item in callbacks[seen_callbacks:]:
+                print(f"[통신사 웹훅] {item['carrier']} 결과를 WEBHOOK-RECEIVE-API가 HTTP 202로 접수",
+                      flush=True)
+            seen_callbacks = len(callbacks)
+            for _ in tcp_requests[seen_tcp:]:
+                print("[2차 발송] TCP 업체가 요청을 수신", flush=True)
+            seen_tcp = len(tcp_requests)
+            for item in customer[seen_customer:]:
+                result = next(result for result in item["body"]["results"]
+                              if result["clientMsgId"] == client_msg_id)
+                print(f"[고객 웹훅] status={result['status']}, clientMsgId={client_msg_id}", flush=True)
+            seen_customer = len(customer)
         if scenario.startswith("no-response-") and requests and not first_timeout_checked:
             observed = ddb("Query", {"TableName": "STEP", "ConsistentRead": True,
                 "KeyConditionExpression": "pk = :pk AND begins_with(sk, :prefix)",
@@ -164,6 +194,12 @@ def verify_flow(env: dict[str, str], event_file: Path, client_id: int,
                    f"WHERE client_msg_id='{client_msg_id}'", env)
         webhook = psql(f"SELECT status FROM messaging_webhook.tbl_webhook_outbox "
                        f"WHERE client_msg_id='{client_msg_id}'", env)
+        if observe and hist and hist != seen_history:
+            print(f"[최종 이력] TBL_MSG_HIST={hist}", flush=True)
+            seen_history = hist
+        if observe and webhook and webhook != seen_webhook_status:
+            print(f"[고객 웹훅 저장] TBL_WEBHOOK_OUTBOX={webhook}", flush=True)
+            seen_webhook_status = webhook
         expected_carriers = {
             "success": ["SKT"], "carrier-mismatch": ["SKT", "KT"],
             "carrier-exhausted": ["SKT", "KT", "LGU"], "tps-retry": ["SKT", "SKT"],
@@ -237,6 +273,9 @@ def verify_flow(env: dict[str, str], event_file: Path, client_id: int,
                         dynamodb_endpoint, env)
             if origin.get("Item") or steps.get("Count") != 0:
                 raise AssertionError("DynamoDB rows remain after cleanup is DONE")
+            if observe:
+                print(f"[완료] 과금 대상 TBL_CDR_HIST={cdr}건, 고객 웹훅={webhook}, "
+                      "DynamoDB ORIGIN·STEP 정리 완료", flush=True)
             return client_msg_id
         time.sleep(1)
     raise TimeoutError(f"First-send flow did not finish: clientMsgId={client_msg_id}, "
@@ -249,6 +288,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--skip-build", action="store_true")
     parser.add_argument("--skip-infra", action="store_true")
+    parser.add_argument("--observe", action="store_true",
+                        help="print each stage and matching Kafka topic records")
     parser.add_argument("--scenario", choices=("success", "carrier-mismatch",
                                                "carrier-exhausted", "tps-retry", "tps-exhausted",
                                                "no-response-retry", "no-response-exhausted",
@@ -380,7 +421,24 @@ def main() -> int:
             process = start(["bash", "scripts/local.sh", "run", module], module, app_env)
             ready(process, app_ports[module], directory / f"{module}.log")
         time.sleep(2)
-        client_msg_id = verify_flow(env, mock_events, client_id, args.scenario, args.timeout)
+        if args.observe:
+            print(f"[준비] 시나리오={args.scenario}, 실행 로그={directory}", flush=True)
+        client_msg_id = verify_flow(env, mock_events, client_id, args.scenario, args.timeout,
+                                    args.observe)
+        if args.observe:
+            topics = ["message.received.v1", "message.skt.http.send.v1", "MSG_RESULT",
+                      "MSG-RESULT-FINALIZED", "WEBHOOK-SEND"]
+            if args.scenario in ("carrier-mismatch", "carrier-exhausted"):
+                topics.append("message.kt.http.send.v1")
+            if args.scenario == "carrier-exhausted":
+                topics.append("message.lgu.http.send.v1")
+            if args.scenario.startswith("secondary-"):
+                topics.append("message.tcp.requested.v1")
+            for topic in topics:
+                count = kafka_record_count(topic, client_msg_id, env)
+                print(f"[Kafka] {topic}: clientMsgId 일치 레코드 {count}건", flush=True)
+                if count < 1:
+                    raise AssertionError(f"No Kafka record for clientMsgId in {topic}")
         print(f"1차 발송 경로 통과 ({args.scenario}): clientMsgId={client_msg_id}")
         print("확인: TPS·Quota 사용량, 통신사 HTTP 경로, SQL 이력·CDR, 고객 웹훅, DynamoDB 정리")
         return 0
