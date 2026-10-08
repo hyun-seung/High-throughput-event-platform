@@ -1,6 +1,6 @@
 # 메시지 접수부터 최종 결과까지: 케이스별 Call Flow
 
-기준: 2026-10-07. **신규 `/api/v1/messages` 경로의 목표 설계**를 한곳에서 읽기 위한 문서다. 정상 흐름과 실패·복구 분기를 함께 그린다. 현재 구현은 API 접수·ORIGIN 저장·`message.received.v1` 발행, 공통 전문·통신사별 토픽, CDC 캐시 준비, PRE-SEND-MANAGER의 Kafka 소비·판단 고정·통신사별 HTTP 명령 발행과 발송 불가 결과 인계, 통신사별 sender의 Redis·STEP 선점과 HTTP 응답 기록·실패 인계, `WEBHOOK-RECEIVE-API`의 1~100건 단일 Kafka 발행까지다. `MSG-RESULT-MANAGER`는 혼합 `MSG_RESULT`를 소비해 항목별 STEP inbox에 보존하고 HTTP 실패·타임아웃의 후속 통신사·재시도 판단까지 연결했다. 웹훅 실패의 `66001` 이동·`66002` 재시도도 pending 인덱스의 재확인 경로에 연결했다. 웹훅 성공·발송 전 실패·HTTP/웹훅 재시도 소진은 ORIGIN의 1차 결정을 조건부 고정하고 STEP에 후속 인계 대기 항목을 남긴다. 최종 결과의 `MSG-RESULT-FINALIZED`와 2차의 `message.tcp.requested.v1` 발행기는 구현했다. TCP Sender의 임시 규격 송신과 `TCP_RESPONSE`의 최종 판단·완료/고객 웹훅 인계도 구현했다. 결과 outbox와 TCP Sender 소비는 기본 활성이다. 실제 업체 연동 전 TCP 규격 검증이 필요하다. 고객 대상 `WEBHOOK-SEND` 인계와 1차 만료 처리는 구현됐다. 이관 전 `delivery.*` 구현·검증을 신규 경로의 완료로 읽지 않는다. 구현 상태는 [01 현재 상태](01-현재-구현-상태와-남은-작업.md), 결정 근거는 [ADR-026](adr/ADR-026-MESSAGE-RECEIVED와-통신사별-HTTP-발송-분리.md)·[ADR-027](adr/ADR-027-접수-API-Redis-TPS와-유형별-월-Quota.md)을 따른다.
+기준: 2026-10-08. `/api/v1/messages`의 정상·실패·복구 경로다. 현재 구현 범위는 [현재 상태](01-현재-구현-상태와-남은-작업.md), 오류 코드와 결과 전문은 [오류 코드 계약](54-메시징-오류-코드와-결과-인계-계약.md)을 따른다.
 
 ## 읽는 순서와 경계
 
@@ -30,13 +30,13 @@
 | 고객 접수 | `MSG-RECEIVE-API` | `messaging-api`에 신규 접수 경로 구현, 기본 활성화. `MESSAGING_ADMISSION_ENABLED=false`로 중지 가능 |
 | 1차 발송 준비 | `PRE-SEND-MANAGER` | 참조 조회·명령 또는 발송 불가 결과를 ORIGIN에 고정하고 Kafka 인계 구현 |
 | 1차 HTTP 발송 | `MSG-SKT-SENDER`, `MSG-KT-SENDER`, `MSG-LGU-SENDER` | 공통 `messaging-carrier-http-sender` 실행 JAR을 통신사별 URL·토픽·소비 그룹으로 분리. 명령 소비·Redis/STEP 선점·HTTP 호출·결과 기록과 실패 인계 구현 |
-| 웹훅 접수 | `WEBHOOK-RECEIVE-API` | 독립 `messaging-webhook-receive-api`에 인증·1~100건 검증·`MSG_RESULT` 단일 레코드 발행 구현. 기존 `receipt-api`는 이관 전 경로 |
+| 웹훅 접수 | `WEBHOOK-RECEIVE-API` | 독립 `messaging-webhook-receive-api`에 인증·1~100건 검증·`MSG_RESULT` 단일 레코드 발행 구현 |
 | 결과 판단 | `MSG-RESULT-MANAGER` | 혼합 `MSG_RESULT` 소비·source/key 검사·메시지별 STEP inbox 보존·HTTP 실패의 후속 발송 판단 연결. 웹훅 실패의 통신사 이동·동일 통신사 재시도 연결. 웹훅 성공·발송 전 실패·1차 소진의 ORIGIN 결정 고정. 최종/2차 토픽 발행 기본 활성 |
 | 2차 TCP 발송 | `MSG-TCP-SENDER` | 임시 TCP 규격 발송·결과 보존·MSG_RESULT 인계 구현, 기본 활성 |
 | 1차 성공 과금·메시지 발송 이력·DynamoDB 정리 | `MSG-COMPLETE-MANAGER` | 독립 `messaging-complete-manager`가 1·2차 최종 SQL 이력을 저장하고 1차 성공만 과금 대상으로 기록. SQL 정리 대기열이 고객 웹훅 발행 완료를 확인한 뒤 DynamoDB에 TTL을 설정하고 ORIGIN·STEP을 삭제 |
 | 고객 결과 웹훅 발송 | `MSG-WEBHOOK-SENDER` | `WEBHOOK-SEND` 소비·SQL 대기열 보존 기본 활성. 고객별 URL이 있으면 최대 100건 묶음으로 HTTP 발송하고 이력을 기록 |
 
-이전 단일 `messaging-http-sender` 모듈은 제거했으며, `messaging-publication-recovery-app`·`messaging-reference-cache`는 각각 최초 Kafka 발행 복구와 CDC 캐시 투영을 돕는 별도 AP다. 현재 `delivery-result-worker`는 이관 전 경로의 최종 이력·고객 통지·정리를 한 모듈에서 수행한다. 신규 경로의 1·2차 최종 결과는 `MSG-COMPLETE-MANAGER`의 SQL 이력과 `MSG-WEBHOOK-SENDER`의 고객 통지로 연결된다.
+`messaging-publication-recovery-app`·`messaging-reference-cache`는 각각 최초 Kafka 발행 복구와 CDC 캐시 투영을 돕는 별도 AP다. 1·2차 최종 결과는 `MSG-COMPLETE-MANAGER`의 SQL 이력과 `MSG-WEBHOOK-SENDER`의 고객 통지로 연결된다.
 
 신규 `messaging-carrier-http-sender`는 같은 JAR을 통신사별 Pod에서 실행한다. `MSG_HTTP_CARRIER`·`MSG_HTTP_BASE_URL`·해당 명령 토픽·고유 소비 그룹을 기동 때 확인해 자기 통신사 명령만 소비한다. 각 명령이 ORIGIN에 고정된 원문과 같을 때만 STEP을 `PENDING`으로 예약하고, Redis의 통신사·시도·회차 키를 선점한 실행만 STEP을 `SENDING`으로 전이한다. Redis 키가 유실돼도 이미 `SENDING`인 호출은 자동 재발송하지 않는다. 공통 요청 경로의 현재 기본값은 `/api/v1/messages`이며 Pod 설정으로 바꿀 수 있다. 비-200 응답은 `{status: "4xx", error: {code: "4xxxx", message: "..."}}`의 문자열 코드를 원본으로 보존한다. 불일치·TPS 원본 코드 매핑은 Pod 기동 필수 설정이고, 그 외 6만 대역이 아닌 코드는 임시 공통 실패 `66999`로 정규화한다.
 
@@ -278,7 +278,7 @@ sequenceDiagram
     end
 ```
 
-`FAILED` 웹훅이나 명시적 비-200의 코드가 `66001`이면 [3.1의 통신사 이동](#31-번호-매핑-누락과-통신사-이동)을, `66002`이면 실패 판단 1분 뒤 동일 통신사 재시도를 적용한다. 각 경로가 소진되면 각각 `40002`·`40001`로 1차 실패를 확정한다. 다른 6만 대역 코드는 1차 실패로 닫는다. 5초 무응답은 1분 뒤 같은 통신사에 재발송하고 최대 3회 재시도 소진 시 `40003`으로 닫는다. 그다음 `secondarySendPayload` 존재 여부로 2차 TCP 또는 최종 실패·고객 웹훅을 선택한다. 이전 경로의 `RETRY_1S`·`RETRY_10S`·`FALLBACK`·`REJECTED` 기준을 신규 웹훅 코드표로 자동 승계하지 않는다.
+`FAILED` 웹훅이나 명시적 비-200의 코드가 `66001`이면 [3.1의 통신사 이동](#31-번호-매핑-누락과-통신사-이동)을, `66002`이면 실패 판단 1분 뒤 동일 통신사 재시도를 적용한다. 각 경로가 소진되면 각각 `40002`·`40001`로 1차 실패를 확정한다. 다른 6만 대역 코드는 1차 실패로 닫는다. 5초 무응답은 1분 뒤 같은 통신사에 재발송하고 최대 3회 재시도 소진 시 `40003`으로 닫는다. 그다음 `secondarySendPayload` 존재 여부로 2차 TCP 또는 최종 실패·고객 웹훅을 선택한다.
 
 **웹훅은 해당 1차 발송 호출의 최종 결과다.** 실패 웹훅 뒤 새 통신사 호출이나 재시도가 이어질 수 있으므로 전체 메시지의 최종 결과와는 구분한다. 웹훅이 sender의 DynamoDB `200 OK` 기록보다 먼저 도착하면 늦은 200 기록은 발송 메타데이터만 보충한다. Manager는 `clientMsgId`로 실행을 찾고 현재 대기 중인 시도에 결과를 조건부 반영한다. 이미 처리한 결과의 재전달은 무시한다. 단, 업체 웹훅에는 시도 ID가 없으므로 다음 발송의 200 이후 이전 실패 웹훅이 다시 오면 두 회차를 확실히 구별할 수 없다. 이 경우 이전 결과가 현재 시도에 잘못 반영될 위험이 남는다.
 
@@ -411,7 +411,7 @@ flowchart LR
 
 완료 관리자는 `ORIGIN`·`STEP` 테이블에 `ttl_epoch_seconds` TTL을 활성화한다. SQL 이력 commit과 고객 웹훅 토픽 발행 확인 후 각 항목에 기본 7일 만료 시각을 설정하고 삭제한다. 삭제가 실패하면 SQL 정리 대기 행으로 재시도한다. 아주 늦게 온 업체 웹훅이 정리 뒤 생성한 결과 inbox에도 7일 TTL을 설정한다. AWS 문서에 따르면 [TTL은 만료 항목을 백그라운드에서 삭제하며 삭제 전까지 읽기에 나타날 수 있다](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/ttl-expired-items.html). 따라서 TTL은 삭제 실패의 저장 공간 정리 수단으로 쓰고, 업무상 완료·과금·중복 여부는 SQL 고유 키와 최종 결과 상태로 판단한다. 업체 웹훅에는 최대 만료 기간이 없으므로 정리 후 늦게 온 결과를 구분할 SQL 참조 정보도 필요하다.
 
-현재 `delivery-result-worker`는 **이전 경로**의 `delivery_history`·통지·정리 예약을 처리한다. 새 `messaging-complete-manager`는 별도 PostgreSQL `messaging_completion` 스키마에 `TBL_MSG_HIST`·`TBL_CDR_HIST`와 `clientMsgId` 기본 키를 만들고 1차·2차 최종 이력을 저장하되 1차 성공만 CDR과 원자 저장한다. `MSG_COMPLETE_CONSUMER_ENABLED=true`와 `MSG_COMPLETE_CLEANUP_ENABLED=true`가 기본값이며 DynamoDB 정리와 TTL 설정도 완료 관리자에 연결됐다. `WEBHOOK-SEND` 생산은 결과 Manager outbox에 연결됐고, 새 `messaging-webhook-sender`에는 토픽 소비·고객별 최대 100건 묶음·HTTP 발송·`messaging_webhook.tbl_webhook_hist` 저장을 구현했다. 발송기 소비는 `MSG_WEBHOOK_SENDER_ENABLED=true`가 기본값이며 고객별 URL이 설정되면 HTTP 발송한다. URL이 없는 고객의 명령은 SQL에 보류한다.
+`messaging-complete-manager`는 PostgreSQL `messaging_completion` 스키마의 `TBL_MSG_HIST`·`TBL_CDR_HIST`에 최종 이력과 1차 성공 과금 대상을 원자적으로 저장한다. `MSG_COMPLETE_CONSUMER_ENABLED=true`와 `MSG_COMPLETE_CLEANUP_ENABLED=true`가 기본값이며 DynamoDB 정리·TTL 경로도 연결됐다. `WEBHOOK-SEND`는 결과 Manager outbox가 발행하고 `messaging-webhook-sender`가 고객별 최대 100건을 묶어 HTTP로 발송한 뒤 `messaging_webhook.tbl_webhook_hist`에 저장한다. 고객 URL이 없으면 SQL에 보류한다.
 
 ## 9. 중간 종료와 저장소 장애
 
@@ -439,20 +439,6 @@ HTTP `200 OK` 경로는 Kafka를 발행하지 않는다. **명시적 비-200 실
 
 우리 서비스 코드는 `10000~59999`, 1차 HTTP 3사 정규화 코드는 `60000~69999`, 2차 TCP 업체 정규화 코드는 `70000~79999`를 사용한다. HTTP 상태와 업체 원본 코드는 별도 필드로 보존한다. HTTP 5초 무응답은 업체 오류 코드가 아니며, 재시도 소진 시 우리 서비스 코드 `40003`으로 1차 실패를 저장한다. 상세 계약은 [54 오류 코드 계약](54-메시징-오류-코드와-결과-인계-계약.md)에 기록한다.
 
-## 구현 전에 확정할 인터페이스
+## 남은 확인
 
-- `MSG_RESULT`의 웹훅 전문: 요청 추적용 `traceId`와 1~100개 결과를 묶은 1레코드. 업체 원문은 `{clientMsgId, status}` 또는 `{clientMsgId, status, error: {code, message}}` 객체의 배열이며 `clientMsgId`는 접수·발송·웹훅에서 동일하다. `status` 값은 소문자 `success`·`fail`이고, `success`에는 `error`가 없으며 `fail`에는 5자리 숫자 `error.code`가 필수다. `attemptId`·회차·발송 시각은 내부 저장 원본에서 보강하되 웹훅에는 시도 식별자가 없어 이전 회차의 늦은 중복을 완전히 구분할 수 없다.
-- 웹훅 API 경량화에 맞춰 **요청 1건당 Kafka 1레코드**를 사용한다. Manager는 1~100개 항목을 STEP inbox에 모두 보존한 뒤 offset을 완료한다. 보존 중 일시 장애가 나면 배치 전체를 재전달받고 이미 쓴 항목은 동일 payload로 멱등 확인한다. 업무 판단은 각 항목의 pending 인덱스에서 이어받는다. 현재 보존은 순차 처리이며 제한된 병렬성과 100건 부하 시험이 남았다. 영구적으로 잘못된 항목의 격리 정책과 Kafka 메시지·HTTP 요청 최대 바이트는 구현 전에 정한다.
-- 명시적 비-200 실패와 5초 무응답은 sender가 각각 `source=HTTP_RESPONSE`·`source=HTTP_TIMEOUT`으로 `MSG_RESULT`에 직접 발행한다. 1분 후 재발송은 Manager가 저장된 시도 상태에서 예약한다. HTTP `200 OK` 경로에서 Kafka 발행이 없다는 규칙은 유지한다. 2차 TCP 즉시 응답은 `source=TCP_RESPONSE`로 같은 토픽에 인계한다.
-- 웹훅이 Sender의 DynamoDB `200 OK` 기록보다 먼저 온 경우에도 웹훅이 해당 시도의 최종 결과라는 규칙을 지키는 조건부 갱신. 늦은 sender 기록은 메타데이터만 보충한다.
-- HTTP `200 OK` 뒤 웹훅 미수신 시 만료 판단을 깨우는 주체와 만료·늦은 결과의 경합 기준. 2차 전환 자체는 `secondarySendPayload` 존재 여부로 결정한다.
-- Manager는 접수 시 생성한 `clientMsgId`를 통신사 이동·같은 통신사 재시도에도 그대로 업체에 전달한다. 내부 `attemptId`·회차는 DynamoDB에 저장한다. 업체의 발송 중·성공 시 일정 시간 중복 차단과 실패 후 같은 ID 재사용은 확인된 계약으로 취급하되 정확한 보장 시간·기산 시점은 확인해야 한다. HTTP 후속 명령의 생산·소비는 연결됐으며 웹훅·발송 전 실패의 후속 명령은 아직 남아 있다.
-- `66002`는 최초 발송 뒤 같은 통신사에 최대 3회 재시도(총 최대 4회)하며, 각 재발송은 실패 판단 1분 이후다. 소진 시 `40001`을 저장한다. HTTP 5초 무응답에도 같은 간격·횟수를 적용하고 소진 시 `40003`을 저장한다. 통신사별 공유 속도 제한, 신규 1차 deadline의 Redis 후보 등록 시점, 재시도 명령의 통신사별 라우팅·지연 예약 방식은 정해야 한다. 기존 단일 sender용 `message.http.retry.v1`을 그대로 신규 경로로 읽지 않는다.
-- 세 통신사 모두 `66001`이면 1차 실패 `40002`를 고정하고 2차 대상 여부를 확인한다. 확인된 통신사의 PostgreSQL 반영 여부는 별도 결정이다. 탐색 순서는 매핑 유무와 관계없이 SKT → KT → LGU+에서 이미 시도한 통신사를 제외한다.
-- 통신사 불일치의 업체별 원본 코드를 `66001`로 매핑하는 표, 중복·늦은 웹훅에 대한 단일 이동 판단, 다음 통신사 명령의 저장 원본·발행 주체.
-- 계약상 발송 불가 결과의 인계 전문·토픽, 계약·발송 설정 스키마.
-- sender Redis 선점 TTL·진행 중 중복 처리·DynamoDB 기록 실패 복구, 업체별 동일 `clientMsgId` 중복 차단 시간과 만료 뒤 내부 재전달 방지 범위.
-- 1차·2차 Redis 발송 중복 선점은 **같은 발송 시도의 재전달을 막으면서 새 통신사·재시도 회차를 허용**해야 한다. 공통 `SendAttemptKeys`는 1차에 `clientMsgId`·통신사·`attemptId`·`invocation`, 2차에 `clientMsgId`·`attemptId`를 포함한다. `RedisSendAttemptGuard`는 이 키를 `SET NX`·TTL로 선점하며 1차·2차 Sender가 이를 사용한다. Redis 유실 시 외부 업체의 중복 차단 보장 범위는 운영 검증이 필요하다.
-- 2차 발송 명령 토픽은 현재 `message.tcp.requested.v1`, 즉시 응답 결과 토픽은 `MSG_RESULT`(`source=TCP_RESPONSE`)로 둔다. TCP 규격서 분석 전에는 전문 필드·응답 코드 매핑·타임아웃·무응답 재시도 정책을 확정하지 않는다.
-
-이전 경로의 상세 시험·장애 근거는 [기존 전체 흐름](04-요청-접수부터-최종-결과까지의-전체-흐름.md), [저장소 장애](09-저장소-장애-시-중단-범위와-복구-절차.md), [계약·번호 CDC](52-계약과-번호-통신사-CDC-캐시.md)에 보존한다. 신규 경로 구현이 진행되면 이 문서의 목표·미정·완료 표시를 갱신한다.
+실제 통신사 실패 코드 매핑, 업체의 중복 차단 보장 범위, 실제 2차 TCP 전문·응답 규격을 확인해야 한다. 업체 웹훅에는 회차 식별자가 없어 이전 실패 웹훅의 늦은 재전송이 다음 회차와 겹칠 수 있다. 메인 경로의 장애·부하 시험도 별도로 필요하다.

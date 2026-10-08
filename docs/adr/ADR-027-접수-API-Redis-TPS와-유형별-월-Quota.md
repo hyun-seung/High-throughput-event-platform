@@ -1,6 +1,6 @@
 # ADR-027 접수 API의 Redis TPS와 유형별 월 Quota
 
-- Status: Accepted — 신규 API에 구현, 기본 비활성화 경로
+- Status: Accepted — 신규 API에 구현, 기본 활성화
 - Date: 2026-10-03
 - 변경 범위: [ADR-025](ADR-025-API-직접-Kafka-발행과-계약-조회-제거.md)의 접수 시 TPS·Quota 미차감 결정만 대체한다. API에서 PostgreSQL 계약을 조회하지 않는 결정은 유지한다.
 
@@ -12,4 +12,4 @@
 
 정책은 접수 제어용 Redis 데이터이며 고객 계약 테이블 조회가 아니다. 계약·발송 정보 확인은 `PRE-SEND-MANAGER`에서 CDC Redis 캐시 우선, 누락 시 PostgreSQL 조회로 수행한다. 정책이 없거나 형식이 잘못되면 API는 503으로 접수를 중단한다. Redis 연결 실패·타임아웃이면 접수를 계속하는 가용성 정책을 택한다. 따라서 Redis 장애 동안 제한 초과 접수가 가능하며 사용량도 누락될 수 있다.
 
-이 결정은 신규 `/api/v1/messages` 경로에 적용된다. 기존 `/api/v1/deliveries`의 `RequestControlFilter` 정책과 키는 별개다. 신규 API는 `MESSAGING_ADMISSION_ENABLED=false`가 기본값이다.
+이 결정은 `/api/v1/messages`에 적용된다. API는 기본 활성화이며 `MESSAGING_ADMISSION_ENABLED=false`로만 비활성화한다.

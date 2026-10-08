@@ -1,49 +1,18 @@
 # 메시징 서비스
 
-고객의 메시지를 접수해 통신사 HTTP로 1차 발송하고, 필요한 경우 TCP/IP로 2차 발송하는 Kafka 기반 비동기 메시징 서비스입니다. 재시도·웹훅·만료·고객 결과 전달을 처리하며, DynamoDB 사용을 최소화하면서 원본·멱등·복구 경계를 코드와 테스트로 검증합니다.
+고객 메시지를 `/api/v1/messages`로 접수해 통신사 HTTP로 1차 발송하고, 필요한 경우 TCP로 2차 발송하는 Kafka 기반 서비스입니다. 접수에는 Redis TPS·월 Quota 검사, DynamoDB 원본 저장, Kafka 발행을 사용합니다. HTTP 200 뒤 업체 웹훅이 최종 1차 결과이며, 명시적 HTTP 실패와 타임아웃은 Sender가 결과 토픽으로 직접 인계합니다.
 
-업무 대상은 **메시지**, 이를 접수·발송·완료하는 제품은 **메시징 서비스**라고 부릅니다. Kafka에 발행하는 처리 기록은 **레코드**라고 부릅니다. 신규 접수 계약은 `/api/v1/messages`의 `messageId`·`messageCategory`, Kafka `message.*` 토픽을 사용합니다. [용어 기준](docs/00-요구사항과-전체-설계.md#용어-기준).
+현재 설계와 구현 범위는 [요구사항과 전체 설계](docs/00-요구사항과-전체-설계.md), [케이스별 Call Flow](docs/53-신규-메시지-케이스별-Call-Flow.md), [현재 구현 상태](docs/01-현재-구현-상태와-남은-작업.md)를 순서대로 확인하세요. [문서 안내](docs/문서-안내.md)에 오류 코드와 CDC 자료도 정리했습니다.
 
-## 먼저 읽을 문서
-
-문서를 번호순으로 모두 읽을 필요는 없습니다. 현재 설계와 구현 차이는 아래 3개만 읽으면 됩니다.
-
-1. [요구사항과 전체 설계](docs/00-요구사항과-전체-설계.md)
-2. [메시지 접수부터 최종 결과까지의 Call Flow](docs/53-신규-메시지-케이스별-Call-Flow.md)
-3. [현재 구현 상태와 남은 작업](docs/01-현재-구현-상태와-남은-작업.md)
-
-오류 코드·저장소 장애·실행 방법 등 상세 자료는 [문서 안내](docs/문서-안내.md)에서 작업별로 찾습니다. 이전 구현의 설계·시험 기록은 현재 신규 경로의 정책으로 읽지 않도록 별도 분류해 보존합니다.
-
-## 현재 단계
-
-이관 전 경로에서는 핵심 발송 흐름·DLT 복구, 운영 조회·수동 조치·감사 복구와 장애 중 호출 제한까지 구현했습니다. 신규 경로의 통신사별 Sender·결과 Manager·TCP Sender 연결은 아직 남아 있습니다. 완료 여부·시험 수치는 위 진행 현황 문서에서 관리합니다.
-
-위 구현 설명은 이관 전 경로를 포함합니다. 신규 `MESSAGE-RECEIVED → PRE-SEND-MANAGER → 통신사별 HTTP-SENDER` 뒤 HTTP 200은 DynamoDB에만 기록하고, 그 발송의 최종 결과인 웹훅은 독립 `messaging-webhook-receive-api`가 받아 `MSG_RESULT → MSG-RESULT-MANAGER`로 인계합니다. 기존 `receipt-api`는 이관 전 경로에서만 사용합니다. 명시적 비-200과 5초 무응답은 Sender가 `MSG_RESULT`에 직접 인계합니다. 2차 TCP는 업체가 같은 호출에서 거의 즉시 결과를 준다는 가정으로 처리하며, 실제 규격서에 따른 제한 시간·오류 매핑은 미정입니다. 오류 코드 대역은 [오류 코드 계약](docs/54-메시징-오류-코드와-결과-인계-계약.md), 구현 범위는 [현재 상태](docs/01-현재-구현-상태와-남은-작업.md)에서 확인합니다.
-
-## 실행과 Grafana
-
-로컬 앱은 [실행 방법](docs/06-로컬-개발-환경-실행-방법.md)을 따릅니다. 신규 메인 경로의 모니터링과 실제 메시지 흐름은 `bash scripts/monitoring.sh up` 및 `bash scripts/monitoring.sh demo`로 확인합니다. 화면과 검증 방법은 [메인 경로 모니터링 실행](docs/19-그라파나-대시보드-실행과-PPT-항목-대응.md)을 참고하세요.
-
-[Grafana 통합 관제 열기](http://localhost:13000/d/delivery-overview). 수집 대상·화면별 연결 범위와 기존 Kafka 볼륨 주의사항은 [대시보드 문서](docs/19-그라파나-대시보드-실행과-PPT-항목-대응.md)를 확인합니다.
-
-## 표준 테스트
-
-JDK 21에서 실행합니다. 통합 시험은 Docker도 필요합니다.
+JDK 21과 Docker가 필요합니다. 로컬에서 메인 경로를 실행하고 관측하려면 다음 명령을 사용합니다.
 
 ```sh
-bash scripts/test-java.sh unit
-bash scripts/test-java.sh integration
+./mvnw package
+bash scripts/monitoring.sh up
+bash scripts/monitoring.sh demo --rate 1 --seconds 1 --errors
+bash scripts/monitoring.sh verify
 ```
 
-실제 JVM 종료·저장소 장애 검증과 기존 PoC는 한글 이름의 실행 메뉴에서 찾을 수 있습니다.
+[Grafana 통합 관제](http://localhost:13000/d/messaging-overview)에서 AP·Kafka·저장소 지표와 로그를 볼 수 있습니다. 실행 옵션은 [로컬 실행 방법](docs/06-로컬-개발-환경-실행-방법.md), 화면 구성은 [모니터링 안내](docs/19-그라파나-대시보드-실행과-PPT-항목-대응.md)를 참고하세요.
 
-```sh
-bash scripts/검증-실행.sh 목록
-bash scripts/검증-실행.sh 준비
-bash scripts/검증-실행.sh 도구-테스트 -q
-bash scripts/검증-실행.sh 고객-통지중-종료
-```
-
-업무 기능·저장 상태 회귀는 위 Java 테스트가 기준이고, Python 도구는 별도 JVM·Docker를 실제 중단하고 복구하는 격리 검증 및 모니터링 도구로 사용합니다. [도구별 역할](docs/48-Java-중심-테스트와-외부-도구-사용-기준.md)을 참고하세요.
-
-업무 검증은 Java/JUnit, 환경 실행은 Bash + Docker Compose, 성능 부하 생성기는 **k6**입니다. 기존 외부 도구의 역할과 미실행 판정은 [테스트 기준](docs/48-Java-중심-테스트와-외부-도구-사용-기준.md)에 명시합니다.
+단위 테스트는 `bash scripts/test-java.sh unit`, 별도 Docker 인프라를 쓰는 통합 테스트는 `bash scripts/test-java.sh integration`으로 실행합니다. 2차 TCP 전문은 실제 업체 규격 확인 전까지 임시 형식입니다.
