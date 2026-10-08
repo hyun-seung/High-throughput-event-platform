@@ -32,7 +32,7 @@ def request_json(url: str, payload: object | None = None, token: str | None = No
 
 
 def compose(*args: str) -> str:
-    result = subprocess.run([*COMPOSE, *args], cwd=ROOT, capture_output=True, text=True)
+    result = subprocess.run([*COMPOSE, *args], cwd=ROOT, capture_output=True, text=True, timeout=30)
     if result.returncode:
         raise RuntimeError(f"Compose command failed: {result.stderr[-1000:]}")
     return result.stdout.strip()
@@ -79,14 +79,18 @@ def wait_for_job(job: str, timeout: int) -> None:
     raise TimeoutError(f"Prometheus target did not become ready: {job}")
 
 
-def submit(token: str, run_id: str, number: int, failure: bool) -> tuple[str, float, bool]:
+def submit(token: str, run_id: str, number: int, failure: bool,
+           secondary: bool = False) -> tuple[str, float, str]:
     message_id = f"monitor-{run_id}-{number:05d}"
     body = {"messageId": message_id, "recipientNumber": "010" + f"{number % 100000000:08d}",
             "messageCategory": "GENERAL", "payload": {"text": "monitor-force-failure" if failure
                                                      else "monitoring main flow"}}
+    if secondary:
+        body["secondarySendPayload"] = {"text": "monitoring TCP fallback"}
     start = time.monotonic()
     answer = request_json(API + "/api/v1/messages", body, token)
-    return answer["data"]["clientMsgId"], (time.monotonic() - start) * 1000, failure
+    case = "secondary-success" if secondary else "primary-failure" if failure else "primary-success"
+    return answer["data"]["clientMsgId"], (time.monotonic() - start) * 1000, case
 
 
 def demo(args: argparse.Namespace) -> None:
@@ -107,40 +111,52 @@ def demo(args: argparse.Namespace) -> None:
             futures.append(pool.submit(submit, token, run_id, number, False))
         if args.errors:
             futures.append(pool.submit(submit, token, run_id, total, True))
+        if args.secondary:
+            futures.append(pool.submit(submit, token, run_id, total + int(args.errors), True, True))
         receipts = [future.result() for future in futures]
 
-    expected = {client_msg_id: failure for client_msg_id, _, failure in receipts}
+    expected = {client_msg_id: case for client_msg_id, _, case in receipts}
+    destination = ROOT / ".monitoring/demo-latest.json"
+    destination.parent.mkdir(exist_ok=True)
+    report = {"runId": run_id, "admitted": len(receipts), "cases": expected, "pass": False}
+    destination.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     deadline = time.monotonic() + args.timeout
     rows = {}
     delivered = 0
     while time.monotonic() < deadline:
-        raw = sql("SELECT client_msg_id || '|' || outcome || '|' || cleanup_status "
+        raw = sql("SELECT client_msg_id || '|' || outcome || '|' || cleanup_status || '|' || final_stage "
                   "FROM messaging_completion.tbl_msg_hist "
                   f"WHERE message_id LIKE 'monitor-{run_id}-%'")
         rows = {pieces[0]: pieces[1:] for line in raw.splitlines()
-                if len(pieces := line.split("|")) == 3}
-        delivered = int(sql("SELECT count(*) FROM messaging_webhook.tbl_webhook_outbox "
+                if len(pieces := line.split("|")) == 4}
+        delivered = int(sql("SELECT count(*) FROM messaging_webhook.tbl_webhook_outbox o "
                             "WHERE status='DELIVERED' AND client_msg_id IN "
                             "(SELECT client_msg_id FROM messaging_completion.tbl_msg_hist "
-                            f"WHERE message_id LIKE 'monitor-{run_id}-%')") or "0")
-        if all(rows.get(client_msg_id) == ["FAILURE" if failure else "SUCCESS", "DONE"]
-               for client_msg_id, failure in expected.items()) and delivered == len(expected):
+                            f"WHERE message_id LIKE 'monitor-{run_id}-%') "
+                            "AND EXISTS (SELECT 1 FROM messaging_webhook.tbl_webhook_hist h "
+                            "WHERE h.batch_id=o.batch_id AND h.acknowledged)") or "0")
+        if all(rows.get(client_msg_id) == ["FAILURE" if case == "primary-failure" else "SUCCESS", "DONE",
+                                          "SECONDARY" if case == "secondary-success" else "PRIMARY"]
+               for client_msg_id, case in expected.items()) and delivered == len(expected):
             break
         time.sleep(1)
     else:
         raise TimeoutError(f"Main flow did not finish: finalized={len(rows)}/{len(expected)}, "
                            f"customerWebhooks={delivered}/{len(expected)}")
 
-    billable = int(sql("SELECT count(*) FROM messaging_completion.tbl_cdr_hist "
-                       f"WHERE message_id LIKE 'monitor-{run_id}-%'") or "0")
-    if billable != total:
-        raise AssertionError(f"Expected {total} primary billable rows; got {billable}")
+    billed_ids = set(sql("SELECT client_msg_id FROM messaging_completion.tbl_cdr_hist "
+                         f"WHERE message_id LIKE 'monitor-{run_id}-%'").splitlines())
+    primary_success_ids = {identifier for identifier, case in expected.items() if case == "primary-success"}
+    if billed_ids != primary_success_ids:
+        raise AssertionError("Billable message IDs do not match successful primary sends")
+    billable = len(billed_ids)
     times = sorted(latency for _, latency, _ in receipts)
-    report = {"runId": run_id, "admitted": len(receipts), "primarySuccess": total,
-              "primaryFailure": int(args.errors), "billable": billable,
+    report.update({"primarySuccess": total, "primaryFailure": int(args.errors) + int(args.secondary),
+              "secondarySuccess": int(args.secondary), "billable": billable,
               "customerWebhooksDelivered": delivered,
               "admissionP95Ms": round(times[math.ceil(len(times) * 0.95) - 1], 2),
-              "exampleClientMsgId": receipts[0][0]}
+              "exampleClientMsgId": receipts[0][0], "pass": True})
+    destination.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(report, ensure_ascii=False, indent=2))
 
 
@@ -185,6 +201,45 @@ def verify() -> None:
         raise AssertionError("; ".join(errors))
 
 
+def diagnose() -> None:
+    def docker(*args: str) -> str:
+        result = subprocess.run(["docker", *args], cwd=ROOT, capture_output=True,
+                                text=True, timeout=30, check=True)
+        return result.stdout.strip()
+
+    info = json.loads(docker("info", "--format", '{{json .}}'))
+    containers = docker("ps", "--format",
+                        '{{.Names}}|{{.Label "com.docker.compose.project"}}|'
+                        '{{.Label "com.docker.compose.project.working_dir"}}')
+    duplicates = []
+    for line in containers.splitlines():
+        name, project, directory = line.split("|", 2)
+        if directory == str(ROOT) and project != "platform-messaging-monitoring":
+            duplicates.append({"container": name, "project": project})
+    report = {"dockerCpus": info["NCPU"], "dockerMemoryBytes": info["MemTotal"],
+              "runningContainers": info["ContainersRunning"],
+              "otherContainersFromThisRepository": duplicates}
+    try:
+        report["vmPressure"] = compose("exec", "-T", "redis", "sh", "-c",
+            "cat /proc/loadavg /proc/pressure/cpu /proc/pressure/memory /proc/pressure/io; "
+            "grep -E 'MemAvailable|SwapTotal|SwapFree' /proc/meminfo; "
+            "grep -E 'pswp|pgmajfault' /proc/vmstat")
+    except (subprocess.SubprocessError, RuntimeError) as failure:
+        report["vmPressureError"] = str(failure)
+    started = time.monotonic()
+    try:
+        targets = request_json("http://127.0.0.1:19099/api/v1/query?query=up")
+        report["targets"] = {item["metric"]["job"]: float(item["value"][1])
+                             for item in targets["data"]["result"]}
+    except Exception as failure:
+        report["prometheusError"] = str(failure)
+    report["prometheusElapsedMs"] = round((time.monotonic() - started) * 1000, 2)
+    destination = ROOT / ".monitoring/diagnostics.json"
+    destination.parent.mkdir(exist_ok=True)
+    destination.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     subcommands = parser.add_subparsers(dest="command", required=True)
@@ -192,9 +247,12 @@ def main() -> None:
     demo_parser.add_argument("--rate", type=int, default=1)
     demo_parser.add_argument("--seconds", type=int, default=1)
     demo_parser.add_argument("--errors", action="store_true")
+    demo_parser.add_argument("--secondary", action="store_true",
+                             help="Also verify HTTP failure followed by successful TCP fallback")
     demo_parser.add_argument("--timeout", type=int, default=180)
     demo_parser.add_argument("--startup-timeout", type=int, default=300)
     subcommands.add_parser("verify")
+    subcommands.add_parser("diagnose")
     wait_parser = subcommands.add_parser("wait-job")
     wait_parser.add_argument("--job", required=True)
     wait_parser.add_argument("--timeout", type=int, default=180)
@@ -203,6 +261,8 @@ def main() -> None:
         demo(args)
     elif args.command == "verify":
         verify()
+    elif args.command == "diagnose":
+        diagnose()
     else:
         wait_for_job(args.job, args.timeout)
 

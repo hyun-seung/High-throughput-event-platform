@@ -10,11 +10,12 @@ Docker Desktop과 JDK 21, Python 3.10 이상이 필요하다. 저장소 루트�
 ./mvnw package
 bash scripts/monitoring.sh up
 bash scripts/monitoring.sh status
-bash scripts/monitoring.sh demo --rate 1 --seconds 1
+bash scripts/monitoring.sh diagnose
+bash scripts/monitoring.sh demo --rate 1 --seconds 1 --errors --secondary
 bash scripts/monitoring.sh verify
 ```
 
-`demo`는 정상 메시지를 `/api/v1/messages`로 넣고 SQL 최종 이력, 1차 과금 대상 기록, 고객 웹훅 전달까지 기다린다. `--rate`는 초당 1~100건, `--seconds`는 1~120초다. `--errors`를 주면 1차 HTTP 실패 1건도 제출해 실패 이력과 고객 웹훅을 확인한다. 결과 JSON의 `exampleClientMsgId`로 로그를 검색할 수 있다. `verify`는 10개 AP, Kafka 관측기, Redis·PostgreSQL exporter의 Prometheus 수집 상태와 Grafana 대시보드 7개를 확인하고 `.monitoring/verification.json`에 결과를 저장한다. 데모의 업무 결과 검증과 관측 연결 검증은 서로 다른 검사다.
+`demo`는 정상 메시지를 `/api/v1/messages`로 넣고 SQL 최종 이력, 1차 과금 대상 기록, 고객 웹훅 전달까지 기다린다. `--rate`는 초당 1~100건, `--seconds`는 1~120초다. `--errors`를 주면 1차 HTTP 실패 1건도 제출해 실패 이력과 고객 웹훅을 확인한다. `--secondary`를 추가하면 HTTP 실패 후 TCP 성공 메시지 1건도 제출하고, 이 메시지에는 과금 대상 기록이 생기지 않는지 검사한다. 고객 웹훅은 outbox의 전달 상태와 `TBL_WEBHOOK_HIST`의 수신 확인 이력을 함께 확인한다. 결과는 `.monitoring/demo-latest.json`에 저장하며 `cases`에 모든 `clientMsgId`와 검증 경로를 남긴다. 업무 결과를 기다리기 전에 `pass=false`로 저장하고 전체 검증을 마쳐야 `pass=true`가 된다. `exampleClientMsgId`로 로그를 검색할 수 있다. `verify`는 10개 AP, Kafka 관측기, Redis·PostgreSQL exporter의 Prometheus 수집 상태와 Grafana 대시보드 7개를 확인하고 `.monitoring/verification.json`에 결과를 저장한다. 데모의 업무 결과 검증과 관측 연결 검증은 서로 다른 검사다.
 
 ```bash
 bash scripts/monitoring.sh demo --rate 5 --seconds 10 --errors
@@ -48,3 +49,29 @@ Compose project는 `platform-messaging-monitoring`이다. 과거 `platform-monit
 
 
 2026-10-08 로컬 검증에서는 신규 AP 10개·Kafka 관측기·DB exporter의 수집과 7개 Grafana 화면이 모두 통과했다. 정상 1건은 최종 이력 1건·과금 대상 1건·고객 웹훅 전달 1건까지 확인했다. 정상 1건과 1차 HTTP 실패 1건을 함께 보낸 시험에서는 최종 이력 2건·과금 대상 1건·고객 웹훅 전달 2건을 확인했다. 이는 소량 기능 검증이며 부하 성능 결과가 아니다.
+
+## 지연 진단과 2026-10-08 재검증
+
+```bash
+bash scripts/monitoring.sh diagnose
+bash scripts/monitoring.sh demo --rate 1 --seconds 1 --errors --secondary
+bash scripts/monitoring.sh verify
+```
+
+`diagnose`는 Docker CPU·메모리 용량, 실행 컨테이너 수, 같은 저장소의 다른 Compose 프로젝트, VM의 CPU·메모리·I/O pressure, 스왑 상태, Prometheus 응답 시간과 수집 상태를 읽어 `.monitoring/diagnostics.json`에 기록한다. 컨테이너를 자동 정지하거나 데이터를 삭제하지 않는다. Docker 조회는 30초, HTTP 조회는 20초로 대기를 제한한다.
+
+이번 지연은 Docker VM의 메모리 압력과 스왑·페이지 회수 경합에서 발생했다. 약 8GB VM에 35개 컨테이너가 실행됐고, 1GB 스왑의 여유는 148KiB였다. 10초 평균 CPU pressure `some`은 89.36%, 메모리는 49.55%였다. Kafka heartbeat 재연결과 DynamoDB 10초 타임아웃, Prometheus 7~20초 응답 지연이 함께 관측됐다.
+
+소유 경로가 이 저장소로 확인된 `reliable-messaging-service`와 `reliable-event-platform`의 DB 각 3개, 이전 `platform` 프로젝트의 `dynamodb-local` 1개를 정지했다. 현재 모니터링 스택과 다른 저장소의 컨테이너는 유지했고 데이터 볼륨은 보존했다. 실행 수는 28개로 줄었고, 이후 CPU pressure는 0.38%, 메모리는 0.27%, Prometheus 조회는 32.89ms였다. 스왑 사용량 자체는 즉시 줄지 않았으므로 사용량만으로 지연 지속 여부를 판단하지 않는다.
+
+중복 DB를 정지한 뒤 실행한 `runId=71516490`의 결과는 다음과 같다. 업체와 고객 수신기는 로컬 mock이며 업무 AP·Kafka·Redis·DynamoDB·PostgreSQL은 실제 실행했다.
+
+| 경로 | 최종 단계·결과 | TBL_MSG_HIST | TBL_CDR_HIST | 고객 웹훅 |
+|---|---|---|---|---|
+| HTTP 200 → 성공 웹훅 | PRIMARY·SUCCESS | 1건 | 1건 | 전달·이력 확인 |
+| HTTP 실패, 2차 전문 없음 | PRIMARY·FAILURE | 1건 | 0건 | 전달·이력 확인 |
+| HTTP 실패 → TCP 성공 | SECONDARY·SUCCESS | 1건 | 0건 | 전달·이력 확인 |
+
+세 메시지의 정리 상태는 모두 `DONE`이며 DynamoDB ORIGIN의 일관 읽기로 실제 삭제도 확인했다. 메시지별 ID는 `.monitoring/demo-latest.json`에 있다. 16개 Prometheus 대상, Grafana 7개 화면, Kafka offset 관측, Loki 로그 조회도 모두 통과했다. 소량 접수 p95는 127.31ms였으며 처리량·성능 보장 수치로 사용하지 않는다.
+
+다시 기본 로컬 DB나 과거 프로젝트를 함께 기동하면 같은 VM의 자원을 공유한다. 실행 전 `diagnose`로 중복 프로젝트를 확인하고, 사용하지 않는 환경만 소유·사용 여부를 확인해 정지한다. 현재 검증 경로에는 기본 로컬 DB 프로젝트를 별도로 띄울 필요가 없다.
