@@ -47,7 +47,11 @@ def read_body(handler: BaseHTTPRequestHandler) -> bytes:
     return handler.rfile.read(length)
 
 
-def handler_for(kind: str, events: Events, webhook_url: str, secret: str):
+def handler_for(kind: str, events: Events, webhook_base_url: str, secret: str,
+                scenario: str, carrier: str = ""):
+    counts = {}
+    count_lock = threading.Lock()
+
     class Handler(BaseHTTPRequestHandler):
         def do_POST(self):
             expected = "/api/v1/messages" if kind == "carrier" else "/hook"
@@ -65,7 +69,23 @@ def handler_for(kind: str, events: Events, webhook_url: str, secret: str):
                 return
 
             if kind == "carrier":
-                events.write("carrier_request", clientMsgId=client_msg_id, request=payload)
+                with count_lock:
+                    invocation = counts.get(client_msg_id, 0) + 1
+                    counts[client_msg_id] = invocation
+                events.write("carrier_request", clientMsgId=client_msg_id, carrier=carrier,
+                             invocation=invocation, receivedAt=time.time(), request=payload)
+                mismatch = scenario == "carrier-mismatch" and carrier == "SKT" or \
+                    scenario == "carrier-exhausted"
+                tps = scenario == "tps-retry" and carrier == "SKT" and invocation == 1
+                if mismatch or tps:
+                    self.send_response(400)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    code = "41001" if mismatch else "42002"
+                    self.wfile.write(json.dumps({"status": "4xx", "error": {
+                        "code": code, "message": "not our carrier" if mismatch else "TPS exceeded",
+                    }}).encode())
+                    return
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()
@@ -80,6 +100,7 @@ def handler_for(kind: str, events: Events, webhook_url: str, secret: str):
             return
 
     def send_webhook(client_msg_id: str):
+        webhook_url = webhook_base_url + "/" + carrier.lower()
         body = json.dumps([{"clientMsgId": client_msg_id, "status": "success"}]).encode()
         for attempt in range(20):
             time.sleep(0.5 if attempt == 0 else 1)
@@ -89,11 +110,12 @@ def handler_for(kind: str, events: Events, webhook_url: str, secret: str):
             try:
                 with urlopen(request, timeout=5) as response:
                     if response.status == 202:
-                        events.write("carrier_webhook_accepted", clientMsgId=client_msg_id)
+                        events.write("carrier_webhook_accepted", clientMsgId=client_msg_id,
+                                     carrier=carrier)
                         return
             except OSError:
                 pass
-        events.write("carrier_webhook_failed", clientMsgId=client_msg_id)
+        events.write("carrier_webhook_failed", clientMsgId=client_msg_id, carrier=carrier)
 
     return Handler
 
@@ -102,22 +124,29 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--ready-file", type=Path, required=True)
     parser.add_argument("--events-file", type=Path, required=True)
-    parser.add_argument("--webhook-url", required=True)
+    parser.add_argument("--webhook-base-url", required=True)
+    parser.add_argument("--scenario", choices=("success", "carrier-mismatch",
+                                                "carrier-exhausted", "tps-retry"), default="success")
     args = parser.parse_args()
-    secret = os.environ.get("FLOW_WEBHOOK_SECRET", "")
-    if len(secret) < 32:
-        parser.error("FLOW_WEBHOOK_SECRET must contain at least 32 characters")
+    secrets_by_carrier = {carrier: os.environ.get(f"FLOW_WEBHOOK_SECRET_{carrier}", "")
+                          for carrier in ("SKT", "KT", "LGU")}
+    if any(len(secret) < 32 for secret in secrets_by_carrier.values()):
+        parser.error("Each FLOW_WEBHOOK_SECRET_<CARRIER> must contain at least 32 characters")
     args.events_file.touch()
     events = Events(args.events_file)
-    carrier = ThreadingHTTPServer(("127.0.0.1", 0),
-                                  handler_for("carrier", events, args.webhook_url, secret))
+    carriers = {name: ThreadingHTTPServer(("127.0.0.1", 0),
+                handler_for("carrier", events, args.webhook_base_url, secrets_by_carrier[name],
+                            args.scenario, name)) for name in ("SKT", "KT", "LGU")}
     customer = ThreadingHTTPServer(("127.0.0.1", 0),
-                                   handler_for("customer", events, args.webhook_url, secret))
-    carrier.daemon_threads = True
+                                   handler_for("customer", events, args.webhook_base_url,
+                                               "", args.scenario))
+    for server in carriers.values():
+        server.daemon_threads = True
+        threading.Thread(target=server.serve_forever, daemon=True).start()
     customer.daemon_threads = True
-    threading.Thread(target=carrier.serve_forever, daemon=True).start()
     threading.Thread(target=customer.serve_forever, daemon=True).start()
-    ready = {"carrierUrl": f"http://127.0.0.1:{carrier.server_port}",
+    ready = {"carrierUrls": {name: f"http://127.0.0.1:{server.server_port}"
+                              for name, server in carriers.items()},
              "customerUrl": f"http://127.0.0.1:{customer.server_port}/hook"}
     temporary = args.ready_file.with_suffix(".tmp")
     temporary.write_text(json.dumps(ready), encoding="utf-8")
@@ -125,7 +154,8 @@ def main():
     try:
         threading.Event().wait()
     finally:
-        carrier.shutdown()
+        for server in carriers.values():
+            server.shutdown()
         customer.shutdown()
 
 

@@ -95,7 +95,8 @@ def events(path: Path) -> list[dict]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
 
 
-def verify_flow(env: dict[str, str], event_file: Path, client_id: int, timeout: int) -> str:
+def verify_flow(env: dict[str, str], event_file: Path, client_id: int,
+                scenario: str, timeout: int) -> str:
     api = f"http://127.0.0.1:{env.get('DELIVERY_API_PORT', '8080')}"
     status, auth = post_json(api + "/api/v1/auth/token",
                              {"username": "local-user", "password": "local-password"})
@@ -131,22 +132,40 @@ def verify_flow(env: dict[str, str], event_file: Path, client_id: int, timeout: 
         customer = [event for event in found if event["kind"] == "customer_webhook"
                     and any(item.get("clientMsgId") == client_msg_id
                             for item in event["body"].get("results", []))]
-        hist = psql(f"SELECT final_stage || '|' || outcome || '|' || cleanup_status "
+        hist = psql(f"SELECT final_stage || '|' || outcome || '|' || cleanup_status || '|' || "
+                    f"COALESCE(error_code::text, '') || '|' || COALESCE(carrier, '') "
                     f"FROM messaging_completion.tbl_msg_hist WHERE client_msg_id='{client_msg_id}'", env)
         cdr = psql(f"SELECT count(*) FROM messaging_completion.tbl_cdr_hist "
                    f"WHERE client_msg_id='{client_msg_id}'", env)
         webhook = psql(f"SELECT status FROM messaging_webhook.tbl_webhook_outbox "
                        f"WHERE client_msg_id='{client_msg_id}'", env)
-        if hist == "PRIMARY|SUCCESS|DONE" and cdr == "1" and webhook == "DELIVERED" \
-                and len(requests) == 1 and callbacks and customer:
-            request = requests[0]["request"]
-            if request["clientMsgId"] != client_msg_id or request["recipientNumber"] != recipient \
-                    or request["tenantId"] != client_id or request["payload"]["text"] != "first-send local flow":
-                raise AssertionError("Carrier request differs from admitted message")
+        expected_carriers = {
+            "success": ["SKT"], "carrier-mismatch": ["SKT", "KT"],
+            "carrier-exhausted": ["SKT", "KT", "LGU"], "tps-retry": ["SKT", "SKT"],
+        }[scenario]
+        expected_success = scenario != "carrier-exhausted"
+        expected_history = "PRIMARY|SUCCESS|DONE||" if expected_success else "PRIMARY|FAILURE|DONE|40002|"
+        if hist.startswith(expected_history) and cdr == ("1" if expected_success else "0") \
+                and webhook == "DELIVERED" and len(requests) == len(expected_carriers) \
+                and len(callbacks) == (1 if expected_success else 0) and customer:
+            if [item["carrier"] for item in requests] != expected_carriers:
+                raise AssertionError("Carrier routing differs from the expected order")
+            for item in requests:
+                request = item["request"]
+                if request["clientMsgId"] != client_msg_id or request["recipientNumber"] != recipient \
+                        or request["tenantId"] != client_id or request["payload"]["text"] != "first-send local flow":
+                    raise AssertionError("Carrier request differs from admitted message")
+            if scenario == "tps-retry":
+                if [item["invocation"] for item in requests] != [1, 2] \
+                        or requests[1]["receivedAt"] - requests[0]["receivedAt"] < 60:
+                    raise AssertionError("66002 retry did not wait one minute before the second invocation")
+            if expected_success and callbacks[0]["carrier"] != expected_carriers[-1]:
+                raise AssertionError("Webhook came from the wrong carrier")
             result = next(item for item in customer[0]["body"]["results"]
                           if item["clientMsgId"] == client_msg_id)
-            if result["status"] != "success":
-                raise AssertionError("Customer webhook did not report success")
+            if result["status"] != ("success" if expected_success else "fail") \
+                    or (not expected_success and result["errorCode"] != 40002):
+                raise AssertionError("Customer webhook differs from final result")
             after = int(redis(["GET", usage_key], env) or "0")
             if after != before + 1:
                 raise AssertionError(f"Message quota usage changed by {after - before}, expected 1")
@@ -170,7 +189,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--skip-build", action="store_true")
     parser.add_argument("--skip-infra", action="store_true")
-    parser.add_argument("--timeout", type=int, default=90)
+    parser.add_argument("--scenario", choices=("success", "carrier-mismatch",
+                                               "carrier-exhausted", "tps-retry"), default="success")
+    parser.add_argument("--timeout", type=int, default=120)
     args = parser.parse_args()
     if args.timeout < 10:
         parser.error("--timeout must be at least 10 seconds")
@@ -224,14 +245,16 @@ def main() -> int:
             if not (ROOT / module / "target" / f"{module}-1.0-SNAPSHOT.jar").is_file():
                 raise RuntimeError(f"Build first: missing {module} JAR")
 
-        secret = secrets.token_urlsafe(32)
+        secrets_by_carrier = {carrier: secrets.token_urlsafe(32)
+                              for carrier in ("SKT", "KT", "LGU")}
         mock_ready = directory / "mock-ready.json"
         mock_events = directory / "mock-events.jsonl"
         webhook_port = env.get("MESSAGE_WEBHOOK_PORT", "8099")
         start([sys.executable, "scripts/primary-flow-mock.py", "--ready-file", str(mock_ready),
-               "--events-file", str(mock_events), "--webhook-url",
-               f"http://127.0.0.1:{webhook_port}/api/v1/message-webhooks/skt"],
-              "mock", {"FLOW_WEBHOOK_SECRET": secret})
+               "--events-file", str(mock_events), "--scenario", args.scenario,
+               "--webhook-base-url", f"http://127.0.0.1:{webhook_port}/api/v1/message-webhooks"],
+              "mock", {f"FLOW_WEBHOOK_SECRET_{carrier}": value
+                       for carrier, value in secrets_by_carrier.items()})
         for _ in range(100):
             if mock_ready.exists():
                 break
@@ -251,13 +274,16 @@ def main() -> int:
             "messaging-webhook-sender": env.get("MSG_WEBHOOK_SENDER_PORT", "8104"),
             "messaging-api": env.get("DELIVERY_API_PORT", "8080"),
         }
+        carrier_ports = {"SKT": app_ports["messaging-carrier-http-sender"],
+                         "KT": env.get("FLOW_KT_SENDER_PORT", "8111"),
+                         "LGU": env.get("FLOW_LGU_SENDER_PORT", "8112")}
+        carrier_metrics_ports = {"SKT": env.get("MSG_HTTP_SENDER_METRICS_PORT", "19091"),
+                                 "KT": env.get("FLOW_KT_SENDER_METRICS_PORT", "19111"),
+                                 "LGU": env.get("FLOW_LGU_SENDER_METRICS_PORT", "19112")}
         dynamic = {
-            "messaging-carrier-http-sender": override("carrier", {
-                "MSG_HTTP_CARRIER": "SKT", "MSG_HTTP_BASE_URL": mock_urls["carrierUrl"],
-                "MSG_HTTP_NOT_OUR_CARRIER_CODES": "60001", "MSG_HTTP_TPS_EXCEEDED_CODES": "60002",
-            }),
             "messaging-webhook-receive-api": override("webhook-receive", {
-                "MESSAGE_WEBHOOK_SKT_SECRET": secret,
+                **{f"MESSAGE_WEBHOOK_{carrier}_SECRET": secrets_by_carrier[carrier]
+                   for carrier in carrier_ports},
             }),
             "messaging-webhook-sender": override("webhook-sender", {
                 "SPRING_APPLICATION_JSON": json.dumps({"messaging": {"webhook": {"sender": {
@@ -267,16 +293,30 @@ def main() -> int:
             "messaging-api": override("api", {"MESSAGING_ADMISSION_ENABLED": "true"}),
         }
         for module in MODULES:
+            if module == "messaging-carrier-http-sender":
+                for carrier in carrier_ports:
+                    sender = f"{module}-{carrier.lower()}"
+                    path = override(sender, {
+                        "MSG_HTTP_CARRIER": carrier, "MSG_HTTP_BASE_URL": mock_urls["carrierUrls"][carrier],
+                        "MSG_HTTP_SENDER_PORT": carrier_ports[carrier],
+                        "MSG_HTTP_SENDER_METRICS_PORT": carrier_metrics_ports[carrier],
+                        "MSG_HTTP_NOT_OUR_CARRIER_CODES": "41001",
+                        "MSG_HTTP_TPS_EXCEEDED_CODES": "42002",
+                    })
+                    process = start(["bash", "scripts/local.sh", "run", module], sender,
+                                    {"LOCAL_ENV_OVERRIDE_FILE": path})
+                    ready(process, carrier_ports[carrier], directory / f"{sender}.log")
+                continue
             app_env = {"LOCAL_ENV_OVERRIDE_FILE": dynamic[module]} if module in dynamic else None
             process = start(["bash", "scripts/local.sh", "run", module], module, app_env)
             ready(process, app_ports[module], directory / f"{module}.log")
         time.sleep(2)
-        client_msg_id = verify_flow(env, mock_events, client_id, args.timeout)
-        print(f"1차 정상 경로 통과: clientMsgId={client_msg_id}")
-        print("확인: TPS·Quota 사용량, SKT HTTP 200, 성공 웹훅, SQL 이력·CDR, 고객 웹훅, DynamoDB 정리")
+        client_msg_id = verify_flow(env, mock_events, client_id, args.scenario, args.timeout)
+        print(f"1차 발송 경로 통과 ({args.scenario}): clientMsgId={client_msg_id}")
+        print("확인: TPS·Quota 사용량, 통신사 HTTP 경로, SQL 이력·CDR, 고객 웹훅, DynamoDB 정리")
         return 0
     except Exception as failure:
-        print(f"1차 정상 경로 실패: {failure}", file=sys.stderr)
+        print(f"1차 발송 경로 실패 ({args.scenario}): {failure}", file=sys.stderr)
         return 1
     finally:
         for process in reversed(processes):
