@@ -22,7 +22,7 @@
 
 ## 실행과 Grafana
 
-로컬 앱은 [실행 방법](docs/06-로컬-개발-환경-실행-방법.md)을 따릅니다. 모니터링 환경은 앱 빌드 후 `bash scripts/monitoring.sh up`으로 실행합니다.
+로컬 앱은 [실행 방법](docs/06-로컬-개발-환경-실행-방법.md)을 따릅니다. 신규 메인 경로의 모니터링과 실제 메시지 흐름은 `bash scripts/monitoring.sh up` 및 `bash scripts/monitoring.sh demo`로 확인합니다. 화면과 검증 방법은 [메인 경로 모니터링 실행](docs/19-그라파나-대시보드-실행과-PPT-항목-대응.md)을 참고하세요.
 
 [Grafana 통합 관제 열기](http://localhost:13000/d/delivery-overview). 수집 대상·화면별 연결 범위와 기존 Kafka 볼륨 주의사항은 [대시보드 문서](docs/19-그라파나-대시보드-실행과-PPT-항목-대응.md)를 확인합니다.
 
