@@ -13,6 +13,10 @@ scrape_configs:
     metrics_path: /actuator/prometheus
     static_configs:
       - targets: ['pre-send:19093']
+  - job_name: publication-recovery
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['publication-recovery:19098']
   - job_name: skt-sender
     metrics_path: /actuator/prometheus
     static_configs:

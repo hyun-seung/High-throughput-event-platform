@@ -7,6 +7,7 @@ import json
 import math
 import subprocess
 import sys
+import tempfile
 import time
 import uuid
 from pathlib import Path
@@ -31,8 +32,9 @@ def request_json(url: str, payload: object | None = None, token: str | None = No
         return json.load(response)
 
 
-def compose(*args: str) -> str:
-    result = subprocess.run([*COMPOSE, *args], cwd=ROOT, capture_output=True, text=True, timeout=30)
+def compose(*args: str, override: Path | None = None, timeout: int = 30) -> str:
+    command = [*COMPOSE, *([] if override is None else ["-f", str(override)]), *args]
+    result = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, timeout=timeout)
     if result.returncode:
         raise RuntimeError(f"Compose command failed: {result.stderr[-1000:]}")
     return result.stdout.strip()
@@ -162,7 +164,7 @@ def demo(args: argparse.Namespace) -> None:
 
 def verify() -> None:
     jobs = {"api", "pre-send", "skt-sender", "kt-sender", "lgu-sender", "webhook-receive",
-            "result-manager", "complete-manager", "webhook-sender", "tcp-sender",
+            "result-manager", "complete-manager", "webhook-sender", "tcp-sender", "publication-recovery",
             "kafka-observer", "redis", "postgres", "prometheus", "loki", "alloy"}
     response = request_json("http://127.0.0.1:19099/api/v1/query?" + urlencode({"query": "up"}))
     observed = {item["metric"]["job"]: float(item["value"][1])
@@ -179,19 +181,20 @@ def verify() -> None:
             request_json(f"http://127.0.0.1:13000/api/dashboards/uid/messaging-{name}")
         except Exception as failure:
             errors.append(f"Grafana dashboard {name}: {failure}")
-    log_found = False
-    for _ in range(15):
-        try:
-            log_query = request_json("http://127.0.0.1:13000/api/datasources/proxy/uid/platform-loki/loki/api/v1/query_range?" +
-                                     urlencode({"query": '{service="api"}', "limit": 1, "since": "1h"}))
-            if log_query["data"]["result"]:
-                log_found = True
-                break
-        except Exception:
-            pass
-        time.sleep(2)
-    if not log_found:
-        errors.append("API structured log was not found in Loki")
+    for service in ("api", "publication-recovery"):
+        log_found = False
+        for _ in range(15):
+            try:
+                log_query = request_json("http://127.0.0.1:13000/api/datasources/proxy/uid/platform-loki/loki/api/v1/query_range?" +
+                                         urlencode({"query": '{service="' + service + '"}', "limit": 1, "since": "1h"}))
+                if log_query["data"]["result"]:
+                    log_found = True
+                    break
+            except Exception:
+                pass
+            time.sleep(2)
+        if not log_found:
+            errors.append(f"{service} structured log was not found in Loki")
     report = {"targets": observed, "dashboards": boards, "errors": errors, "pass": not errors}
     destination = ROOT / ".monitoring/verification.json"
     destination.parent.mkdir(exist_ok=True)
@@ -240,6 +243,106 @@ def diagnose() -> None:
     print(json.dumps(report, ensure_ascii=False, indent=2))
 
 
+def origin_item(client_msg_id: str) -> dict:
+    payload = {"TableName": "ORIGIN", "Key": {"pk": {"S": "DELIVERY#" + client_msg_id},
+               "sk": {"S": "META"}}, "ConsistentRead": True}
+    response = subprocess.run(["curl", "--silent", "--show-error", "--fail-with-body", "--max-time", "10",
+        "--aws-sigv4", "aws:amz:ap-northeast-2:dynamodb", "--user", "local:local",
+        "-H", "X-Amz-Target: DynamoDB_20120810.GetItem", "-H", "Content-Type: application/x-amz-json-1.0",
+        "--data", json.dumps(payload), "http://127.0.0.1:38000/"],
+        capture_output=True, text=True, check=True, timeout=15)
+    return json.loads(response.stdout).get("Item", {})
+
+
+def wait_for_api(timeout: int = 120) -> None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            if request_json(API + "/readyz").get("status") == "UP":
+                return
+        except Exception:
+            pass
+        time.sleep(1)
+    raise TimeoutError("API did not become ready")
+
+
+def recovery_test(timeout: int) -> None:
+    """Break only this stack's API producer, then recover the durable admission without resubmitting."""
+    wait_for_demo_services(180)
+    wait_for_job("publication-recovery", 180)
+    destination = ROOT / ".monitoring/recovery-latest.json"
+    destination.parent.mkdir(exist_ok=True)
+    report = {"pass": False, "stage": "starting"}
+
+    def checkpoint(stage: str) -> None:
+        report["stage"] = stage
+        destination.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"Recovery test: {stage}", flush=True)
+
+    checkpoint("starting")
+    try:
+        with tempfile.TemporaryDirectory(prefix="messaging-recovery-") as directory:
+            override = Path(directory) / "producer-down.yml"
+            override.write_text("services:\n  api:\n    environment:\n"
+                                "      KAFKA_BOOTSTRAP_SERVERS: 127.0.0.1:1\n", encoding="utf-8")
+            try:
+                compose("stop", "publication-recovery", timeout=90)
+                compose("up", "-d", "--no-deps", "api", override=override, timeout=120)
+                wait_for_api()
+                checkpoint("api-producer-unavailable")
+                token = request_json(API + "/api/v1/auth/token",
+                                     {"username": "local-user", "password": "local-password"})["data"]["accessToken"]
+                run_id = uuid.uuid4().hex[:8]
+                client_msg_id, latency, _ = submit(token, run_id, 0, False)
+                report.update({"runId": run_id, "clientMsgId": client_msg_id, "admissionMs": round(latency, 2)})
+                stored = origin_item(client_msg_id)
+                if stored.get("message_id", {}).get("S") != f"monitor-{run_id}-00000":
+                    raise AssertionError("Admission was not durably saved under the original ID")
+                if "message_publication_due" not in stored:
+                    raise AssertionError("Admission has no publication recovery index")
+                logs = compose("logs", "--tail=1000", "--no-color", "api")
+                if not any(client_msg_id in line and "Initial Kafka publication" in line for line in logs.splitlines()):
+                    raise AssertionError("No evidence of the API publication failure")
+                report["initialPublicationFailed"] = True
+                if sql(f"SELECT count(*) FROM messaging_completion.tbl_msg_hist WHERE client_msg_id='{client_msg_id}'") != "0":
+                    raise AssertionError("Message completed before recovery was started")
+                checkpoint("origin-saved-publication-failed")
+            finally:
+                # Both services return to their normal configuration even if the injected failure test fails.
+                try:
+                    compose("up", "-d", "--no-deps", "api", timeout=120)
+                    wait_for_api()
+                finally:
+                    compose("up", "-d", "--no-deps", "publication-recovery", timeout=120)
+
+        checkpoint("waiting-for-recovery-without-resubmission")
+        deadline = time.monotonic() + timeout
+        expected = "PRIMARY|SUCCESS|DONE|1|1"
+        while time.monotonic() < deadline:
+            actual = sql("SELECT final_stage || '|' || outcome || '|' || cleanup_status || '|' || "
+                         "(SELECT count(*) FROM messaging_completion.tbl_cdr_hist c WHERE c.client_msg_id=m.client_msg_id) || '|' || "
+                         "(SELECT count(*) FROM messaging_webhook.tbl_webhook_outbox o WHERE o.client_msg_id=m.client_msg_id "
+                         "AND o.status='DELIVERED' AND EXISTS (SELECT 1 FROM messaging_webhook.tbl_webhook_hist h "
+                         "WHERE h.batch_id=o.batch_id AND h.acknowledged)) "
+                         f"FROM messaging_completion.tbl_msg_hist m WHERE client_msg_id='{client_msg_id}'")
+            if actual == expected and not origin_item(client_msg_id):
+                break
+            time.sleep(1)
+        else:
+            raise TimeoutError(f"Recovery did not complete: {actual!r}")
+        logs = compose("logs", "--tail=1000", "--no-color", "publication-recovery")
+        if f"ORIGIN publication recovery sent: clientMsgId={client_msg_id}" not in logs:
+            raise AssertionError("No evidence of recovery publication for the original ID")
+        report.update({"pass": True, "recoveryPublished": True, "messageHistory": 1, "billable": 1,
+                       "customerWebhooksDelivered": 1, "originRemoved": True})
+        checkpoint("complete")
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+    except Exception as failure:
+        report["error"] = str(failure)
+        checkpoint("failed")
+        raise
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     subcommands = parser.add_subparsers(dest="command", required=True)
@@ -253,6 +356,8 @@ def main() -> None:
     demo_parser.add_argument("--startup-timeout", type=int, default=300)
     subcommands.add_parser("verify")
     subcommands.add_parser("diagnose")
+    recovery_parser = subcommands.add_parser("recovery-test")
+    recovery_parser.add_argument("--timeout", type=int, default=180)
     wait_parser = subcommands.add_parser("wait-job")
     wait_parser.add_argument("--job", required=True)
     wait_parser.add_argument("--timeout", type=int, default=180)
@@ -263,6 +368,8 @@ def main() -> None:
         verify()
     elif args.command == "diagnose":
         diagnose()
+    elif args.command == "recovery-test":
+        recovery_test(args.timeout)
     else:
         wait_for_job(args.job, args.timeout)
 

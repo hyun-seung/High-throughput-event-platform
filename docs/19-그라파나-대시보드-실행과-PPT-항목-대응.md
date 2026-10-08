@@ -15,7 +15,7 @@ bash scripts/monitoring.sh demo --rate 1 --seconds 1 --errors --secondary
 bash scripts/monitoring.sh verify
 ```
 
-`demo`는 정상 메시지를 `/api/v1/messages`로 넣고 SQL 최종 이력, 1차 과금 대상 기록, 고객 웹훅 전달까지 기다린다. `--rate`는 초당 1~100건, `--seconds`는 1~120초다. `--errors`를 주면 1차 HTTP 실패 1건도 제출해 실패 이력과 고객 웹훅을 확인한다. `--secondary`를 추가하면 HTTP 실패 후 TCP 성공 메시지 1건도 제출하고, 이 메시지에는 과금 대상 기록이 생기지 않는지 검사한다. 고객 웹훅은 outbox의 전달 상태와 `TBL_WEBHOOK_HIST`의 수신 확인 이력을 함께 확인한다. 결과는 `.monitoring/demo-latest.json`에 저장하며 `cases`에 모든 `clientMsgId`와 검증 경로를 남긴다. 업무 결과를 기다리기 전에 `pass=false`로 저장하고 전체 검증을 마쳐야 `pass=true`가 된다. `exampleClientMsgId`로 로그를 검색할 수 있다. `verify`는 10개 AP, Kafka 관측기, Redis·PostgreSQL exporter의 Prometheus 수집 상태와 Grafana 대시보드 7개를 확인하고 `.monitoring/verification.json`에 결과를 저장한다. 데모의 업무 결과 검증과 관측 연결 검증은 서로 다른 검사다.
+`demo`는 정상 메시지를 `/api/v1/messages`로 넣고 SQL 최종 이력, 1차 과금 대상 기록, 고객 웹훅 전달까지 기다린다. `--rate`는 초당 1~100건, `--seconds`는 1~120초다. `--errors`를 주면 1차 HTTP 실패 1건도 제출해 실패 이력과 고객 웹훅을 확인한다. `--secondary`를 추가하면 HTTP 실패 후 TCP 성공 메시지 1건도 제출하고, 이 메시지에는 과금 대상 기록이 생기지 않는지 검사한다. 고객 웹훅은 outbox의 전달 상태와 `TBL_WEBHOOK_HIST`의 수신 확인 이력을 함께 확인한다. 결과는 `.monitoring/demo-latest.json`에 저장하며 `cases`에 모든 `clientMsgId`와 검증 경로를 남긴다. 업무 결과를 기다리기 전에 `pass=false`로 저장하고 전체 검증을 마쳐야 `pass=true`가 된다. `exampleClientMsgId`로 로그를 검색할 수 있다. `verify`는 발행 복구를 포함한 11개 AP, Kafka 관측기, Redis·PostgreSQL exporter의 Prometheus 수집 상태와 Grafana 대시보드 7개를 확인하고 `.monitoring/verification.json`에 결과를 저장한다. 데모의 업무 결과 검증과 관측 연결 검증은 서로 다른 검사다.
 
 ```bash
 bash scripts/monitoring.sh demo --rate 5 --seconds 10 --errors
@@ -25,7 +25,7 @@ bash scripts/monitoring.sh stop
 
 `stop`은 컨테이너만 정지하고 데이터 볼륨은 유지한다. JAR를 수정했다면 빌드 후 `up`을 다시 실행한다. 스크립트는 실행 JAR를 `.monitoring/jars/<SHA256>/`에 복사하므로 실행 중 빌드가 컨테이너의 파일을 바꾸지 않는다.
 
-`up`은 AP를 순서대로 띄우며 각 관리 지표가 수집될 때까지 기다린다. 로컬 Compose에서는 JVM 메모리와 Kafka 소비자 병렬도를 낮춰 기동한다. 실제 처리량 측정에는 이 로컬 설정을 그대로 사용하지 않는다.
+`up`은 AP를 순서대로 띄우며 각 관리 지표가 수집될 때까지 기다린다. Prometheus와 Alloy도 재시작해 변경된 지표·로그 수집 설정을 반영한다. 로컬 Compose에서는 JVM 메모리와 Kafka 소비자 병렬도를 낮춰 기동한다. 실제 처리량 측정에는 이 로컬 설정을 그대로 사용하지 않는다.
 
 ## 화면과 데이터 경로
 
@@ -75,3 +75,20 @@ bash scripts/monitoring.sh verify
 세 메시지의 정리 상태는 모두 `DONE`이며 DynamoDB ORIGIN의 일관 읽기로 실제 삭제도 확인했다. 메시지별 ID는 `.monitoring/demo-latest.json`에 있다. 16개 Prometheus 대상, Grafana 7개 화면, Kafka offset 관측, Loki 로그 조회도 모두 통과했다. 소량 접수 p95는 127.31ms였으며 처리량·성능 보장 수치로 사용하지 않는다.
 
 다시 기본 로컬 DB나 과거 프로젝트를 함께 기동하면 같은 VM의 자원을 공유한다. 실행 전 `diagnose`로 중복 프로젝트를 확인하고, 사용하지 않는 환경만 소유·사용 여부를 확인해 정지한다. 현재 검증 경로에는 기본 로컬 DB 프로젝트를 별도로 띄울 필요가 없다.
+
+## 최초 Kafka 발행 실패 복구 검증
+
+`publication-recovery`는 `messaging-publication-recovery-app` JAR을 별도로 실행한다. ORIGIN의 최초 인입 +60초 복구 후보를 조회해 같은 `clientMsgId`와 원문을 `message.received.v1`에 재발행한다. 로컬 조회 주기는 5초이며 기본 실행 설정은 60초다. 관리 지표는 `publication-recovery:19098`에서 수집하고, `publication-recovery.log`는 Alloy로 전달한다. 복구 AP는 Redis를 사용하지 않아 해당 전이 의존성을 제외했다.
+
+```bash
+bash scripts/monitoring.sh recovery-test
+bash scripts/monitoring.sh verify
+```
+
+`recovery-test`는 이 모니터링 프로젝트의 복구 AP를 잠시 정지하고 접수 API의 Kafka 주소만 도달할 수 없는 로컬 주소로 바꿔 API를 재기동한다. 메시지를 한 번 접수해 DynamoDB 원본·복구 인덱스가 저장됐고 Kafka 발행은 실패했는지 확인한다. 이후 API 설정을 복원하고 복구 AP를 다시 시작한다. 복원은 검증 도중 예외가 발생해도 수행하며, 검증 중에는 같은 스택의 `up`이나 `demo`를 함께 실행하지 않는다.
+
+고객 요청을 재접수하지 않고 복구 AP가 원래 ID로 발행했다는 로그, 최종 이력·과금 대상·고객 웹훅 이력 각 1건, DynamoDB 원본 삭제를 검증한다. 단계와 ID·성공 여부는 `.monitoring/recovery-latest.json`에 남긴다. 이 명령은 격리된 로컬 스택의 접수 API를 재기동하는 장애 시험이며 Kafka 브로커나 다른 프로젝트는 중단하지 않는다.
+
+2026-10-08 발행 복구 검증 `runId=6c6aab71`, `clientMsgId=246db7c15fd74ce4b628fe86670cd756`는 통과했다. 접수 API의 최초 발행 실패와 복구 AP의 동일 ID 재발행 로그를 모두 확인했고, 고객 재접수 없이 1차 성공 이력·과금 대상·고객 웹훅 각 1건과 원본 삭제까지 완료했다. 인증 모듈 통합 후 일반 성공·최종 실패·TCP 전환의 세 경로도 재검증했다.
+
+복구 AP 추가 후 Prometheus 대상 17개와 Grafana 화면 7개가 통과했으며 API·복구 AP의 구조화 로그를 Loki에서 확인했다. 장애 시험 뒤 API의 정상 설정 복원과 복구 AP의 전체 상태 `UP`도 확인했다.

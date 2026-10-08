@@ -10,9 +10,15 @@
     </parent>
     <artifactId>messaging-publication-recovery-app</artifactId>
     <dependencies>
-        <dependency><groupId>org.side.project.messaging</groupId><artifactId>messaging-common</artifactId><version>${project.version}</version></dependency>
+        <dependency>
+            <groupId>org.side.project.messaging</groupId><artifactId>messaging-common</artifactId><version>${project.version}</version>
+            <!-- Publication recovery uses DynamoDB and Kafka, without Redis. -->
+            <exclusions><exclusion><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-data-redis</artifactId></exclusion></exclusions>
+        </dependency>
         <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter</artifactId></dependency>
         <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-actuator</artifactId></dependency>
+        <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-webmvc</artifactId></dependency>
+        <dependency><groupId>io.micrometer</groupId><artifactId>micrometer-registry-prometheus</artifactId></dependency>
         <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-kafka</artifactId></dependency>
         <dependency><groupId>org.projectlombok</groupId><artifactId>lombok</artifactId><optional>true</optional></dependency>
         <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-test</artifactId><scope>test</scope></dependency>

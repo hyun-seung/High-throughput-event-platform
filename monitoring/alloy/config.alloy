@@ -2,6 +2,7 @@ logging { level = "warn" }
 local.file_match "apps" {
   path_targets = [
     {"__path__" = "/logs/api.log", "service" = "api"},
+    {"__path__" = "/logs/publication-recovery.log", "service" = "publication-recovery"},
     {"__path__" = "/logs/pre-send.log", "service" = "pre-send"},
     {"__path__" = "/logs/skt-sender.log", "service" = "skt-sender"},
     {"__path__" = "/logs/kt-sender.log", "service" = "kt-sender"},

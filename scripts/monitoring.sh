@@ -14,7 +14,7 @@ case "${1:-help}" in
     bash scripts/check-kafka-volume.sh "${compose[@]}"
     for module in messaging-api messaging-pre-send-manager messaging-carrier-http-sender \
       messaging-webhook-receive-api messaging-result-manager messaging-complete-manager \
-      messaging-webhook-sender messaging-tcp-sender; do
+      messaging-webhook-sender messaging-tcp-sender messaging-publication-recovery-app; do
       [[ -f "$module/target/$module-1.0-SNAPSHOT.jar" ]] || { echo 'Build the application JARs first.' >&2; exit 1; }
     done
     if command -v /usr/libexec/java_home >/dev/null 2>&1; then
@@ -35,10 +35,10 @@ case "${1:-help}" in
       --max-time 5 http://127.0.0.1:38080/readyz > /dev/null
     "${compose[@]}" build collector
     "${compose[@]}" up -d --no-deps --remove-orphans mock prometheus loki alloy grafana redis-exporter postgres-exporter collector
-    "${compose[@]}" restart prometheus
+    "${compose[@]}" restart prometheus alloy
     python3 scripts/monitoring/main_flow.py wait-job --job prometheus --timeout 60
     for service in pre-send skt-sender webhook-receive result-manager complete-manager \
-      webhook-sender kt-sender lgu-sender tcp-sender; do
+      webhook-sender kt-sender lgu-sender tcp-sender publication-recovery; do
       "${compose[@]}" up -d --no-deps "$service"
       python3 scripts/monitoring/main_flow.py wait-job --job "$service" --timeout 180
     done
@@ -50,5 +50,6 @@ case "${1:-help}" in
   demo) shift; exec python3 scripts/monitoring/main_flow.py demo "$@" ;;
   verify) exec python3 scripts/monitoring/main_flow.py verify ;;
   diagnose) exec python3 scripts/monitoring/main_flow.py diagnose ;;
-  *) echo 'Usage: bash scripts/monitoring.sh <up|status|stop|logs SERVICE|demo|verify|diagnose>' ;;
+  recovery-test) shift; exec python3 scripts/monitoring/main_flow.py recovery-test "$@" ;;
+  *) echo 'Usage: bash scripts/monitoring.sh <up|status|stop|logs SERVICE|demo|verify|diagnose|recovery-test>' ;;
 esac

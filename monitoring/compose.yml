@@ -79,6 +79,18 @@ services:
       db-init: {condition: service_completed_successfully}
       policy-init: {condition: service_completed_successfully}
     ports: ["127.0.0.1:38080:8080"]
+  publication-recovery:
+    <<: *app
+    environment:
+      <<: *app-env
+      MESSAGING_PUBLISHER_RECOVERY_INITIAL_DELAY_MS: 5000
+      MESSAGING_PUBLISHER_RECOVERY_POLL_MS: 5000
+      LOGGING_FILE_NAME: /logs/publication-recovery.log
+    volumes:
+      - ${MONITOR_PUBLICATION_RECOVERY_JAR:-./messaging-publication-recovery-app/target/messaging-publication-recovery-app-1.0-SNAPSHOT.jar}:/app/app.jar:ro
+      - monitoring-logs:/logs
+    depends_on:
+      api: {condition: service_started}
   mock:
     image: python:3.12-alpine
     command: ["python", "/app/primary-flow-mock.py", "--ready-file", "/logs/mock-ready.json", "--events-file", "/logs/mock-events.jsonl", "--scenario", "success", "--webhook-base-url", "http://webhook-receive:8099/api/v1/message-webhooks", "--listen-address", "0.0.0.0", "--carrier-ports", "18090", "18091", "18092", "--customer-port", "18093", "--tcp-port", "18094"]

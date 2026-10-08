@@ -12,6 +12,7 @@ import java.util.List;
 public class MonitorArtifacts {
     private static final List<String[]> MODULES = List.of(
             new String[] {"API", "messaging-api"},
+            new String[] {"PUBLICATION_RECOVERY", "messaging-publication-recovery-app"},
             new String[] {"PRE_SEND", "messaging-pre-send-manager"},
             new String[] {"HTTP_SENDER", "messaging-carrier-http-sender"},
             new String[] {"WEBHOOK_RECEIVE", "messaging-webhook-receive-api"},

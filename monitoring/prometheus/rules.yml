@@ -2,7 +2,7 @@ groups:
   - name: messaging-local
     rules:
       - alert: MessagingServiceDown
-        expr: up{job=~"api|pre-send|skt-sender|kt-sender|lgu-sender|webhook-receive|result-manager|complete-manager|webhook-sender|tcp-sender"} == 0
+        expr: up{job=~"api|pre-send|skt-sender|kt-sender|lgu-sender|webhook-receive|result-manager|complete-manager|webhook-sender|tcp-sender|publication-recovery"} == 0
         for: 1m
         labels: {severity: critical}
         annotations:

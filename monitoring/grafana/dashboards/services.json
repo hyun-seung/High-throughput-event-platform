@@ -21,7 +21,7 @@
       },
       "targets": [
         {
-          "expr": "up{job=~\"api|pre-send|skt-sender|kt-sender|lgu-sender|webhook-receive|result-manager|complete-manager|webhook-sender|tcp-sender\"}",
+          "expr": "up{job=~\"api|pre-send|skt-sender|kt-sender|lgu-sender|webhook-receive|result-manager|complete-manager|webhook-sender|tcp-sender|publication-recovery\"}",
           "refId": "A"
         }
       ],
@@ -47,7 +47,7 @@
       },
       "targets": [
         {
-          "expr": "process_cpu_usage{job=~\"api|pre-send|skt-sender|kt-sender|lgu-sender|webhook-receive|result-manager|complete-manager|webhook-sender|tcp-sender\"}",
+          "expr": "process_cpu_usage{job=~\"api|pre-send|skt-sender|kt-sender|lgu-sender|webhook-receive|result-manager|complete-manager|webhook-sender|tcp-sender|publication-recovery\"}",
           "refId": "A"
         }
       ],
@@ -73,7 +73,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (job) (jvm_memory_used_bytes{area=\"heap\",job=~\"api|pre-send|skt-sender|kt-sender|lgu-sender|webhook-receive|result-manager|complete-manager|webhook-sender|tcp-sender\"})",
+          "expr": "sum by (job) (jvm_memory_used_bytes{area=\"heap\",job=~\"api|pre-send|skt-sender|kt-sender|lgu-sender|webhook-receive|result-manager|complete-manager|webhook-sender|tcp-sender|publication-recovery\"})",
           "refId": "A"
         }
       ],
