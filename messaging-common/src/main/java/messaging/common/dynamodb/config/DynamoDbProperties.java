@@ -13,6 +13,7 @@ public class DynamoDbProperties {
     private String endpoint;
     private String region = "ap-northeast-2";
     private boolean initializeTables;
+    private boolean enableTimeToLive;
     private int maxConnections = 64;
     private Duration acquireTimeout = Duration.ofSeconds(2);
     private Duration connectTimeout = Duration.ofSeconds(2);

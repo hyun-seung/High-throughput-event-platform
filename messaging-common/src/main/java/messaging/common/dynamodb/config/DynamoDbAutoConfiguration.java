@@ -63,7 +63,8 @@ public class DynamoDbAutoConfiguration {
             name = "initialize-tables",
             havingValue = "true"
     )
-    public DynamoDbTableInitializer dynamoDbTableInitializer(DynamoDbClient dynamoDbClient) {
-        return new DynamoDbTableInitializer(dynamoDbClient);
+    public DynamoDbTableInitializer dynamoDbTableInitializer(DynamoDbClient dynamoDbClient,
+                                                              DynamoDbProperties properties) {
+        return new DynamoDbTableInitializer(dynamoDbClient, properties.isEnableTimeToLive());
     }
 }

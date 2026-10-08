@@ -35,10 +35,22 @@ spring:
         "[spring.deserializer.value.delegate.class]": org.apache.kafka.common.serialization.StringDeserializer
         "[allow.auto.create.topics]": false
 
+delivery:
+  dynamodb:
+    enabled: true
+    endpoint: ${DYNAMODB_ENDPOINT:http://localhost:8000}
+    initialize-tables: ${DYNAMODB_INITIALIZE_TABLES:true}
+    enable-time-to-live: true
+
 messaging:
   complete:
     consumer:
       enabled: ${MSG_COMPLETE_CONSUMER_ENABLED:true}
+    cleanup:
+      enabled: ${MSG_COMPLETE_CLEANUP_ENABLED:true}
+      poll-ms: ${MSG_COMPLETE_CLEANUP_POLL_MS:5000}
+      page-size: ${MSG_COMPLETE_CLEANUP_PAGE_SIZE:100}
+      retention: ${MSG_COMPLETE_CLEANUP_RETENTION:7d}
 
 management:
   endpoint:

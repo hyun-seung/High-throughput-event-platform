@@ -14,6 +14,7 @@ import tools.jackson.databind.json.JsonMapper;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -125,6 +126,9 @@ public class MessageResultInboxStore {
         item.put("status", s("PENDING"));
         item.put("received_at", s(entry.receivedAt().toString()));
         item.put("captured_at", s(clock.instant().toString()));
+        // A very late provider webhook can arrive after completion has removed ORIGIN.
+        item.put("ttl_epoch_seconds", AttributeValue.fromN(Long.toString(
+                clock.instant().plus(Duration.ofDays(7)).getEpochSecond())));
         MessageResultInboxIndex.add(item, entry.clientMsgId(), entry.receivedAt().toEpochMilli());
         try {
             db.putItem(PutItemRequest.builder().tableName(STEP).item(item)

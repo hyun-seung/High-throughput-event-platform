@@ -1,6 +1,5 @@
 package messaging.common.dynamodb.config;
 
-import lombok.RequiredArgsConstructor;
 import messaging.common.lifecycle.LifecycleIndex;
 import messaging.common.messages.MessagePublicationIndex;
 import messaging.common.messages.FollowupDispatchIndex;
@@ -19,16 +18,26 @@ import software.amazon.awssdk.services.dynamodb.model.KeySchemaElement;
 import software.amazon.awssdk.services.dynamodb.model.KeyType;
 import software.amazon.awssdk.services.dynamodb.model.ResourceNotFoundException;
 import software.amazon.awssdk.services.dynamodb.model.ScalarAttributeType;
+import software.amazon.awssdk.services.dynamodb.model.TimeToLiveSpecification;
 
 import static messaging.common.dynamodb.DynamoDbAttributeNames.PK;
 import static messaging.common.dynamodb.DynamoDbAttributeNames.SK;
 import static messaging.common.dynamodb.DynamoDbTableNames.*;
 
 @Slf4j
-@RequiredArgsConstructor
 public class DynamoDbTableInitializer implements ApplicationRunner {
 
     private final DynamoDbClient dynamoDbClient;
+    private final boolean enableTimeToLive;
+
+    public DynamoDbTableInitializer(DynamoDbClient dynamoDbClient) {
+        this(dynamoDbClient, false);
+    }
+
+    public DynamoDbTableInitializer(DynamoDbClient dynamoDbClient, boolean enableTimeToLive) {
+        this.dynamoDbClient = dynamoDbClient;
+        this.enableTimeToLive = enableTimeToLive;
+    }
 
     @Override
     public void run(ApplicationArguments args) {
@@ -45,6 +54,7 @@ public class DynamoDbTableInitializer implements ApplicationRunner {
                 createFollowupIndexIfMissing();
                 createResultInboxIndexIfMissing();
             }
+            if (enableTimeToLive) enableTimeToLive(table);
             log.debug("DynamoDB table already exists. table={}", table);
             return;
         }
@@ -81,7 +91,23 @@ public class DynamoDbTableInitializer implements ApplicationRunner {
         dynamoDbClient.createTable(request);
         dynamoDbClient.waiter().waitUntilTableExists(builder -> builder.tableName(table));
 
+        if (enableTimeToLive) enableTimeToLive(table);
+
         log.info("DynamoDB table created. table={}", table);
+    }
+
+    private void enableTimeToLive(String table) {
+        var ttl = dynamoDbClient.describeTimeToLive(builder -> builder.tableName(table)).timeToLiveDescription();
+        if (ttl != null && (ttl.timeToLiveStatusAsString().equals("ENABLED")
+                || ttl.timeToLiveStatusAsString().equals("ENABLING"))) {
+            if (!"ttl_epoch_seconds".equals(ttl.attributeName())) {
+                throw new IllegalStateException("DynamoDB TTL attribute differs for " + table);
+            }
+            return;
+        }
+        dynamoDbClient.updateTimeToLive(builder -> builder.tableName(table)
+                .timeToLiveSpecification(TimeToLiveSpecification.builder()
+                        .attributeName("ttl_epoch_seconds").enabled(true).build()));
     }
 
     private void createPublicationIndexIfMissing() {

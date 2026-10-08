@@ -15,10 +15,14 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
+import software.amazon.awssdk.services.dynamodb.model.GetItemRequest;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.net.URI;
 import java.time.Instant;
+import java.time.Clock;
+import java.time.Duration;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -28,6 +32,8 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.*;
 
 @EnabledIfEnvironmentVariable(named = "POSTGRES_TEST_URL", matches = ".+")
 class FinalizedHistoryPostgresTest {
@@ -76,6 +82,8 @@ class FinalizedHistoryPostgresTest {
 
         assertEquals(2, jdbc.queryForObject("SELECT count(*) FROM tbl_msg_hist", Integer.class));
         assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM tbl_cdr_hist", Integer.class));
+        assertEquals(2, jdbc.queryForObject(
+                "SELECT count(*) FROM tbl_msg_hist WHERE cleanup_status = 'PENDING'", Integer.class));
         assertEquals(success.decision().decisionId(), jdbc.queryForObject(
                 "SELECT decision_id FROM tbl_cdr_hist WHERE client_msg_id = ?", String.class,
                 success.decision().clientMsgId()));
@@ -100,6 +108,23 @@ class FinalizedHistoryPostgresTest {
         assertEquals("SECONDARY", jdbc.queryForObject("SELECT final_stage FROM tbl_msg_hist WHERE client_msg_id = ?", String.class, id));
         assertEquals("SUCCESS", jdbc.queryForObject("SELECT outcome FROM tbl_msg_hist WHERE client_msg_id = ?", String.class, id));
         assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM tbl_cdr_hist", Integer.class));
+    }
+
+    @Test
+    void dynamoFailureKeepsSqlCleanupPendingForRetry() {
+        var finalized = result("e".repeat(32), PrimaryStageDecision.Kind.SUCCESS);
+        history.store(finalized);
+        var db = mock(DynamoDbClient.class);
+        when(db.getItem(any(GetItemRequest.class))).thenThrow(new IllegalStateException("offline"));
+
+        new FinalizedDynamoCleanup(jdbc, db, Clock.systemUTC(), 10, Duration.ofDays(7)).poll();
+
+        assertEquals("PENDING", jdbc.queryForObject(
+                "SELECT cleanup_status FROM tbl_msg_hist WHERE client_msg_id = ?", String.class,
+                finalized.submission().clientMsgId()));
+        assertEquals(1, jdbc.queryForObject(
+                "SELECT cleanup_attempts FROM tbl_msg_hist WHERE client_msg_id = ?", Integer.class,
+                finalized.submission().clientMsgId()));
     }
 
     @Test

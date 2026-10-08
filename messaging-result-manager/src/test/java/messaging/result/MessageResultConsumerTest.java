@@ -51,6 +51,8 @@ class MessageResultConsumerTest {
             assertEquals("PENDING", request.item().get("status").s());
             assertEquals("WEBHOOK", request.item().get("source").s());
             assertTrue(request.item().containsKey(MessageResultInboxIndex.BUCKET));
+            assertEquals(NOW.plusSeconds(7 * 24 * 60 * 60).getEpochSecond(),
+                    Long.parseLong(request.item().get("ttl_epoch_seconds").n()));
             assertEquals(NOW.toEpochMilli(), Long.parseLong(request.item().get(MessageResultInboxIndex.DUE).n()));
         }
         verifyNoInteractions(http);
