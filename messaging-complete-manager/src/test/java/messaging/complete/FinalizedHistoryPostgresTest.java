@@ -90,6 +90,43 @@ class FinalizedHistoryPostgresTest {
     }
 
     @Test
+    void primaryHistoryRetainsFinalCarrierAndInvocationAfterRoutingOrRetry() {
+        for (var kind : PrimaryStageDecision.Kind.values()) {
+            var original = result(UUID.randomUUID().toString().replace("-", ""), kind);
+            var decision = original.decision();
+            var finalized = new FinalizedMessageResult(new PrimaryStageDecision(
+                    decision.decisionId(), decision.clientMsgId(), kind, decision.source(),
+                    decision.errorCode(), decision.reason(), HttpCarrier.KT, 4, false,
+                    decision.decidedAt()), original.submission());
+
+            history.store(finalized);
+            history.store(finalized);
+
+            assertEquals("KT", jdbc.queryForObject(
+                    "SELECT carrier FROM tbl_msg_hist WHERE client_msg_id = ?", String.class,
+                    decision.clientMsgId()));
+            assertEquals(4, jdbc.queryForObject(
+                    "SELECT invocation FROM tbl_msg_hist WHERE client_msg_id = ?", Integer.class,
+                    decision.clientMsgId()));
+        }
+    }
+
+    @Test
+    void failureBeforeCarrierSelectionStoresNoCarrierOrInvocation() {
+        var original = result("f".repeat(32), PrimaryStageDecision.Kind.FAILURE);
+        var decision = original.decision();
+        var finalized = new FinalizedMessageResult(new PrimaryStageDecision(
+                decision.decisionId(), decision.clientMsgId(), decision.kind(), "PRE_SEND",
+                40004, "contract unavailable", null, null, false, decision.decidedAt()), original.submission());
+
+        history.store(finalized);
+
+        assertNull(jdbc.queryForObject("SELECT carrier FROM tbl_msg_hist", String.class));
+        assertNull(jdbc.queryForObject("SELECT invocation FROM tbl_msg_hist", Integer.class));
+        assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM tbl_cdr_hist", Integer.class));
+    }
+
+    @Test
     void secondarySuccessStoresOneFinalHistoryWithoutBilling() {
         String id = "d".repeat(32);
         var now = Instant.parse("2026-10-07T12:00:00Z");
@@ -107,6 +144,8 @@ class FinalizedHistoryPostgresTest {
 
         assertEquals("SECONDARY", jdbc.queryForObject("SELECT final_stage FROM tbl_msg_hist WHERE client_msg_id = ?", String.class, id));
         assertEquals("SUCCESS", jdbc.queryForObject("SELECT outcome FROM tbl_msg_hist WHERE client_msg_id = ?", String.class, id));
+        assertEquals("SKT", jdbc.queryForObject("SELECT carrier FROM tbl_msg_hist WHERE client_msg_id = ?", String.class, id));
+        assertNull(jdbc.queryForObject("SELECT invocation FROM tbl_msg_hist WHERE client_msg_id = ?", Integer.class, id));
         assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM tbl_cdr_hist", Integer.class));
     }
 

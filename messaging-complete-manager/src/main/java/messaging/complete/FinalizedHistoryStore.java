@@ -62,7 +62,7 @@ public class FinalizedHistoryStore {
                     submission.clientId(), submission.messageId(), submission.recipientNumber(),
                     submission.messageCategory().name(), stage, outcome,
                     secondary == null ? decision.source() : "TCP_RESPONSE",
-                    secondary == null || decision.carrier() == null ? null : decision.carrier().name(),
+                    decision.carrier() == null ? null : decision.carrier().name(),
                     secondary == null ? decision.invocation() : null,
                     secondary == null ? decision.errorCode() : secondary.errorCode(),
                     secondary == null ? decision.reason() : secondary.providerCode(),
