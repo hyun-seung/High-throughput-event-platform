@@ -74,8 +74,15 @@ def handler_for(kind: str, events: Events, webhook_base_url: str, secret: str,
                     counts[client_msg_id] = invocation
                 events.write("carrier_request", clientMsgId=client_msg_id, carrier=carrier,
                              invocation=invocation, receivedAt=time.time(), request=payload)
-                mismatch = scenario == "carrier-mismatch" and carrier == "SKT" or \
-                    scenario == "carrier-exhausted"
+                no_response = carrier == "SKT" and (
+                    scenario == "no-response-exhausted"
+                    or (scenario == "no-response-retry" and invocation == 1)
+                )
+                if no_response:
+                    time.sleep(7)
+                    return
+                mismatch = (scenario == "carrier-mismatch" and carrier == "SKT") \
+                    or scenario == "carrier-exhausted"
                 tps = scenario == "tps-retry" and carrier == "SKT" and invocation == 1
                 if mismatch or tps:
                     self.send_response(400)
@@ -126,7 +133,9 @@ def main():
     parser.add_argument("--events-file", type=Path, required=True)
     parser.add_argument("--webhook-base-url", required=True)
     parser.add_argument("--scenario", choices=("success", "carrier-mismatch",
-                                                "carrier-exhausted", "tps-retry"), default="success")
+                                                "carrier-exhausted", "tps-retry",
+                                                "no-response-retry", "no-response-exhausted"),
+                        default="success")
     args = parser.parse_args()
     secrets_by_carrier = {carrier: os.environ.get(f"FLOW_WEBHOOK_SECRET_{carrier}", "")
                           for carrier in ("SKT", "KT", "LGU")}

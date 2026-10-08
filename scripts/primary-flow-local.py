@@ -123,6 +123,8 @@ def verify_flow(env: dict[str, str], event_file: Path, client_id: int,
         raise AssertionError("Invalid clientMsgId from admission")
 
     deadline = time.monotonic() + timeout
+    dynamodb_endpoint = f"http://127.0.0.1:{env.get('DYNAMODB_HOST_PORT', '8000')}/"
+    first_timeout_checked = False
     while time.monotonic() < deadline:
         found = events(event_file)
         requests = [event for event in found if event["kind"] == "carrier_request"
@@ -132,6 +134,23 @@ def verify_flow(env: dict[str, str], event_file: Path, client_id: int,
         customer = [event for event in found if event["kind"] == "customer_webhook"
                     and any(item.get("clientMsgId") == client_msg_id
                             for item in event["body"].get("results", []))]
+        if scenario.startswith("no-response-") and requests and not first_timeout_checked:
+            observed = ddb("Query", {"TableName": "STEP", "ConsistentRead": True,
+                "KeyConditionExpression": "pk = :pk AND begins_with(sk, :prefix)",
+                "ExpressionAttributeValues": {
+                    ":pk": {"S": "DELIVERY#" + client_msg_id},
+                    ":prefix": {"S": "HTTP#SKT#"}}}, dynamodb_endpoint, env)
+            first = next((item for item in observed.get("Items", [])
+                          if item.get("invocation", {}).get("N") == "1"), None)
+            if first and "http_observation" in first:
+                observation = json.loads(first["http_observation"]["S"])
+                observed_at = dt.datetime.fromisoformat(
+                    observation["observedAt"].replace("Z", "+00:00")).timestamp()
+                elapsed = observed_at - requests[0]["receivedAt"]
+                if observation["source"] != "HTTP_TIMEOUT" or observation["status"] != "TIMEOUT" \
+                        or not 4 <= elapsed <= 7:
+                    raise AssertionError(f"First HTTP request did not time out near five seconds: {elapsed:.2f}s")
+                first_timeout_checked = True
         hist = psql(f"SELECT final_stage || '|' || outcome || '|' || cleanup_status || '|' || "
                     f"COALESCE(error_code::text, '') || '|' || COALESCE(carrier, '') "
                     f"FROM messaging_completion.tbl_msg_hist WHERE client_msg_id='{client_msg_id}'", env)
@@ -142,12 +161,19 @@ def verify_flow(env: dict[str, str], event_file: Path, client_id: int,
         expected_carriers = {
             "success": ["SKT"], "carrier-mismatch": ["SKT", "KT"],
             "carrier-exhausted": ["SKT", "KT", "LGU"], "tps-retry": ["SKT", "SKT"],
+            "no-response-retry": ["SKT", "SKT"],
+            "no-response-exhausted": ["SKT"] * 4,
         }[scenario]
-        expected_success = scenario != "carrier-exhausted"
-        expected_history = "PRIMARY|SUCCESS|DONE||" if expected_success else "PRIMARY|FAILURE|DONE|40002|"
+        failure_codes = {"carrier-exhausted": 40002, "no-response-exhausted": 40003}
+        expected_error = failure_codes.get(scenario)
+        expected_success = expected_error is None
+        expected_history = ("PRIMARY|SUCCESS|DONE||" if expected_success else
+                            f"PRIMARY|FAILURE|DONE|{expected_error}|")
         if hist.startswith(expected_history) and cdr == ("1" if expected_success else "0") \
                 and webhook == "DELIVERED" and len(requests) == len(expected_carriers) \
                 and len(callbacks) == (1 if expected_success else 0) and customer:
+            if scenario.startswith("no-response-") and not first_timeout_checked:
+                raise AssertionError("First HTTP timeout observation was not captured")
             if [item["carrier"] for item in requests] != expected_carriers:
                 raise AssertionError("Carrier routing differs from the expected order")
             for item in requests:
@@ -159,22 +185,28 @@ def verify_flow(env: dict[str, str], event_file: Path, client_id: int,
                 if [item["invocation"] for item in requests] != [1, 2] \
                         or requests[1]["receivedAt"] - requests[0]["receivedAt"] < 60:
                     raise AssertionError("66002 retry did not wait one minute before the second invocation")
+            if scenario.startswith("no-response-"):
+                if [item["invocation"] for item in requests] != list(range(1, len(requests) + 1)):
+                    raise AssertionError("HTTP timeout invocation sequence is incorrect")
+                intervals = [later["receivedAt"] - earlier["receivedAt"]
+                             for earlier, later in zip(requests, requests[1:])]
+                if any(interval < 64 for interval in intervals):
+                    raise AssertionError(f"HTTP timeout retry was sent too early: {intervals}")
             if expected_success and callbacks[0]["carrier"] != expected_carriers[-1]:
                 raise AssertionError("Webhook came from the wrong carrier")
             result = next(item for item in customer[0]["body"]["results"]
                           if item["clientMsgId"] == client_msg_id)
             if result["status"] != ("success" if expected_success else "fail") \
-                    or (not expected_success and result["errorCode"] != 40002):
+                    or (not expected_success and result["errorCode"] != expected_error):
                 raise AssertionError("Customer webhook differs from final result")
             after = int(redis(["GET", usage_key], env) or "0")
             if after != before + 1:
                 raise AssertionError(f"Message quota usage changed by {after - before}, expected 1")
-            endpoint = f"http://127.0.0.1:{env.get('DYNAMODB_HOST_PORT', '8000')}/"
             origin = ddb("GetItem", {"TableName": "ORIGIN", "Key": {
-                "pk": {"S": "DELIVERY#" + client_msg_id}, "sk": {"S": "META"}}}, endpoint, env)
+                "pk": {"S": "DELIVERY#" + client_msg_id}, "sk": {"S": "META"}}}, dynamodb_endpoint, env)
             steps = ddb("Query", {"TableName": "STEP", "KeyConditionExpression": "pk = :pk",
                                   "ExpressionAttributeValues": {":pk": {"S": "DELIVERY#" + client_msg_id}}},
-                        endpoint, env)
+                        dynamodb_endpoint, env)
             if origin.get("Item") or steps.get("Count") != 0:
                 raise AssertionError("DynamoDB rows remain after cleanup is DONE")
             return client_msg_id
@@ -190,7 +222,9 @@ def main() -> int:
     parser.add_argument("--skip-build", action="store_true")
     parser.add_argument("--skip-infra", action="store_true")
     parser.add_argument("--scenario", choices=("success", "carrier-mismatch",
-                                               "carrier-exhausted", "tps-retry"), default="success")
+                                               "carrier-exhausted", "tps-retry",
+                                               "no-response-retry", "no-response-exhausted"),
+                        default="success")
     parser.add_argument("--timeout", type=int, default=120)
     args = parser.parse_args()
     if args.timeout < 10:
