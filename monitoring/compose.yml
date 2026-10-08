@@ -93,7 +93,7 @@ services:
       api: {condition: service_started}
   mock:
     image: python:3.12-alpine
-    command: ["python", "/app/primary-flow-mock.py", "--ready-file", "/logs/mock-ready.json", "--events-file", "/logs/mock-events.jsonl", "--scenario", "success", "--webhook-base-url", "http://webhook-receive:8099/api/v1/message-webhooks", "--listen-address", "0.0.0.0", "--carrier-ports", "18090", "18091", "18092", "--customer-port", "18093", "--tcp-port", "18094"]
+    command: ["python", "/app/primary-flow-mock.py", "--ready-file", "/logs/mock-ready.json", "--events-file", "/logs/mock-events.jsonl", "--scenario", "success", "--allow-message-scenarios", "--webhook-base-url", "http://webhook-receive:8099/api/v1/message-webhooks", "--listen-address", "0.0.0.0", "--carrier-ports", "18090", "18091", "18092", "--customer-port", "18093", "--tcp-port", "18094"]
     environment:
       FLOW_WEBHOOK_SECRET_SKT: monitoring-skt-webhook-secret-00000001
       FLOW_WEBHOOK_SECRET_KT: monitoring-kt-webhook-secret-00000001

@@ -15,6 +15,9 @@ from urllib.request import Request, urlopen
 
 
 MAX_BODY_BYTES = 262144
+SCENARIOS = ("success", "carrier-mismatch", "carrier-exhausted", "tps-retry", "tps-exhausted",
+             "no-response-retry", "no-response-exhausted", "secondary-success", "secondary-failure",
+             "webhook-carrier-mismatch", "webhook-carrier-exhausted", "webhook-tps-retry", "webhook-tps-exhausted")
 
 
 class Events:
@@ -51,7 +54,7 @@ def read_body(handler: BaseHTTPRequestHandler) -> bytes:
 
 
 def handler_for(kind: str, events: Events, webhook_base_url: str, secret: str,
-                scenario: str, carrier: str = ""):
+                scenario: str, carrier: str = "", allow_message_scenarios: bool = False):
     counts = {}
     count_lock = threading.Lock()
 
@@ -67,6 +70,9 @@ def handler_for(kind: str, events: Events, webhook_base_url: str, secret: str,
                     client_msg_id = payload["clientMsgId"]
                     if not isinstance(client_msg_id, str) or not client_msg_id:
                         raise ValueError("missing clientMsgId")
+                    selected = payload.get("payload", {}).get("simulatorScenario", scenario) if allow_message_scenarios else scenario
+                    if selected not in SCENARIOS:
+                        raise ValueError("unknown simulatorScenario")
             except (ValueError, KeyError, TypeError, json.JSONDecodeError):
                 self.send_error(400)
                 return
@@ -76,21 +82,23 @@ def handler_for(kind: str, events: Events, webhook_base_url: str, secret: str,
                     invocation = counts.get(client_msg_id, 0) + 1
                     counts[client_msg_id] = invocation
                 events.write("carrier_request", clientMsgId=client_msg_id, carrier=carrier,
-                             invocation=invocation, receivedAt=time.time(), request=payload)
+                             invocation=invocation, receivedAt=time.time(), scenario=selected, request=payload)
+                policy = selected.removeprefix("webhook-")
                 no_response = carrier == "SKT" and (
-                    scenario == "no-response-exhausted"
-                    or (scenario == "no-response-retry" and invocation == 1)
+                    policy == "no-response-exhausted"
+                    or (policy == "no-response-retry" and invocation == 1)
                 )
                 if no_response:
                     time.sleep(7)
                     return
-                mismatch = (scenario == "carrier-mismatch" and carrier == "SKT") \
-                    or scenario == "carrier-exhausted"
-                tps = carrier == "SKT" and (scenario == "tps-exhausted"
-                    or (scenario == "tps-retry" and invocation == 1))
+                mismatch = (policy == "carrier-mismatch" and carrier == "SKT") \
+                    or policy == "carrier-exhausted"
+                tps = carrier == "SKT" and (policy == "tps-exhausted"
+                    or (policy == "tps-retry" and invocation == 1))
                 monitor_failure = payload.get("payload", {}).get("text") == "monitor-force-failure"
-                general_failure = carrier == "SKT" and (scenario.startswith("secondary-") or monitor_failure)
-                if mismatch or tps or general_failure:
+                general_failure = carrier == "SKT" and (policy.startswith("secondary-") or monitor_failure)
+                webhook_failure = selected.startswith("webhook-") and (mismatch or tps)
+                if (mismatch or tps or general_failure) and not webhook_failure:
                     self.send_response(400)
                     self.send_header("Content-Type", "application/json")
                     self.end_headers()
@@ -104,7 +112,8 @@ def handler_for(kind: str, events: Events, webhook_base_url: str, secret: str,
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()
                 self.wfile.write(b"{}")
-                threading.Thread(target=send_webhook, args=(client_msg_id,), daemon=True).start()
+                error_code = (66001 if mismatch else 66002) if webhook_failure else None
+                threading.Thread(target=send_webhook, args=(client_msg_id, error_code), daemon=True).start()
             else:
                 events.write("customer_webhook", body=payload)
                 self.send_response(204)
@@ -113,9 +122,12 @@ def handler_for(kind: str, events: Events, webhook_base_url: str, secret: str,
         def log_message(self, format_string, *args):
             return
 
-    def send_webhook(client_msg_id: str):
+    def send_webhook(client_msg_id: str, error_code: int | None = None):
         webhook_url = webhook_base_url + "/" + carrier.lower()
-        body = json.dumps([{"clientMsgId": client_msg_id, "status": "success"}]).encode()
+        result = {"clientMsgId": client_msg_id, "status": "fail" if error_code else "success"}
+        if error_code:
+            result["error"] = {"code": error_code, "message": "simulated carrier failure"}
+        body = json.dumps([result]).encode()
         for attempt in range(20):
             time.sleep(0.5 if attempt == 0 else 1)
             request = Request(webhook_url, data=body, method="POST", headers={
@@ -125,7 +137,7 @@ def handler_for(kind: str, events: Events, webhook_base_url: str, secret: str,
                 with urlopen(request, timeout=5) as response:
                     if response.status == 202:
                         events.write("carrier_webhook_accepted", clientMsgId=client_msg_id,
-                                     carrier=carrier)
+                                     carrier=carrier, status=result["status"], errorCode=error_code)
                         return
             except OSError:
                 pass
@@ -179,11 +191,9 @@ def main():
     parser.add_argument("--carrier-ports", nargs=3, type=int, default=(0, 0, 0))
     parser.add_argument("--customer-port", type=int, default=0)
     parser.add_argument("--tcp-port", type=int, default=0)
-    parser.add_argument("--scenario", choices=("success", "carrier-mismatch",
-                                                "carrier-exhausted", "tps-retry", "tps-exhausted",
-                                                "no-response-retry", "no-response-exhausted",
-                                                "secondary-success", "secondary-failure"),
-                        default="success")
+    parser.add_argument("--scenario", choices=SCENARIOS, default="success")
+    parser.add_argument("--allow-message-scenarios", action="store_true",
+                        help="Allow per-message simulatorScenario in this local mock only")
     args = parser.parse_args()
     secrets_by_carrier = {carrier: os.environ.get(f"FLOW_WEBHOOK_SECRET_{carrier}", "")
                           for carrier in ("SKT", "KT", "LGU")}
@@ -193,7 +203,7 @@ def main():
     events = Events(args.events_file)
     carriers = {name: ThreadingHTTPServer((args.listen_address, port),
                 handler_for("carrier", events, args.webhook_base_url, secrets_by_carrier[name],
-                            args.scenario, name)) for name, port in zip(("SKT", "KT", "LGU"), args.carrier_ports)}
+                            args.scenario, name, args.allow_message_scenarios)) for name, port in zip(("SKT", "KT", "LGU"), args.carrier_ports)}
     customer = ThreadingHTTPServer((args.listen_address, args.customer_port),
                                    handler_for("customer", events, args.webhook_base_url,
                                                "", args.scenario))

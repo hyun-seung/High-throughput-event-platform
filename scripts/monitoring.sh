@@ -49,7 +49,8 @@ case "${1:-help}" in
   logs) "${compose[@]}" logs --tail=80 "${2:-grafana}" ;;
   demo) shift; exec python3 scripts/monitoring/main_flow.py demo "$@" ;;
   verify) exec python3 scripts/monitoring/main_flow.py verify ;;
+  policy-test) shift; exec python3 scripts/monitoring/policy_flow.py "$@" ;;
   diagnose) exec python3 scripts/monitoring/main_flow.py diagnose ;;
   recovery-test) shift; exec python3 scripts/monitoring/main_flow.py recovery-test "$@" ;;
-  *) echo 'Usage: bash scripts/monitoring.sh <up|status|stop|logs SERVICE|demo|verify|diagnose|recovery-test>' ;;
+  *) echo 'Usage: bash scripts/monitoring.sh <up|status|stop|logs SERVICE|demo|verify|diagnose|recovery-test|policy-test>' ;;
 esac
