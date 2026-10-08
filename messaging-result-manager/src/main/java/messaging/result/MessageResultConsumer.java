@@ -32,7 +32,7 @@ public class MessageResultConsumer {
                 inbox.processed(items.getFirst());
             }
         }
-        // PRE_SEND, WEBHOOK and exhausted HTTP failures remain indexed until their next-stage
-        // decision and publication paths are connected. Their Kafka offset is safe to commit.
+        // Other results remain indexed for the decision scheduler; durable inbox capture
+        // makes the Kafka offset safe to commit before that later processing completes.
     }
 }
