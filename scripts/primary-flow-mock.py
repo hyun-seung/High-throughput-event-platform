@@ -83,7 +83,8 @@ def handler_for(kind: str, events: Events, webhook_base_url: str, secret: str,
                     return
                 mismatch = (scenario == "carrier-mismatch" and carrier == "SKT") \
                     or scenario == "carrier-exhausted"
-                tps = scenario == "tps-retry" and carrier == "SKT" and invocation == 1
+                tps = carrier == "SKT" and (scenario == "tps-exhausted"
+                    or (scenario == "tps-retry" and invocation == 1))
                 if mismatch or tps:
                     self.send_response(400)
                     self.send_header("Content-Type", "application/json")
@@ -133,7 +134,7 @@ def main():
     parser.add_argument("--events-file", type=Path, required=True)
     parser.add_argument("--webhook-base-url", required=True)
     parser.add_argument("--scenario", choices=("success", "carrier-mismatch",
-                                                "carrier-exhausted", "tps-retry",
+                                                "carrier-exhausted", "tps-retry", "tps-exhausted",
                                                 "no-response-retry", "no-response-exhausted"),
                         default="success")
     args = parser.parse_args()

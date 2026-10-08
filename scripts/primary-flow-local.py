@@ -161,10 +161,12 @@ def verify_flow(env: dict[str, str], event_file: Path, client_id: int,
         expected_carriers = {
             "success": ["SKT"], "carrier-mismatch": ["SKT", "KT"],
             "carrier-exhausted": ["SKT", "KT", "LGU"], "tps-retry": ["SKT", "SKT"],
+            "tps-exhausted": ["SKT"] * 4,
             "no-response-retry": ["SKT", "SKT"],
             "no-response-exhausted": ["SKT"] * 4,
         }[scenario]
-        failure_codes = {"carrier-exhausted": 40002, "no-response-exhausted": 40003}
+        failure_codes = {"carrier-exhausted": 40002, "tps-exhausted": 40001,
+                         "no-response-exhausted": 40003}
         expected_error = failure_codes.get(scenario)
         expected_success = expected_error is None
         expected_history = ("PRIMARY|SUCCESS|DONE||" if expected_success else
@@ -181,10 +183,13 @@ def verify_flow(env: dict[str, str], event_file: Path, client_id: int,
                 if request["clientMsgId"] != client_msg_id or request["recipientNumber"] != recipient \
                         or request["tenantId"] != client_id or request["payload"]["text"] != "first-send local flow":
                     raise AssertionError("Carrier request differs from admitted message")
-            if scenario == "tps-retry":
-                if [item["invocation"] for item in requests] != [1, 2] \
-                        or requests[1]["receivedAt"] - requests[0]["receivedAt"] < 60:
-                    raise AssertionError("66002 retry did not wait one minute before the second invocation")
+            if scenario.startswith("tps-"):
+                if [item["invocation"] for item in requests] != list(range(1, len(requests) + 1)):
+                    raise AssertionError("66002 retry invocation sequence is incorrect")
+                intervals = [later["receivedAt"] - earlier["receivedAt"]
+                             for earlier, later in zip(requests, requests[1:])]
+                if any(interval < 60 for interval in intervals):
+                    raise AssertionError(f"66002 retry was sent too early: {intervals}")
             if scenario.startswith("no-response-"):
                 if [item["invocation"] for item in requests] != list(range(1, len(requests) + 1)):
                     raise AssertionError("HTTP timeout invocation sequence is incorrect")
@@ -222,7 +227,7 @@ def main() -> int:
     parser.add_argument("--skip-build", action="store_true")
     parser.add_argument("--skip-infra", action="store_true")
     parser.add_argument("--scenario", choices=("success", "carrier-mismatch",
-                                               "carrier-exhausted", "tps-retry",
+                                               "carrier-exhausted", "tps-retry", "tps-exhausted",
                                                "no-response-retry", "no-response-exhausted"),
                         default="success")
     parser.add_argument("--timeout", type=int, default=120)
