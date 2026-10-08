@@ -34,7 +34,9 @@ case "${1:-help}" in
     curl --fail --silent --show-error --retry 30 --retry-delay 2 --retry-all-errors \
       --max-time 5 http://127.0.0.1:38080/readyz > /dev/null
     "${compose[@]}" build collector
-    "${compose[@]}" up -d --no-deps --remove-orphans mock prometheus loki alloy grafana redis-exporter postgres-exporter collector
+    # Python mock sources are bind-mounted; reload the process when bringing up a new revision.
+    "${compose[@]}" up -d --no-deps --force-recreate mock
+    "${compose[@]}" up -d --no-deps --remove-orphans prometheus loki alloy grafana redis-exporter postgres-exporter collector
     "${compose[@]}" restart prometheus alloy
     python3 scripts/monitoring/main_flow.py wait-job --job prometheus --timeout 60
     for service in pre-send skt-sender webhook-receive result-manager complete-manager \
@@ -50,7 +52,8 @@ case "${1:-help}" in
   demo) shift; exec python3 scripts/monitoring/main_flow.py demo "$@" ;;
   verify) exec python3 scripts/monitoring/main_flow.py verify ;;
   policy-test) shift; exec python3 scripts/monitoring/policy_flow.py "$@" ;;
+  webhook-test) exec python3 scripts/monitoring/webhook_flow.py ;;
   diagnose) exec python3 scripts/monitoring/main_flow.py diagnose ;;
   recovery-test) shift; exec python3 scripts/monitoring/main_flow.py recovery-test "$@" ;;
-  *) echo 'Usage: bash scripts/monitoring.sh <up|status|stop|logs SERVICE|demo|verify|diagnose|recovery-test|policy-test>' ;;
+  *) echo 'Usage: bash scripts/monitoring.sh <up|status|stop|logs SERVICE|demo|verify|diagnose|recovery-test|policy-test|webhook-test>' ;;
 esac

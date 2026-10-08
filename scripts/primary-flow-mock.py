@@ -17,7 +17,8 @@ from urllib.request import Request, urlopen
 MAX_BODY_BYTES = 262144
 SCENARIOS = ("success", "carrier-mismatch", "carrier-exhausted", "tps-retry", "tps-exhausted",
              "no-response-retry", "no-response-exhausted", "secondary-success", "secondary-failure",
-             "webhook-carrier-mismatch", "webhook-carrier-exhausted", "webhook-tps-retry", "webhook-tps-exhausted")
+             "webhook-carrier-mismatch", "webhook-carrier-exhausted", "webhook-tps-retry", "webhook-tps-exhausted",
+             "manual-webhook", "webhook-before-response")
 
 
 class Events:
@@ -108,12 +109,19 @@ def handler_for(kind: str, events: Events, webhook_base_url: str, secret: str,
                         "TPS exceeded" if tps else "carrier failure",
                     }}).encode())
                     return
+                if selected == "webhook-before-response":
+                    # Deliberately deliver the callback before the provider returns HTTP 200.
+                    send_webhook(client_msg_id)
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()
                 self.wfile.write(b"{}")
+                self.wfile.flush()
+                events.write("carrier_response_sent", clientMsgId=client_msg_id,
+                             carrier=carrier, status=200, sentAt=time.time())
                 error_code = (66001 if mismatch else 66002) if webhook_failure else None
-                threading.Thread(target=send_webhook, args=(client_msg_id, error_code), daemon=True).start()
+                if selected not in ("manual-webhook", "webhook-before-response"):
+                    threading.Thread(target=send_webhook, args=(client_msg_id, error_code), daemon=True).start()
             else:
                 events.write("customer_webhook", body=payload)
                 self.send_response(204)
@@ -137,7 +145,8 @@ def handler_for(kind: str, events: Events, webhook_base_url: str, secret: str,
                 with urlopen(request, timeout=5) as response:
                     if response.status == 202:
                         events.write("carrier_webhook_accepted", clientMsgId=client_msg_id,
-                                     carrier=carrier, status=result["status"], errorCode=error_code)
+                                     carrier=carrier, status=result["status"], errorCode=error_code,
+                                     acceptedAt=time.time())
                         return
             except OSError:
                 pass
