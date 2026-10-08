@@ -62,10 +62,35 @@ def connector_running(port: str) -> bool:
         return False
 
 
+def kafka_events(topic: str, key: dict, env: dict[str, str]) -> list[dict]:
+    output = run(["docker", "compose", "exec", "-T", "kafka",
+                  "/opt/kafka/bin/kafka-console-consumer.sh", "--bootstrap-server", "localhost:29092",
+                  "--topic", topic, "--from-beginning", "--timeout-ms", "2000",
+                  "--property", "print.key=true", "--property", "key.separator=|"], env)
+    events = []
+    for line in output.splitlines():
+        if "|" not in line:
+            continue
+        raw_key, raw_value = line.split("|", 1)
+        try:
+            if json.loads(raw_key) == key:
+                events.append(json.loads(raw_value))
+        except ValueError:
+            continue
+    return events
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--skip-build", action="store_true")
+    parser.add_argument("--observe", action="store_true",
+                        help="print PostgreSQL, Kafka and Redis evidence for the test rows")
+    parser.add_argument("--pause-seconds", type=int, default=0,
+                        help="pause between changes for inspection from another terminal")
     args = parser.parse_args()
+    if args.pause_seconds < 0:
+        parser.error("--pause-seconds must be at least zero")
+    observe = args.observe or args.pause_seconds > 0
     env = environment()
     username = "cdc-" + uuid.uuid4().hex[:24]
     phone = None
@@ -96,6 +121,8 @@ def main() -> int:
         wait_for("cache AP readiness", cache_ready)
         wait_for("Debezium connector and task RUNNING",
                  lambda: connector_running(env.get("DEBEZIUM_HOST_PORT", "18083")))
+        if observe:
+            print("[준비] Debezium connector=RUNNING, task=RUNNING; cache AP started", flush=True)
 
         # A new user and phone keep this run independent of real/local-user reference data.
         psql(f"INSERT INTO public.users (username, password, status, created_at, updated_at) "
@@ -114,6 +141,26 @@ def main() -> int:
         phone_key = f"message:phone-carrier:{phone}"
         if redis(["EXISTS", contract_key], env) != "0":
             raise RuntimeError("New client ID already has a cache entry")
+        if observe:
+            print(f"[대상] clientId={client_id}, phone={phone}", flush=True)
+            print(f"[키] contract={contract_key}, carrier={phone_key}", flush=True)
+
+        def show_stage(label: str) -> None:
+            if not observe:
+                return
+            contract_sql = psql("SELECT enabled::text || ',' || tps_limit::text "
+                                f"FROM delivery_results.client_message_contracts WHERE client_id={client_id}", env)
+            carrier_sql = psql("SELECT carrier FROM delivery_results.phone_carrier_mappings "
+                               f"WHERE phone_number='{phone}'", env)
+            contract_cache = redis(["GET", contract_key], env)
+            carrier_cache = redis(["GET", phone_key], env)
+            print(f"[{label}] PostgreSQL contract={contract_sql or '(없음)'}, "
+                  f"carrier={carrier_sql or '(없음)'}", flush=True)
+            print(f"[{label}] Redis contract={contract_cache or '(없음)'}, "
+                  f"carrier={carrier_cache or '(없음)'}", flush=True)
+            if args.pause_seconds:
+                print(f"[{label}] {args.pause_seconds}초 동안 외부 조회 가능", flush=True)
+                time.sleep(args.pause_seconds)
 
         psql("INSERT INTO delivery_results.client_message_contracts "
              "(client_id, enabled, tps_limit, quota_general, quota_noti, quota_adv, quota_alert) "
@@ -131,6 +178,7 @@ def main() -> int:
 
         wait_for("contract insert in Redis", lambda: contract_is(True, 100))
         wait_for("carrier insert in Redis", lambda: redis(["GET", phone_key], env) == "SKT")
+        show_stage("생성")
 
         psql("UPDATE delivery_results.client_message_contracts "
              f"SET enabled=false, tps_limit=42, updated_at=now() WHERE client_id={client_id}", env)
@@ -138,11 +186,22 @@ def main() -> int:
              f"SET carrier='KT', updated_at=now() WHERE phone_number='{phone}'", env)
         wait_for("contract update in Redis", lambda: contract_is(False, 42))
         wait_for("carrier update in Redis", lambda: redis(["GET", phone_key], env) == "KT")
+        show_stage("수정")
 
         psql(f"DELETE FROM delivery_results.client_message_contracts WHERE client_id={client_id}", env)
         psql(f"DELETE FROM delivery_results.phone_carrier_mappings WHERE phone_number='{phone}'", env)
         wait_for("contract delete in Redis", lambda: redis(["EXISTS", contract_key], env) == "0")
         wait_for("carrier delete in Redis", lambda: redis(["EXISTS", phone_key], env) == "0")
+        show_stage("삭제")
+        if observe:
+            topics = (
+                ("messaging_reference.delivery_results.client_message_contracts", {"client_id": client_id}),
+                ("messaging_reference.delivery_results.phone_carrier_mappings", {"phone_number": phone}),
+            )
+            for topic, key in topics:
+                records = kafka_events(topic, key, env)
+                summary = ["tombstone" if event is None else event.get("op", "?") for event in records]
+                print(f"[Kafka] {topic}: {summary}", flush=True)
         print(f"CDC 생성·수정·삭제 검증 통과: clientId={client_id}, phone={phone}")
         print("경로: PostgreSQL → Debezium → Kafka → messaging-reference-cache → Redis")
         return 0
