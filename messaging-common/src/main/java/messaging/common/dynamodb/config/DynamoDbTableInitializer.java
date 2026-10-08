@@ -1,6 +1,5 @@
 package messaging.common.dynamodb.config;
 
-import messaging.common.lifecycle.LifecycleIndex;
 import messaging.common.messages.MessagePublicationIndex;
 import messaging.common.messages.FollowupDispatchIndex;
 import messaging.common.messages.MessageResultInboxIndex;
@@ -61,10 +60,8 @@ public class DynamoDbTableInitializer implements ApplicationRunner {
 
         var definitions = new java.util.ArrayList<>(java.util.List.of(
                 AttributeDefinition.builder().attributeName(PK).attributeType(ScalarAttributeType.S).build(),
-                AttributeDefinition.builder().attributeName(SK).attributeType(ScalarAttributeType.S).build(),
-                AttributeDefinition.builder().attributeName(LifecycleIndex.BUCKET).attributeType(ScalarAttributeType.S).build(),
-                AttributeDefinition.builder().attributeName(LifecycleIndex.DUE).attributeType(ScalarAttributeType.N).build()));
-        var indexes = new java.util.ArrayList<>(java.util.List.of(LifecycleIndex.definition()));
+                AttributeDefinition.builder().attributeName(SK).attributeType(ScalarAttributeType.S).build()));
+        var indexes = new java.util.ArrayList<software.amazon.awssdk.services.dynamodb.model.GlobalSecondaryIndex>();
         if (ORIGIN.equals(table)) {
             definitions.add(AttributeDefinition.builder().attributeName(MessagePublicationIndex.BUCKET).attributeType(ScalarAttributeType.S).build());
             definitions.add(AttributeDefinition.builder().attributeName(MessagePublicationIndex.DUE).attributeType(ScalarAttributeType.N).build());

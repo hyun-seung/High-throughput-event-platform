@@ -8,7 +8,7 @@ java_bin="${JAVA_HOME:+$JAVA_HOME/bin/}java"
 version=$("$java_bin" -XshowSettings:properties -version 2>&1)
 [[ $(awk '$1 == "java.specification.version" {print $3}' <<< "$version") == 21 ]] || { echo 'Set JAVA_HOME to JDK 21.' >&2; exit 1; }
 run_id="java-test-$(date -u +%Y%m%d%H%M%S)-$$"
-evidence="$PWD/.poc-results/$run_id"
+evidence="$PWD/.test-results/$run_id"
 mkdir -p "$evidence"
 echo "EVIDENCE $evidence"
 printf 'assertions=Java/JUnit\nrunner=Maven Wrapper\norchestration=Bash+Docker Compose\nmode=%s\n' "$mode" > "$evidence/tools.txt"

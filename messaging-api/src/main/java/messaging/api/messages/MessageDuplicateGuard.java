@@ -1,6 +1,6 @@
 package messaging.api.messages;
 
-import messaging.common.delivery.DeliveryPayloads;
+import messaging.common.messages.MessagePayloads;
 import org.springframework.dao.QueryTimeoutException;
 import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -70,9 +70,9 @@ public class MessageDuplicateGuard {
     private String fingerprint(MessageReceiveRequest request) {
         try {
             Map<String, Object> value = Map.of("messageId", request.messageId(), "recipientNumber", request.recipientNumber(),
-                    "messageCategory", request.messageCategory().name(), "payload", DeliveryPayloads.canonicalize(request.payload()),
+                    "messageCategory", request.messageCategory().name(), "payload", MessagePayloads.canonicalize(request.payload()),
                     "secondarySendPayload", request.hasSecondarySendPayload()
-                            ? DeliveryPayloads.canonicalize(request.secondarySendPayload()) : Map.of());
+                            ? MessagePayloads.canonicalize(request.secondarySendPayload()) : Map.of());
             byte[] digest = MessageDigest.getInstance("SHA-256").digest(
                     mapper.writeValueAsBytes(value));
             return HexFormat.of().formatHex(digest);

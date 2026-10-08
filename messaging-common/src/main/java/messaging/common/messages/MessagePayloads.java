@@ -1,4 +1,4 @@
-package messaging.common.delivery;
+package messaging.common.messages;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -7,9 +7,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 
-public final class DeliveryPayloads {
+public final class MessagePayloads {
 
-    private DeliveryPayloads() {
+    private MessagePayloads() {
     }
 
     public static Map<String, Object> canonicalize(Map<String, Object> payload) {

@@ -4,7 +4,6 @@ import com.sun.net.httpserver.HttpServer;
 import messaging.common.dynamodb.config.DynamoDbAutoConfiguration;
 import messaging.common.dynamodb.config.DynamoDbProperties;
 import messaging.common.dynamodb.config.LocalOperationsDynamoDbClient;
-import messaging.common.recovery.StorageFailure;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.*;
@@ -109,10 +108,10 @@ class DynamoDbClientRecoveryTest {
     @Test void failedConditionalWriteIsNotRetriedOrClassifiedAsAnOutage() {
         replies = ignored -> new Reply(400, "{\"__type\":\"ConditionalCheckFailedException\",\"message\":\"occupied\"}", false);
         try (var client = client(properties())) {
-            var failure = assertThrows(ConditionalCheckFailedException.class,
+            assertThrows(ConditionalCheckFailedException.class,
                     () -> client.putItem(r -> r.tableName("STEP").item(Map.of("pk", AttributeValue.fromS("attempt")))
                             .conditionExpression("attribute_not_exists(pk)")));
-            assertFalse(StorageFailure.unavailable(failure)); assertEquals(1, calls.get());
+            assertEquals(1, calls.get());
         }
         assertEquals(1, meters.get("delivery.dynamodb.duration").tag("result", "condition_failed").timer().count());
     }
@@ -128,8 +127,8 @@ class DynamoDbClientRecoveryTest {
         var properties = shortBudgets(); properties.setMaxAttempts(1);
         try (var client = client(properties)) {
             read(client); replies = ignored -> new Reply(200, "{}", true);
-            var failure = assertThrows(ApiCallAttemptTimeoutException.class, () -> read(client));
-            assertTrue(StorageFailure.unavailable(failure)); assertEquals(2, calls.get());
+            assertThrows(ApiCallAttemptTimeoutException.class, () -> read(client));
+            assertEquals(2, calls.get());
             replies = ignored -> OK; read(client); assertEquals(3, calls.get());
         }
     }

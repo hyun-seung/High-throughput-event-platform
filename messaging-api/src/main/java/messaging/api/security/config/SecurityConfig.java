@@ -1,6 +1,5 @@
 package messaging.api.security.config;
 
-import messaging.api.requestcontrol.filter.RequestControlFilter;
 import messaging.api.security.filter.JwtTokenAuthenticationProcessingFilter;
 import messaging.api.security.handler.JwtAuthenticationEntryPoint;
 import lombok.RequiredArgsConstructor;
@@ -18,7 +17,6 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 public class SecurityConfig {
 
     private final JwtTokenAuthenticationProcessingFilter jwtAuthenticationFilter;
-    private final RequestControlFilter requestControlFilter;
     private final JwtAuthenticationEntryPoint authenticationEntryPoint;
 
     @Bean
@@ -33,7 +31,6 @@ public class SecurityConfig {
                         .requestMatchers("/livez", "/readyz").permitAll()
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
-                .addFilterAfter(requestControlFilter, JwtTokenAuthenticationProcessingFilter.class)
                 .build();
     }
 
@@ -46,10 +43,4 @@ public class SecurityConfig {
         return registration;
     }
 
-    @Bean
-    public FilterRegistrationBean<RequestControlFilter> requestControlFilterRegistration(RequestControlFilter filter) {
-        FilterRegistrationBean<RequestControlFilter> registration = new FilterRegistrationBean<>(filter);
-        registration.setEnabled(false);
-        return registration;
-    }
 }

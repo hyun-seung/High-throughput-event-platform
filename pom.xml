@@ -34,11 +34,6 @@
         <module>messaging-webhook-sender</module>
         <module>common-security</module>
         <module>messaging-common</module>
-        <module>delivery-ingress-worker</module>
-        <module>dispatch-worker</module>
-        <module>external-api-simulator</module>
-        <module>receipt-api</module>
-        <module>delivery-result-worker</module>
         <module>verification-tools</module>
     </modules>
 

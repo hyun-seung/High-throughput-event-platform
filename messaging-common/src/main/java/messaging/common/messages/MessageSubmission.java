@@ -1,6 +1,5 @@
 package messaging.common.messages;
 
-import messaging.common.delivery.DeliveryPayloads;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Map;
@@ -27,10 +26,10 @@ public record MessageSubmission(
         Objects.requireNonNull(messageCategory);
         Objects.requireNonNull(payload);
         Objects.requireNonNull(receivedAt);
-        payload = DeliveryPayloads.canonicalize(payload);
+        payload = MessagePayloads.canonicalize(payload);
         if (secondarySendPayload != null) {
             if (secondarySendPayload.isEmpty()) throw new IllegalArgumentException("secondarySendPayload is empty");
-            secondarySendPayload = DeliveryPayloads.canonicalize(secondarySendPayload);
+            secondarySendPayload = MessagePayloads.canonicalize(secondarySendPayload);
         }
     }
 

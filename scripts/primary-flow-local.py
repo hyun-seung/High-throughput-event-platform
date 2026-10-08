@@ -104,7 +104,7 @@ def kafka_record_count(topic: str, client_msg_id: str, env: dict[str, str]) -> i
 
 def verify_flow(env: dict[str, str], event_file: Path, client_id: int,
                 scenario: str, timeout: int, observe: bool = False) -> str:
-    api = f"http://127.0.0.1:{env.get('DELIVERY_API_PORT', '8080')}"
+    api = f"http://127.0.0.1:{env.get('MESSAGE_API_PORT', env.get('DELIVERY_API_PORT', '8080'))}"
     status, auth = post_json(api + "/api/v1/auth/token",
                              {"username": "local-user", "password": "local-password"})
     if status != 200:
@@ -377,7 +377,7 @@ def main() -> int:
             "messaging-webhook-receive-api": webhook_port,
             "messaging-complete-manager": env.get("MSG_COMPLETE_MANAGER_PORT", "8103"),
             "messaging-webhook-sender": env.get("MSG_WEBHOOK_SENDER_PORT", "8104"),
-            "messaging-api": env.get("DELIVERY_API_PORT", "8080"),
+            "messaging-api": env.get("MESSAGE_API_PORT", env.get("DELIVERY_API_PORT", "8080")),
             "messaging-tcp-sender": env.get("MSG_TCP_SENDER_PORT", "8105"),
         }
         carrier_ports = {"SKT": app_ports["messaging-carrier-http-sender"],

@@ -11,10 +11,6 @@ spring:
   profiles:
     active: ${SPRING_PROFILES_ACTIVE:local}
 
-  mvc:
-    async:
-      request-timeout: ${DELIVERY_HTTP_ASYNC_TIMEOUT:20s}
-
   datasource:
     url: ${DB_URL}
     username: ${DB_USERNAME}
@@ -81,7 +77,7 @@ management:
         add-additional-paths: true
   server:
     address: 127.0.0.1
-    port: ${DELIVERY_API_METRICS_PORT:19080}
+    port: ${MESSAGE_API_METRICS_PORT:19080}
   endpoints:
     web:
       exposure:
@@ -90,11 +86,6 @@ management:
     tags:
       application: ${spring.application.name}
     distribution:
-      maximum-expected-value:
-        "[delivery.acceptance.latency]": 7h
       percentiles-histogram:
-        "[delivery.admission.duration]": true
         "[http.server.requests]": true
-        "[delivery.stage.duration]": true
         "[delivery.dynamodb.duration]": true
-        "[delivery.acceptance.latency]": true

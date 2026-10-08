@@ -66,7 +66,7 @@ services:
     environment:
       <<: *app-env
       SERVER_PORT: 8080
-      DELIVERY_API_METRICS_PORT: 19080
+      MESSAGE_API_METRICS_PORT: 19080
       DYNAMODB_INITIALIZE_TABLES: "true"
       MESSAGING_ADMISSION_ENABLED: "true"
       LOGGING_FILE_NAME: /logs/api.log

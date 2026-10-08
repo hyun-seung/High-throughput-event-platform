@@ -24,16 +24,11 @@ case "${1:-help}" in
   init-policy)
     user_id=$(docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U delivery -d delivery -Atc "SELECT id FROM users WHERE username = 'local-user'")
     [[ "$user_id" =~ ^[0-9]+$ ]] || { echo 'Run init-db first: local-user not found.' >&2; exit 1; }
-    # Populate missing fields only; preserve existing policies and usage counters.
-    policy_key="request-control:{user:$user_id}:policy"
-    for pair in blocked:false tpsEnabled:true requestsPerSecond:100 burstCapacity:100 quotaEnabled:true monthlyLimit:100000; do
-      docker compose exec -T redis redis-cli -n "${REDIS_DATABASE:-0}" HSETNX "$policy_key" "${pair%%:*}" "${pair#*:}" > /dev/null
-    done
     message_usage_key="message:usage:{client:$user_id}:policy"
     for pair in tpsLimit:100 quotaGENERAL:100000 quotaNOTI:100000 quotaADV:100000 quotaALERT:100000; do
       docker compose exec -T redis redis-cli -n "${REDIS_DATABASE:-0}" HSETNX "$message_usage_key" "${pair%%:*}" "${pair#*:}" > /dev/null
     done
-    echo "Local request and message usage policies initialized for user $user_id."
+    echo "Local message usage policies initialized for user $user_id."
     ;;
   cdc)
     # The local connector captures only the reference tables used by PRE-SEND-MANAGER.
@@ -52,7 +47,7 @@ case "${1:-help}" in
     ;;
   smoke)
     shift
-    exec bash scripts/검증-실행.sh 로컬-점검 "$@"
+    exec python3 scripts/primary-flow-local.py "$@"
     ;;
   build)
     "${MAVEN_BIN:-./mvnw}" clean package
@@ -60,8 +55,8 @@ case "${1:-help}" in
   run)
     module="${2:-}"
     case "$module" in
-      messaging-api|messaging-publication-recovery-app|messaging-reference-cache|messaging-webhook-receive-api|messaging-pre-send-manager|messaging-carrier-http-sender|messaging-tcp-sender|messaging-result-manager|messaging-complete-manager|messaging-webhook-sender|delivery-ingress-worker|dispatch-worker|external-api-simulator|receipt-api|delivery-result-worker) ;;
-      *) echo 'Usage: bash scripts/local.sh run <messaging-api|messaging-publication-recovery-app|messaging-reference-cache|messaging-webhook-receive-api|messaging-pre-send-manager|messaging-carrier-http-sender|messaging-tcp-sender|messaging-result-manager|messaging-complete-manager|messaging-webhook-sender|delivery-ingress-worker|dispatch-worker|external-api-simulator|receipt-api|delivery-result-worker>' >&2; exit 2 ;;
+      messaging-api|messaging-publication-recovery-app|messaging-reference-cache|messaging-webhook-receive-api|messaging-pre-send-manager|messaging-carrier-http-sender|messaging-tcp-sender|messaging-result-manager|messaging-complete-manager|messaging-webhook-sender) ;;
+      *) echo 'Usage: bash scripts/local.sh run <messaging-api|messaging-publication-recovery-app|messaging-reference-cache|messaging-webhook-receive-api|messaging-pre-send-manager|messaging-carrier-http-sender|messaging-tcp-sender|messaging-result-manager|messaging-complete-manager|messaging-webhook-sender>' >&2; exit 2 ;;
     esac
     export SPRING_PROFILES_ACTIVE=dev
     export KAFKA_BOOTSTRAP_SERVERS="localhost:${KAFKA_HOST_PORT:-9092}"
@@ -69,15 +64,8 @@ case "${1:-help}" in
     export DB_URL="jdbc:postgresql://localhost:${POSTGRES_HOST_PORT:-5432}/delivery"
     export DB_USERNAME=delivery DB_PASSWORD=delivery
     export DYNAMODB_ENDPOINT="http://localhost:${DYNAMODB_HOST_PORT:-8000}"
-    export EXTERNAL_TCP_PORT="${MOCK_TCP_PORT:-18091}" SIMULATOR_TCP_PORT="${MOCK_TCP_PORT:-18091}"
-    export EXTERNAL_API_BASE_URL="http://localhost:${MOCK_PROVIDER_PORT:-8090}"
-    export SERVER_PORT="${DELIVERY_API_PORT:-8080}"
+    export SERVER_PORT="${MESSAGE_API_PORT:-${DELIVERY_API_PORT:-8080}}"
     case "$module" in
-      external-api-simulator) export SERVER_PORT="${MOCK_PROVIDER_PORT:-8090}" ;;
-      delivery-ingress-worker) export SERVER_PORT="${INGRESS_HTTP_PORT:-8091}" ;;
-      dispatch-worker) export SERVER_PORT="${DISPATCH_HTTP_PORT:-8092}" ;;
-      receipt-api) export SERVER_PORT="${RECEIPT_API_PORT:-8094}" ;;
-      delivery-result-worker) export SERVER_PORT="${RESULT_HTTP_PORT:-8095}" ;;
       messaging-publication-recovery-app) export SERVER_PORT="${PUBLISHER_HTTP_PORT:-8096}" ;;
       messaging-reference-cache) export SERVER_PORT="${MESSAGING_REFERENCE_CACHE_PORT:-8098}" ;;
       messaging-pre-send-manager) export SERVER_PORT="${MESSAGING_PRE_SEND_PORT:-8100}" ;;

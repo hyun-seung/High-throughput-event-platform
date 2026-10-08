@@ -1,6 +1,5 @@
 package messaging.common.messages;
 
-import messaging.common.delivery.DeliveryPayloads;
 
 import java.time.Instant;
 import java.nio.charset.StandardCharsets;
@@ -21,6 +20,6 @@ public record HttpProviderRequest(String clientMsgId, long tenantId, String deli
                 || deliveryType.isBlank() || recipientNumber.isBlank()) {
             throw new IllegalArgumentException("Invalid HTTP provider request");
         }
-        payload = DeliveryPayloads.canonicalize(payload);
+        payload = MessagePayloads.canonicalize(payload);
     }
 }
