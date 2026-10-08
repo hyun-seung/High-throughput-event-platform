@@ -1,6 +1,6 @@
 package messaging.api.messages;
 
-import messaging.common.core.CommonErrorCode;
+import messaging.api.CommonErrorCode;
 import org.springframework.http.HttpStatus;
 
 public final class MessageAdmissionException extends RuntimeException {

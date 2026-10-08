@@ -1,9 +1,5 @@
 package messaging.api.security;
 
-import messaging.common.security.jwt.JwtAuthenticationException;
-import messaging.common.security.jwt.JwtErrorCode;
-import messaging.common.security.jwt.JwtHeaderTokenExtractor;
-import messaging.common.security.jwt.JwtTokenVerifier;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.JwtException;

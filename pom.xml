@@ -20,8 +20,6 @@
     <description>Reliable Messaging Service</description>
 
     <modules>
-        <module>common-core</module>
-        <module>auth-module</module>
         <module>messaging-api</module>
         <module>messaging-publication-recovery-app</module>
         <module>messaging-reference-cache</module>
@@ -32,7 +30,6 @@
         <module>messaging-result-manager</module>
         <module>messaging-complete-manager</module>
         <module>messaging-webhook-sender</module>
-        <module>common-security</module>
         <module>messaging-common</module>
         <module>verification-tools</module>
     </modules>

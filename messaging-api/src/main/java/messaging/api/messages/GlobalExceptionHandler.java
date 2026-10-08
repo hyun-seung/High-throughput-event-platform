@@ -1,8 +1,8 @@
 package messaging.api.messages;
 
-import messaging.common.core.CommonErrorCode;
-import messaging.common.core.ApiError;
-import messaging.common.core.ApiResponse;
+import messaging.api.CommonErrorCode;
+import messaging.api.ApiError;
+import messaging.api.ApiResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.support.DefaultMessageSourceResolvable;

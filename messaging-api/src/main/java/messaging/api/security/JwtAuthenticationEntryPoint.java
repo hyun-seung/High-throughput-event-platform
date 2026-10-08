@@ -1,9 +1,7 @@
 package messaging.api.security;
 
-import messaging.common.core.ApiError;
-import messaging.common.core.ApiResponse;
-import messaging.common.security.jwt.JwtAuthenticationException;
-import messaging.common.security.jwt.JwtErrorCode;
+import messaging.api.ApiError;
+import messaging.api.ApiResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
