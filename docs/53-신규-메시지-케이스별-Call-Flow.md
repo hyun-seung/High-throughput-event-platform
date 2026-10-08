@@ -33,8 +33,8 @@
 | 웹훅 접수 | `WEBHOOK-RECEIVE-API` | 독립 `messaging-webhook-receive-api`에 인증·1~100건 검증·`MSG_RESULT` 단일 레코드 발행 구현. 기존 `receipt-api`는 이관 전 경로 |
 | 결과 판단 | `MSG-RESULT-MANAGER` | 혼합 `MSG_RESULT` 소비·source/key 검사·메시지별 STEP inbox 보존·HTTP 실패의 후속 발송 판단 연결. 웹훅 실패의 통신사 이동·동일 통신사 재시도 연결. 웹훅 성공·발송 전 실패·1차 소진의 ORIGIN 결정 고정. 최종/2차 토픽 발행 기본 활성 |
 | 2차 TCP 발송 | `MSG-TCP-SENDER` | 임시 TCP 규격 발송·결과 보존·MSG_RESULT 인계 구현, 기본 활성 |
-| 1차 성공 과금·메시지 발송 이력·DynamoDB 정리 | `MSG-COMPLETE-MANAGER` | 독립 `messaging-complete-manager`가 `MSG-RESULT-FINALIZED`의 1차 최종 결과를 SQL 이력·과금 대상 기록으로 원자 저장. 소비 기본 비활성, 금액 산정은 하지 않으며 DynamoDB 정리는 후속 작업 |
-| 고객 결과 웹훅 발송 | `MSG-WEBHOOK-SENDER` | `WEBHOOK-SEND` 소비 목표. 현재 `delivery-result-worker`의 통지 책임을 분리해야 함 |
+| 1차 성공 과금·메시지 발송 이력·DynamoDB 정리 | `MSG-COMPLETE-MANAGER` | 독립 `messaging-complete-manager`가 `MSG-RESULT-FINALIZED`의 1차 최종 결과를 SQL 이력·과금 대상 기록으로 원자 저장. 소비 기본 활성, 금액 산정은 하지 않으며 DynamoDB 정리는 후속 작업 |
+| 고객 결과 웹훅 발송 | `MSG-WEBHOOK-SENDER` | `WEBHOOK-SEND` 소비·SQL 대기열 보존 기본 활성. 고객별 URL이 있으면 최대 100건 묶음으로 HTTP 발송하고 이력을 기록 |
 
 이전 단일 `messaging-http-sender` 모듈은 제거했으며, `messaging-publication-recovery-app`·`messaging-reference-cache`는 각각 최초 Kafka 발행 복구와 CDC 캐시 투영을 돕는 별도 AP다. 현재 `delivery-result-worker`는 최종 이력·고객 통지·정리를 한 모듈에서 수행한다. 신규 `MSG-COMPLETE-MANAGER`의 1차 최종 결과 소비·SQL 저장은 구현했고, `MSG-WEBHOOK-SENDER`와 2차 최종 결과 연결은 아직 구현 전이다.
 
@@ -413,7 +413,7 @@ flowchart LR
 
 **현재 저장소 코드에는 DynamoDB TTL 설정이 없다.** `ORIGIN`·`STEP` 초기화 코드가 TTL을 활성화하지 않고, 신규 ORIGIN 저장 코드도 TTL 속성을 쓰지 않는다. 외부에서 TTL을 별도로 설정했는지는 확인되지 않았다. TTL에 맡기려면 두 테이블의 TTL 속성과 각 항목의 만료 시각을 추가하고, 최종 결과의 SQL 인계·복구 기간보다 먼저 만료되지 않도록 해야 한다. AWS 문서에 따르면 [TTL은 만료 항목을 백그라운드에서 삭제하며 삭제 전까지 읽기에 나타날 수 있다](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/ttl-expired-items.html). 따라서 TTL은 삭제 실패의 저장 공간 정리 수단으로 쓰고, 업무상 완료·과금·중복 여부는 SQL 고유 키와 최종 결과 상태로 판단한다. 업체 웹훅에는 최대 만료 기간이 없으므로 정리 후 늦게 온 결과를 구분할 SQL 참조 정보도 필요하다.
 
-현재 `delivery-result-worker`는 **이전 경로**의 `delivery_history`·통지·정리 예약을 처리한다. 새 `messaging-complete-manager`는 별도 PostgreSQL `messaging_completion` 스키마에 `TBL_MSG_HIST`·`TBL_CDR_HIST`와 `clientMsgId` 기본 키를 만들고 1차·2차 최종 이력을 저장하되 1차 성공만 CDR과 원자 저장한다. `MSG_COMPLETE_CONSUMER_ENABLED=false`가 기본값이며 DynamoDB 정리와 DynamoDB TTL 설정은 아직 구현되지 않았다. `WEBHOOK-SEND` 생산은 결과 Manager outbox에 연결됐고, 새 `messaging-webhook-sender`에는 토픽 소비·고객별 최대 100건 묶음·HTTP 발송·`messaging_webhook.tbl_webhook_hist` 저장을 구현했다. 발송기는 `MSG_WEBHOOK_SENDER_ENABLED=false`가 기본값이며 고객별 URL 설정 후 활성화한다.
+현재 `delivery-result-worker`는 **이전 경로**의 `delivery_history`·통지·정리 예약을 처리한다. 새 `messaging-complete-manager`는 별도 PostgreSQL `messaging_completion` 스키마에 `TBL_MSG_HIST`·`TBL_CDR_HIST`와 `clientMsgId` 기본 키를 만들고 1차·2차 최종 이력을 저장하되 1차 성공만 CDR과 원자 저장한다. `MSG_COMPLETE_CONSUMER_ENABLED=true`가 기본값이며 DynamoDB 정리와 DynamoDB TTL 설정은 아직 구현되지 않았다. `WEBHOOK-SEND` 생산은 결과 Manager outbox에 연결됐고, 새 `messaging-webhook-sender`에는 토픽 소비·고객별 최대 100건 묶음·HTTP 발송·`messaging_webhook.tbl_webhook_hist` 저장을 구현했다. 발송기 소비는 `MSG_WEBHOOK_SENDER_ENABLED=true`가 기본값이며 고객별 URL이 설정되면 HTTP 발송한다. URL이 없는 고객의 명령은 SQL에 보류한다.
 
 ## 9. 중간 종료와 저장소 장애
 

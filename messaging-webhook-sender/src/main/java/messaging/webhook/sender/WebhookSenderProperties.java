@@ -10,7 +10,7 @@ import java.util.Set;
 
 @ConfigurationProperties("messaging.webhook.sender")
 public record WebhookSenderProperties(
-        @DefaultValue("false") boolean enabled,
+        @DefaultValue("true") boolean enabled,
         @DefaultValue("100") long pollMs,
         @DefaultValue("4") int concurrency,
         @DefaultValue("100ms") Duration batchWindow,

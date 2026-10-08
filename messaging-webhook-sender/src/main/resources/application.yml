@@ -38,7 +38,7 @@ spring:
 messaging:
   webhook:
     sender:
-      enabled: ${MSG_WEBHOOK_SENDER_ENABLED:false}
+      enabled: ${MSG_WEBHOOK_SENDER_ENABLED:true}
       poll-ms: ${MSG_WEBHOOK_POLL_MS:100}
       concurrency: ${MSG_WEBHOOK_CONCURRENCY:4}
       batch-window: ${MSG_WEBHOOK_BATCH_WINDOW:100ms}

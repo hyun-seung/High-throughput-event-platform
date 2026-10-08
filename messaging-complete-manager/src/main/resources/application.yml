@@ -38,7 +38,7 @@ spring:
 messaging:
   complete:
     consumer:
-      enabled: ${MSG_COMPLETE_CONSUMER_ENABLED:false}
+      enabled: ${MSG_COMPLETE_CONSUMER_ENABLED:true}
 
 management:
   endpoint:
