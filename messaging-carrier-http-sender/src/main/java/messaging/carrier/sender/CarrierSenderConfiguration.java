@@ -1,5 +1,6 @@
 package messaging.carrier.sender;
 
+import io.micrometer.core.instrument.MeterRegistry;
 import messaging.common.messages.CarrierHttpResult;
 import messaging.common.messages.MessageTopics;
 import messaging.common.messages.RedisSendAttemptGuard;
@@ -52,9 +53,10 @@ public class CarrierSenderConfiguration {
     @Bean CarrierHttpSendService carrierHttpSendService(CarrierSendGate gate, CarrierHttpAttemptStore attempts,
                                                         CarrierProviderClient provider, CarrierErrorNormalizer normalizer,
                                                         KafkaTemplate<String, CarrierHttpResult> kafka,
-                                                        Clock clock, CarrierSenderProperties properties) {
+                                                        Clock clock, CarrierSenderProperties properties,
+                                                        MeterRegistry meters) {
         return new CarrierHttpSendService(gate, attempts, provider, normalizer, kafka, clock,
-                properties.recoveryGrace());
+                properties.recoveryGrace(), meters);
     }
 
     @Bean(destroyMethod = "close")

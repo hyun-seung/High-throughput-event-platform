@@ -40,7 +40,7 @@ public class MessageWebhookConfiguration {
                 .exceptionHandling(e -> e.authenticationEntryPoint((request, response, error) -> response.setStatus(401)))
                 .authorizeHttpRequests(a -> a
                         .dispatcherTypeMatchers(jakarta.servlet.DispatcherType.ERROR).permitAll()
-                        .requestMatchers("/actuator/health", "/livez", "/readyz").permitAll()
+                        .requestMatchers("/actuator/health", "/actuator/prometheus", "/livez", "/readyz").permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.POST, "/api/v1/message-webhooks/*").authenticated()
                         .anyRequest().denyAll())
                 .addFilterBefore(new MessageWebhookAuthenticationFilter(properties),

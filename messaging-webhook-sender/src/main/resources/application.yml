@@ -60,4 +60,8 @@ management:
   endpoints:
     web:
       exposure:
-        include: health
+        include: health,prometheus
+  metrics:
+    distribution:
+      percentiles-histogram:
+        "[messaging.webhook.http.duration]": true

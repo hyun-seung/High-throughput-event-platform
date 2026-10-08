@@ -31,12 +31,12 @@ public record WebhookSenderProperties(
         }
     }
 
-    public record Destination(URI url) {
+    public record Destination(URI url, @DefaultValue("false") boolean allowInsecureHttp) {
         public Destination {
             if (url == null || url.getHost() == null || url.getUserInfo() != null || url.getFragment() != null
                     || !("https".equals(url.getScheme()) || "http".equals(url.getScheme())
-                    && Set.of("localhost", "127.0.0.1", "[::1]").contains(url.getHost()))) {
-                throw new IllegalArgumentException("Customer webhook requires HTTPS (or loopback HTTP)");
+                    && (allowInsecureHttp || Set.of("localhost", "127.0.0.1", "[::1]").contains(url.getHost())))) {
+                throw new IllegalArgumentException("Customer webhook requires HTTPS, loopback HTTP, or explicit HTTP opt-in");
             }
         }
     }

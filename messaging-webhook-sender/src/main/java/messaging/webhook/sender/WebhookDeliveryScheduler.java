@@ -31,6 +31,7 @@ public class WebhookDeliveryScheduler implements AutoCloseable {
         customers = properties.customers().keySet().stream().sorted().toList();
         workers = Executors.newFixedThreadPool(properties.concurrency());
         slots = new Semaphore(properties.concurrency());
+        log.info("Customer webhook scheduler started with {} configured destinations", customers.size());
     }
 
     @Scheduled(fixedDelayString = "${messaging.webhook.sender.poll-ms:100}")

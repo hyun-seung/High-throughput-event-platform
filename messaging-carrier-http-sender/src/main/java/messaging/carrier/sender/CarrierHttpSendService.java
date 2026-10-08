@@ -1,5 +1,7 @@
 package messaging.carrier.sender;
 
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import messaging.common.messages.CarrierHttpResult;
 import messaging.common.messages.HttpSendCommand;
 import messaging.common.messages.MessageTopics;
@@ -20,11 +22,19 @@ public class CarrierHttpSendService {
     private final KafkaTemplate<String, CarrierHttpResult> kafka;
     private final Clock clock;
     private final Duration recoveryGrace;
+    private final MeterRegistry meters;
 
     public CarrierHttpSendService(CarrierSendGate gate, CarrierHttpAttemptStore attempts,
                                   CarrierProviderClient provider, CarrierErrorNormalizer normalizer,
                                   KafkaTemplate<String, CarrierHttpResult> kafka, Clock clock,
                                   Duration recoveryGrace) {
+        this(gate, attempts, provider, normalizer, kafka, clock, recoveryGrace, null);
+    }
+
+    public CarrierHttpSendService(CarrierSendGate gate, CarrierHttpAttemptStore attempts,
+                                  CarrierProviderClient provider, CarrierErrorNormalizer normalizer,
+                                  KafkaTemplate<String, CarrierHttpResult> kafka, Clock clock,
+                                  Duration recoveryGrace, MeterRegistry meters) {
         this.gate = Objects.requireNonNull(gate);
         this.attempts = Objects.requireNonNull(attempts);
         this.provider = Objects.requireNonNull(provider);
@@ -32,6 +42,7 @@ public class CarrierHttpSendService {
         this.kafka = Objects.requireNonNull(kafka);
         this.clock = Objects.requireNonNull(clock);
         this.recoveryGrace = Objects.requireNonNull(recoveryGrace);
+        this.meters = meters;
     }
 
     public void send(HttpSendCommand command) throws ExecutionException, InterruptedException {
@@ -48,12 +59,27 @@ public class CarrierHttpSendService {
             case OBSERVED -> publishIfNeeded(command,
                     attempts.observation(command).orElseThrow(() -> new IllegalStateException("Missing HTTP observation")));
             case SEND -> {
-                CarrierProviderReply reply = provider.send(command);
+                Timer.Sample sample = meters == null ? null : Timer.start(meters);
+                CarrierProviderReply reply;
+                try {
+                    reply = provider.send(command);
+                } catch (RuntimeException failure) {
+                    recordAttempt(command, "EXCEPTION", sample);
+                    throw failure;
+                }
                 CarrierHttpResult result = result(command, reply, clock.instant());
+                recordAttempt(command, result.status().name(), sample);
                 attempts.record(command, result);
                 publishIfNeeded(command, result);
             }
         }
+    }
+
+    private void recordAttempt(HttpSendCommand command, String outcome, Timer.Sample sample) {
+        if (meters == null) return;
+        String carrier = command.carrier().name();
+        meters.counter("messaging.carrier.http.attempts", "carrier", carrier, "outcome", outcome).increment();
+        sample.stop(meters.timer("messaging.carrier.http.duration", "carrier", carrier, "outcome", outcome));
     }
 
     private CarrierHttpResult result(HttpSendCommand command, CarrierProviderReply reply, Instant now) {

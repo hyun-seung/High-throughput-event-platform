@@ -31,7 +31,7 @@ class WebhookBatchRepositoryPostgresTest {
     private final String schema = "webhook_test_" + UUID.randomUUID().toString().replace("-", "");
     private final JsonMapper mapper = JsonMapper.builder().build();
     private final WebhookSenderProperties.Destination destination = new WebhookSenderProperties.Destination(
-            URI.create("https://example.org/results"));
+            URI.create("https://example.org/results"), false);
     private final WebhookSenderProperties settings = new WebhookSenderProperties(true, 100, 4,
             Duration.ZERO, 262144, Duration.ofSeconds(3), Duration.ofSeconds(30),
             Duration.ofMillis(1), Duration.ofSeconds(60), Map.of(42L, destination, 43L, destination));

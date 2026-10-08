@@ -74,4 +74,8 @@ management:
   endpoints:
     web:
       exposure:
-        include: health
+        include: health,prometheus
+  metrics:
+    distribution:
+      percentiles-histogram:
+        "[messaging.carrier.http.duration]": true
