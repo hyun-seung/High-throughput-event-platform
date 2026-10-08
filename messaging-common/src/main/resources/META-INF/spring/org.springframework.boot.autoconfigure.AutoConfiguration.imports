@@ -1,1 +1,1 @@
-messaging.common.dynamodb.config.DynamoDbAutoConfiguration
+messaging.common.dynamodb.DynamoDbAutoConfiguration

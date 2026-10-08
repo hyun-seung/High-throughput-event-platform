@@ -1,2 +1,2 @@
-messaging.auth.module.auth.config.AuthModuleAutoConfiguration
-messaging.auth.module.auth.config.AuthTokenSecurityAutoConfiguration
+messaging.auth.AuthModuleAutoConfiguration
+messaging.auth.AuthTokenSecurityAutoConfiguration

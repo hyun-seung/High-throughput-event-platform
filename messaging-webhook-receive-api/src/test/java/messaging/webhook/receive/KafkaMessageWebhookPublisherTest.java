@@ -4,7 +4,6 @@ import messaging.common.messages.HttpCarrier;
 import messaging.common.messages.MessageTopics;
 import messaging.common.messages.MessageWebhookBatch;
 import messaging.common.messages.MessageWebhookResult;
-import messaging.webhook.receive.kafka.KafkaMessageWebhookPublisher;
 import org.junit.jupiter.api.Test;
 import org.springframework.kafka.core.KafkaTemplate;
 

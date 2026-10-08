@@ -1,7 +1,5 @@
 package messaging.webhook.receive;
 
-import messaging.webhook.receive.config.MessageWebhookProperties;
-import messaging.webhook.receive.kafka.KafkaMessageWebhookPublisher;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;

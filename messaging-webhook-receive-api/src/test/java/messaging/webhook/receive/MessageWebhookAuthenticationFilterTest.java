@@ -1,8 +1,6 @@
 package messaging.webhook.receive;
 
 import messaging.common.messages.HttpCarrier;
-import messaging.webhook.receive.config.MessageWebhookProperties;
-import messaging.webhook.receive.security.MessageWebhookAuthenticationFilter;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;

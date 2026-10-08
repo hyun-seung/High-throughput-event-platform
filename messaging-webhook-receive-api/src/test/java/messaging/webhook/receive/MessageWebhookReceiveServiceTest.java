@@ -3,9 +3,6 @@ package messaging.webhook.receive;
 import messaging.common.messages.HttpCarrier;
 import messaging.common.messages.MessageWebhookBatch;
 import messaging.common.messages.MessageWebhookResult;
-import messaging.webhook.receive.config.MessageWebhookProperties;
-import messaging.webhook.receive.kafka.MessageWebhookPublisher;
-import messaging.webhook.receive.service.MessageWebhookReceiveService;
 import org.junit.jupiter.api.Test;
 
 import java.time.Clock;

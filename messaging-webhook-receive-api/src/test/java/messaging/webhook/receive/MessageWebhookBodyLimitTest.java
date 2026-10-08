@@ -1,7 +1,5 @@
 package messaging.webhook.receive;
 
-import messaging.webhook.receive.api.MessageWebhookBodyLimit;
-import messaging.webhook.receive.api.MessageWebhookController;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.MethodParameter;
 import org.springframework.mock.http.MockHttpInputMessage;

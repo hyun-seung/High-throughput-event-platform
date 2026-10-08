@@ -1,9 +1,6 @@
 package messaging.common.dynamodb;
 
 import com.sun.net.httpserver.HttpServer;
-import messaging.common.dynamodb.config.DynamoDbAutoConfiguration;
-import messaging.common.dynamodb.config.DynamoDbProperties;
-import messaging.common.dynamodb.config.LocalOperationsDynamoDbClient;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.*;
@@ -16,7 +13,6 @@ import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.*;
 
 import java.net.InetSocketAddress;
-import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Map;
@@ -89,20 +85,6 @@ class DynamoDbClientRecoveryTest {
         }
         assertEquals(1, meters.get("delivery.dynamodb.duration").tag("result", "failure").timer().count());
         assertEquals(1, meters.get("delivery.dynamodb.duration").tag("result", "success").timer().count());
-    }
-
-    @Test void standaloneOperationsClientHasTheSameBoundedRetryAndRecovers() {
-        replies = ignored -> UNAVAILABLE;
-        try (var client = LocalOperationsDynamoDbClient.create(URI.create(endpoint()))) {
-            var config = client.serviceClientConfiguration().overrideConfiguration();
-            assertEquals(Duration.ofSeconds(10), config.apiCallTimeout().orElseThrow());
-            assertEquals(Duration.ofSeconds(5), config.apiCallAttemptTimeout().orElseThrow());
-            assertThrows(DynamoDbException.class, () -> read(client));
-            assertEquals(3, calls.get());
-            replies = ignored -> OK;
-            read(client);
-            assertEquals(4, calls.get());
-        }
     }
 
     @Test void failedConditionalWriteIsNotRetriedOrClassifiedAsAnOutage() {

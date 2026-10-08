@@ -1,7 +1,7 @@
 package messaging.api.messages;
 
-import messaging.api.security.principal.AuthenticatedUser;
-import messaging.common.core.response.ApiResponse;
+import messaging.api.security.AuthenticatedUser;
+import messaging.common.core.ApiResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
