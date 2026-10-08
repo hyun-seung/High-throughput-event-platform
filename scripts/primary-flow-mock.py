@@ -88,7 +88,8 @@ def handler_for(kind: str, events: Events, webhook_base_url: str, secret: str,
                     or scenario == "carrier-exhausted"
                 tps = carrier == "SKT" and (scenario == "tps-exhausted"
                     or (scenario == "tps-retry" and invocation == 1))
-                general_failure = scenario.startswith("secondary-") and carrier == "SKT"
+                monitor_failure = payload.get("payload", {}).get("text") == "monitor-force-failure"
+                general_failure = carrier == "SKT" and (scenario.startswith("secondary-") or monitor_failure)
                 if mismatch or tps or general_failure:
                     self.send_response(400)
                     self.send_header("Content-Type", "application/json")
@@ -174,6 +175,10 @@ def main():
     parser.add_argument("--ready-file", type=Path, required=True)
     parser.add_argument("--events-file", type=Path, required=True)
     parser.add_argument("--webhook-base-url", required=True)
+    parser.add_argument("--listen-address", default="127.0.0.1")
+    parser.add_argument("--carrier-ports", nargs=3, type=int, default=(0, 0, 0))
+    parser.add_argument("--customer-port", type=int, default=0)
+    parser.add_argument("--tcp-port", type=int, default=0)
     parser.add_argument("--scenario", choices=("success", "carrier-mismatch",
                                                 "carrier-exhausted", "tps-retry", "tps-exhausted",
                                                 "no-response-retry", "no-response-exhausted",
@@ -186,13 +191,13 @@ def main():
         parser.error("Each FLOW_WEBHOOK_SECRET_<CARRIER> must contain at least 32 characters")
     args.events_file.touch()
     events = Events(args.events_file)
-    carriers = {name: ThreadingHTTPServer(("127.0.0.1", 0),
+    carriers = {name: ThreadingHTTPServer((args.listen_address, port),
                 handler_for("carrier", events, args.webhook_base_url, secrets_by_carrier[name],
-                            args.scenario, name)) for name in ("SKT", "KT", "LGU")}
-    customer = ThreadingHTTPServer(("127.0.0.1", 0),
+                            args.scenario, name)) for name, port in zip(("SKT", "KT", "LGU"), args.carrier_ports)}
+    customer = ThreadingHTTPServer((args.listen_address, args.customer_port),
                                    handler_for("customer", events, args.webhook_base_url,
                                                "", args.scenario))
-    tcp = socketserver.ThreadingTCPServer(("127.0.0.1", 0),
+    tcp = socketserver.ThreadingTCPServer((args.listen_address, args.tcp_port),
                                           tcp_handler_for(events, args.scenario))
     for server in carriers.values():
         server.daemon_threads = True
@@ -201,9 +206,10 @@ def main():
     tcp.daemon_threads = True
     threading.Thread(target=customer.serve_forever, daemon=True).start()
     threading.Thread(target=tcp.serve_forever, daemon=True).start()
-    ready = {"carrierUrls": {name: f"http://127.0.0.1:{server.server_port}"
+    public_host = "127.0.0.1" if args.listen_address == "0.0.0.0" else args.listen_address
+    ready = {"carrierUrls": {name: f"http://{public_host}:{server.server_port}"
                               for name, server in carriers.items()},
-             "customerUrl": f"http://127.0.0.1:{customer.server_port}/hook",
+             "customerUrl": f"http://{public_host}:{customer.server_port}/hook",
              "tcpPort": tcp.server_address[1]}
     temporary = args.ready_file.with_suffix(".tmp")
     temporary.write_text(json.dumps(ready), encoding="utf-8")

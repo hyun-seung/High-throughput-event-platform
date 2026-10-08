@@ -1,9 +1,9 @@
-# Only used with the root compose.yml and project platform-monitoring.
+# Isolated monitoring for the active messaging flow.
 x-app: &app
   image: eclipse-temurin:21.0.7_6-jre
   restart: unless-stopped
   working_dir: /app
-  command: ["java", "-Xms128m", "-Xmx512m", "-jar", "/app/app.jar"]
+  command: ["java", "-XX:ActiveProcessorCount=2", "-Xms64m", "-Xmx320m", "-jar", "/app/app.jar"]
 x-env: &app-env
   SPRING_PROFILES_ACTIVE: dev
   SERVER_ADDRESS: 0.0.0.0
@@ -15,39 +15,60 @@ x-env: &app-env
   DB_URL: jdbc:postgresql://postgres:5432/delivery
   DB_USERNAME: delivery
   DB_PASSWORD: delivery
-  EXTERNAL_API_BASE_URL: http://simulator:8090
-  EXTERNAL_TCP_HOST: simulator
-  EXTERNAL_TCP_PORT: 8093
-  SIMULATOR_TCP_BIND_ADDRESS: 0.0.0.0
-  INGRESS_CONCURRENCY: 3
-  DISPATCH_CONCURRENCY: 3
-  INGRESS_KAFKA_LINGER_MS: 5
+  AWS_ACCESS_KEY_ID: local
+  AWS_SECRET_ACCESS_KEY: local
+  AWS_REGION: ap-northeast-2
   LOGGING_STRUCTURED_FORMAT_FILE: logstash
   LOGGING_LOGBACK_ROLLINGPOLICY_MAX_FILE_SIZE: 10MB
   LOGGING_LOGBACK_ROLLINGPOLICY_MAX_HISTORY: 7
   LOGGING_LOGBACK_ROLLINGPOLICY_TOTAL_SIZE_CAP: 100MB
+  MESSAGING_PRE_SEND_CONCURRENCY: 1
+  MSG_HTTP_SENDER_CONCURRENCY: 1
+  MSG_RESULT_CONCURRENCY: 1
+  MSG_COMPLETE_CONCURRENCY: 1
+  MSG_WEBHOOK_CONSUMER_CONCURRENCY: 1
+  MSG_WEBHOOK_CONCURRENCY: 1
+  MSG_TCP_SENDER_CONCURRENCY: 1
   JWT_SECRET: bG9jYWwtZGV2ZWxvcG1lbnQtb25seS1zZWNyZXQtYXQtbGVhc3QtMzItYnl0ZXMtbG9uZw==
+x-carrier-env: &carrier-env
+  <<: *app-env
+  MSG_HTTP_SENDER_PORT: 8101
+  MSG_HTTP_SENDER_METRICS_PORT: 19091
+  MSG_HTTP_NOT_OUR_CARRIER_CODES: "41001"
+  MSG_HTTP_TPS_EXCEEDED_CODES: "42002"
+x-carrier: &carrier
+  <<: *app
+  volumes:
+    - ${MONITOR_HTTP_SENDER_JAR:-./messaging-carrier-http-sender/target/messaging-carrier-http-sender-1.0-SNAPSHOT.jar}:/app/app.jar:ro
+    - monitoring-logs:/logs
+  depends_on:
+    api: {condition: service_started}
+    mock: {condition: service_started}
 services:
   db-init:
     image: postgres:17-alpine
     depends_on:
       postgres: {condition: service_healthy}
-    environment:
-      PGPASSWORD: delivery
-    command: ["psql", "-h", "postgres", "-U", "delivery", "-d", "delivery", "-v", "ON_ERROR_STOP=1", "-f", "/init.sql"]
+    environment: {PGPASSWORD: delivery}
+    command: ["psql", "-h", "postgres", "-U", "delivery", "-d", "delivery", "-v", "ON_ERROR_STOP=1", "-f", "/init-user.sql", "-f", "/init-reference.sql", "-f", "/init-monitoring.sql"]
     volumes:
-      - ./scripts/local-init.sql:/init.sql:ro
+      - ./scripts/local-init.sql:/init-user.sql:ro
+      - ./scripts/cdc/init.sql:/init-reference.sql:ro
+      - ./monitoring/init.sql:/init-monitoring.sql:ro
   policy-init:
     image: redis:7.4-alpine
     depends_on:
       redis: {condition: service_healthy}
-    command: ["redis-cli", "-h", "redis", "HSET", "request-control:{user:1}:policy", "blocked", "false", "tpsEnabled", "true", "requestsPerSecond", "2000", "burstCapacity", "2000", "quotaEnabled", "true", "monthlyLimit", "1000000"]
+      db-init: {condition: service_completed_successfully}
+    command: ["redis-cli", "-h", "redis", "HSET", "message:usage:{client:1}:policy", "tpsLimit", "2000", "quotaGENERAL", "1000000", "quotaNOTI", "1000000", "quotaADV", "1000000", "quotaALERT", "1000000"]
   api:
     <<: *app
     environment:
       <<: *app-env
       SERVER_PORT: 8080
-      MANAGEMENT_SERVER_PORT: 19080
+      DELIVERY_API_METRICS_PORT: 19080
+      DYNAMODB_INITIALIZE_TABLES: "true"
+      MESSAGING_ADMISSION_ENABLED: "true"
       LOGGING_FILE_NAME: /logs/api.log
     volumes:
       - ${MONITOR_API_JAR:-./messaging-api/target/messaging-api-1.0-SNAPSHOT.jar}:/app/app.jar:ro
@@ -58,65 +79,123 @@ services:
       db-init: {condition: service_completed_successfully}
       policy-init: {condition: service_completed_successfully}
     ports: ["127.0.0.1:38080:8080"]
-  ingress:
+  mock:
+    image: python:3.12-alpine
+    command: ["python", "/app/primary-flow-mock.py", "--ready-file", "/logs/mock-ready.json", "--events-file", "/logs/mock-events.jsonl", "--scenario", "success", "--webhook-base-url", "http://webhook-receive:8099/api/v1/message-webhooks", "--listen-address", "0.0.0.0", "--carrier-ports", "18090", "18091", "18092", "--customer-port", "18093", "--tcp-port", "18094"]
+    environment:
+      FLOW_WEBHOOK_SECRET_SKT: monitoring-skt-webhook-secret-00000001
+      FLOW_WEBHOOK_SECRET_KT: monitoring-kt-webhook-secret-00000001
+      FLOW_WEBHOOK_SECRET_LGU: monitoring-lgu-webhook-secret-00000001
+    volumes:
+      - ./scripts/primary-flow-mock.py:/app/primary-flow-mock.py:ro
+      - monitoring-logs:/logs
+  pre-send:
     <<: *app
     environment:
       <<: *app-env
-      SERVER_PORT: 8091
-      MANAGEMENT_SERVER_PORT: 19081
-      LOGGING_FILE_NAME: /logs/ingress.log
+      MESSAGING_PRE_SEND_PORT: 8100
+      MESSAGING_PRE_SEND_METRICS_PORT: 19093
+      LOGGING_FILE_NAME: /logs/pre-send.log
     volumes:
-      - ${MONITOR_INGRESS_JAR:-./delivery-ingress-worker/target/delivery-ingress-worker-1.0-SNAPSHOT.jar}:/app/app.jar:ro
+      - ${MONITOR_PRE_SEND_JAR:-./messaging-pre-send-manager/target/messaging-pre-send-manager-1.0-SNAPSHOT.jar}:/app/app.jar:ro
       - monitoring-logs:/logs
     depends_on:
-      kafka: {condition: service_healthy}
-      dynamodb-local: {condition: service_healthy}
-      db-init: {condition: service_completed_successfully}
-      policy-init: {condition: service_completed_successfully}
-  dispatch:
+      api: {condition: service_started}
+  skt-sender:
+    <<: *carrier
+    environment:
+      <<: *carrier-env
+      MSG_HTTP_CARRIER: SKT
+      MSG_HTTP_TOPIC: message.skt.http.send.v1
+      MSG_HTTP_GROUP_ID: messaging-skt-http-sender
+      MSG_HTTP_BASE_URL: http://mock:18090
+      LOGGING_FILE_NAME: /logs/skt-sender.log
+  kt-sender:
+    <<: *carrier
+    environment:
+      <<: *carrier-env
+      MSG_HTTP_CARRIER: KT
+      MSG_HTTP_TOPIC: message.kt.http.send.v1
+      MSG_HTTP_GROUP_ID: messaging-kt-http-sender
+      MSG_HTTP_BASE_URL: http://mock:18091
+      LOGGING_FILE_NAME: /logs/kt-sender.log
+  lgu-sender:
+    <<: *carrier
+    environment:
+      <<: *carrier-env
+      MSG_HTTP_CARRIER: LGU
+      MSG_HTTP_TOPIC: message.lgu.http.send.v1
+      MSG_HTTP_GROUP_ID: messaging-lgu-http-sender
+      MSG_HTTP_BASE_URL: http://mock:18092
+      LOGGING_FILE_NAME: /logs/lgu-sender.log
+  webhook-receive:
     <<: *app
     environment:
       <<: *app-env
-      SERVER_PORT: 8092
-      MANAGEMENT_SERVER_PORT: 19082
-      LOGGING_FILE_NAME: /logs/dispatch.log
+      MESSAGE_WEBHOOK_PORT: 8099
+      MESSAGE_WEBHOOK_METRICS_PORT: 19089
+      MESSAGE_WEBHOOK_SKT_SECRET: monitoring-skt-webhook-secret-00000001
+      MESSAGE_WEBHOOK_KT_SECRET: monitoring-kt-webhook-secret-00000001
+      MESSAGE_WEBHOOK_LGU_SECRET: monitoring-lgu-webhook-secret-00000001
+      LOGGING_FILE_NAME: /logs/webhook-receive.log
     volumes:
-      - ${MONITOR_DISPATCH_JAR:-./dispatch-worker/target/dispatch-worker-1.0-SNAPSHOT.jar}:/app/app.jar:ro
+      - ${MONITOR_WEBHOOK_RECEIVE_JAR:-./messaging-webhook-receive-api/target/messaging-webhook-receive-api-1.0-SNAPSHOT.jar}:/app/app.jar:ro
       - monitoring-logs:/logs
     depends_on:
-      kafka: {condition: service_healthy}
-      dynamodb-local: {condition: service_healthy}
-      db-init: {condition: service_completed_successfully}
-      policy-init: {condition: service_completed_successfully}
-  simulator:
+      api: {condition: service_started}
+  result-manager:
     <<: *app
     environment:
       <<: *app-env
-      SERVER_PORT: 8090
-      MANAGEMENT_SERVER_PORT: 19090
-      LOGGING_FILE_NAME: /logs/simulator.log
+      MSG_RESULT_MANAGER_PORT: 8102
+      MSG_RESULT_MANAGER_METRICS_PORT: 19094
+      LOGGING_FILE_NAME: /logs/result-manager.log
     volumes:
-      - ${MONITOR_SIMULATOR_JAR:-./external-api-simulator/target/external-api-simulator-1.0-SNAPSHOT.jar}:/app/app.jar:ro
+      - ${MONITOR_RESULT_MANAGER_JAR:-./messaging-result-manager/target/messaging-result-manager-1.0-SNAPSHOT.jar}:/app/app.jar:ro
       - monitoring-logs:/logs
     depends_on:
-      kafka: {condition: service_healthy}
-      dynamodb-local: {condition: service_healthy}
-      db-init: {condition: service_completed_successfully}
-      policy-init: {condition: service_completed_successfully}
-  result:
+      api: {condition: service_started}
+  complete-manager:
     <<: *app
     environment:
       <<: *app-env
-      RESULT_HTTP_PORT: 8095
-      RESULT_METRICS_PORT: 19085
-      LOGGING_FILE_NAME: /logs/result.log
+      MSG_COMPLETE_MANAGER_PORT: 8103
+      MSG_COMPLETE_MANAGER_METRICS_PORT: 19095
+      LOGGING_FILE_NAME: /logs/complete-manager.log
     volumes:
-      - ${MONITOR_RESULT_JAR:-./delivery-result-worker/target/delivery-result-worker-1.0-SNAPSHOT.jar}:/app/app.jar:ro
+      - ${MONITOR_COMPLETE_MANAGER_JAR:-./messaging-complete-manager/target/messaging-complete-manager-1.0-SNAPSHOT.jar}:/app/app.jar:ro
       - monitoring-logs:/logs
     depends_on:
-      kafka: {condition: service_healthy}
-      dynamodb-local: {condition: service_healthy}
-      db-init: {condition: service_completed_successfully}
+      api: {condition: service_started}
+  webhook-sender:
+    <<: *app
+    environment:
+      <<: *app-env
+      MSG_WEBHOOK_SENDER_PORT: 8104
+      MSG_WEBHOOK_SENDER_METRICS_PORT: 19096
+      SPRING_APPLICATION_JSON: '{"messaging":{"webhook":{"sender":{"customers":{"1":{"url":"http://mock:18093/hook","allowInsecureHttp":true}}}}}}'
+      LOGGING_FILE_NAME: /logs/webhook-sender.log
+    volumes:
+      - ${MONITOR_WEBHOOK_SENDER_JAR:-./messaging-webhook-sender/target/messaging-webhook-sender-1.0-SNAPSHOT.jar}:/app/app.jar:ro
+      - monitoring-logs:/logs
+    depends_on:
+      api: {condition: service_started}
+      mock: {condition: service_started}
+  tcp-sender:
+    <<: *app
+    environment:
+      <<: *app-env
+      MSG_TCP_SENDER_PORT: 8105
+      MSG_TCP_SENDER_METRICS_PORT: 19097
+      MSG_TCP_PROVIDER_HOST: mock
+      MSG_TCP_PROVIDER_PORT: 18094
+      LOGGING_FILE_NAME: /logs/tcp-sender.log
+    volumes:
+      - ${MONITOR_TCP_SENDER_JAR:-./messaging-tcp-sender/target/messaging-tcp-sender-1.0-SNAPSHOT.jar}:/app/app.jar:ro
+      - monitoring-logs:/logs
+    depends_on:
+      api: {condition: service_started}
+      mock: {condition: service_started}
   collector:
     build:
       context: .
@@ -124,16 +203,14 @@ services:
     restart: unless-stopped
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
-    depends_on: [api, ingress, dispatch]
+    depends_on: [api, pre-send, skt-sender, result-manager, complete-manager]
   redis-exporter:
     image: oliver006/redis_exporter:v1.92.0
-    environment:
-      REDIS_ADDR: redis://redis:6379
+    environment: {REDIS_ADDR: redis://redis:6379}
     depends_on: [redis]
   postgres-exporter:
     image: quay.io/prometheuscommunity/postgres-exporter:v0.20.1
-    environment:
-      DATA_SOURCE_NAME: postgresql://delivery:delivery@postgres:5432/delivery?sslmode=disable
+    environment: {DATA_SOURCE_NAME: "postgresql://delivery:delivery@postgres:5432/delivery?sslmode=disable"}
     depends_on: [postgres]
   prometheus:
     image: prom/prometheus:v3.14.0
@@ -191,3 +268,9 @@ volumes:
   monitoring-loki:
   monitoring-alloy:
   monitoring-grafana:
+networks:
+  default:
+    name: platform-messaging-monitoring_default
+    ipam:
+      config:
+        - subnet: 10.254.252.0/24

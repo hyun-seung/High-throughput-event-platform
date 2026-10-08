@@ -1,87 +1,47 @@
 groups:
-  - name: delivery-local
+  - name: messaging-local
     rules:
-      - alert: MonitoringTargetDown
-        expr: up == 0
-        for: 30s
+      - alert: MessagingServiceDown
+        expr: up{job=~"api|pre-send|skt-sender|kt-sender|lgu-sender|webhook-receive|result-manager|complete-manager|webhook-sender|tcp-sender"} == 0
+        for: 1m
         labels: {severity: critical}
         annotations:
-          summary: '수집 대상 응답 없음: {{ $labels.job }}'
-      - alert: KafkaObservationUnavailable
+          summary: '메시징 AP 수집 실패: {{ $labels.job }}'
+      - alert: MessagingKafkaObservationUnavailable
         expr: platform_kafka_probe_up == 0
         for: 30s
         labels: {severity: critical}
-        annotations:
-          summary: Kafka offset 관측 실패 또는 오래된 관측
-      - alert: DeliveryBacklog
-        expr: sum(platform_kafka_committed_lag) > 100
+        annotations: {summary: 메인 경로 Kafka offset 관측 실패}
+      - alert: MessagingConsumerLag
+        expr: sum(platform_kafka_committed_lag{group=~"messaging-.*"}) > 100
         for: 1m
         labels: {severity: warning}
-        annotations:
-          summary: 처리 대기 100건 초과가 1분 지속
-      - alert: DeliveryOldestPending
-        expr: max(platform_kafka_oldest_uncommitted_age_seconds) > 30
-        for: 30s
+        annotations: {summary: 메시징 소비 대기 100건 초과}
+      - alert: MessagingOldestPending
+        expr: max(platform_kafka_oldest_uncommitted_age_seconds{group=~"messaging-.*"}) > 60
+        for: 1m
         labels: {severity: warning}
-        annotations:
-          summary: 가장 오래된 Kafka 대기가 30초 초과
-      - alert: DeliveryDurableHandoffFailed
-        expr: sum(increase(delivery_outcomes_total{outcome="ingress_dlt_failed"}[5m])) > 0
+        annotations: {summary: 메시징 Kafka 최장 대기 60초 초과}
+      - alert: MessagingApiServerError
+        expr: sum(increase(http_server_requests_seconds_count{job="api",uri="/api/v1/messages",status=~"5.."}[5m])) > 0
+        labels: {severity: warning}
+        annotations: {summary: 신규 메시지 접수 API 5xx 발생}
+      - alert: MessagingWebhookExhausted
+        expr: sum(increase(messaging_webhook_attempts_total{job="webhook-sender",outcome="exhausted"}[5m])) > 0
         labels: {severity: critical}
-        annotations:
-          summary: DLT 인계 실패 관측
-      - alert: DeliveryNeedsReview
-        expr: sum(increase(delivery_outcomes_total{outcome="dispatch_review"}[5m])) > 0
-        labels: {severity: warning}
-        annotations:
-          summary: 운영 확인 상태 관측 (고유 미해결 건수가 아님)
-      - alert: CustomerNotificationExhausted
-        expr: sum(increase(delivery_notification_events_total{outcome="exhausted"}[5m])) > 0
-        labels: {severity: critical}
-        annotations:
-          summary: 고객 통지 재시도 21회 소진 (묶음별 상태 조회 필요)
-      - alert: DeliveryCleanupRetained
-        expr: sum(increase(delivery_cleanup_events_total{outcome="retained"}[5m])) > 0
-        labels: {severity: warning}
-        annotations:
-          summary: 정리 작업 실패로 예약 보존 (원인과 적체 확인 필요)
-      - alert: ResolutionAuditPendingTooLong
-        expr: max(delivery_resolution_pending_oldest_age{application="delivery-result-worker"}) > 300
-        for: 1m
-        labels: {severity: warning}
-        annotations:
-          summary: 결과 불명 조치의 미확정 감사가 5분 넘게 남음
-      - alert: ResolutionAuditScanStale
-        expr: max(time() - delivery_resolution_audit_scan_last_success{application="delivery-result-worker"}) > 90
-        for: 1m
-        labels: {severity: warning}
-        annotations:
-          summary: 결과 worker의 미확정 감사 SQL 조회가 90초 넘게 갱신되지 않음
-      - alert: DeliveryDynamoDbErrors
-        expr: sum(increase(delivery_dynamodb_duration_seconds_count{result="failure"}[5m])) > 0
-        labels: {severity: warning}
-        annotations:
-          summary: DynamoDB SDK 작업 실패
-      - alert: DeliveryAcceptanceLatency
-        expr: histogram_quantile(0.95, sum by (le) (rate(delivery_acceptance_latency_seconds_bucket{application="dispatch-worker"}[2m]))) > 1
-        for: 1m
-        labels: {severity: warning}
-        annotations:
-          summary: 업체 접수 저장 지연 p95가 1초 초과
-      - alert: RedisBackendUnavailable
+        annotations: {summary: 고객 웹훅 발송 재시도 소진}
+      - alert: MessagingRedisUnavailable
         expr: redis_up == 0
         for: 30s
         labels: {severity: critical}
-        annotations:
-          summary: Redis 연결 실패 (요청 제한 우회 여부 확인)
-      - alert: PostgresBackendUnavailable
+        annotations: {summary: Redis 연결 실패}
+      - alert: MessagingPostgresUnavailable
         expr: pg_up == 0
         for: 30s
         labels: {severity: critical}
-        annotations:
-          summary: PostgreSQL 연결 실패
-      - alert: DeliveryLimitsBypassed
-        expr: sum(increase(delivery_admission_duration_seconds_count{outcome="redis_unavailable_bypass"}[5m])) > 0
+        annotations: {summary: PostgreSQL 연결 실패}
+      - alert: MessagingLogCollectorDown
+        expr: up{job="alloy"} == 0
+        for: 1m
         labels: {severity: warning}
-        annotations:
-          summary: Redis 장애로 TPS·Quota 제한을 우회한 요청 관측
+        annotations: {summary: 신규 AP 로그 수집기 연결 실패}

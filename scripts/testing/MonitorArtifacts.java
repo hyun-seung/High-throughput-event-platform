@@ -12,9 +12,13 @@ import java.util.List;
 public class MonitorArtifacts {
     private static final List<String[]> MODULES = List.of(
             new String[] {"API", "messaging-api"},
-            new String[] {"INGRESS", "delivery-ingress-worker"},
-            new String[] {"DISPATCH", "dispatch-worker"},
-            new String[] {"SIMULATOR", "external-api-simulator"});
+            new String[] {"PRE_SEND", "messaging-pre-send-manager"},
+            new String[] {"HTTP_SENDER", "messaging-carrier-http-sender"},
+            new String[] {"WEBHOOK_RECEIVE", "messaging-webhook-receive-api"},
+            new String[] {"RESULT_MANAGER", "messaging-result-manager"},
+            new String[] {"COMPLETE_MANAGER", "messaging-complete-manager"},
+            new String[] {"WEBHOOK_SENDER", "messaging-webhook-sender"},
+            new String[] {"TCP_SENDER", "messaging-tcp-sender"});
 
     public static void main(String[] args) throws Exception {
         if (args.length < 1 || args.length > 2) {

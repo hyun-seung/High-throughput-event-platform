@@ -1,8 +1,7 @@
 global:
   scrape_interval: 10s
   evaluation_interval: 10s
-  external_labels:
-    environment: local-monitoring
+  external_labels: {environment: local-monitoring}
 rule_files:
   - /etc/prometheus/rules.yml
 scrape_configs:
@@ -10,48 +9,57 @@ scrape_configs:
     metrics_path: /metrics/api
     static_configs:
       - targets: ['collector:9800']
-        labels: {service: api, zone: local}
-  - job_name: ingress
+  - job_name: pre-send
     metrics_path: /actuator/prometheus
     static_configs:
-      - targets: ['ingress:19081']
-        labels: {service: ingress, zone: local}
-  - job_name: dispatch
+      - targets: ['pre-send:19093']
+  - job_name: skt-sender
     metrics_path: /actuator/prometheus
     static_configs:
-      - targets: ['dispatch:19082']
-        labels: {service: dispatch, zone: local}
-  - job_name: result
+      - targets: ['skt-sender:19091']
+  - job_name: kt-sender
     metrics_path: /actuator/prometheus
     static_configs:
-      - targets: ['result:19085']
-        labels: {service: result, zone: local}
-  - job_name: simulator
+      - targets: ['kt-sender:19091']
+  - job_name: lgu-sender
     metrics_path: /actuator/prometheus
     static_configs:
-      - targets: ['simulator:19090']
-        labels: {service: simulator, zone: local}
+      - targets: ['lgu-sender:19091']
+  - job_name: webhook-receive
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['webhook-receive:19089']
+  - job_name: result-manager
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['result-manager:19094']
+  - job_name: complete-manager
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['complete-manager:19095']
+  - job_name: webhook-sender
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['webhook-sender:19096']
+  - job_name: tcp-sender
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['tcp-sender:19097']
   - job_name: kafka-observer
     static_configs:
       - targets: ['collector:9800']
-        labels: {zone: local}
   - job_name: redis
     static_configs:
       - targets: ['redis-exporter:9121']
-        labels: {zone: local}
   - job_name: postgres
     static_configs:
       - targets: ['postgres-exporter:9187']
-        labels: {zone: local}
   - job_name: prometheus
     static_configs:
       - targets: ['localhost:9090']
-        labels: {zone: local}
   - job_name: loki
     static_configs:
       - targets: ['loki:3100']
-        labels: {zone: local}
   - job_name: alloy
     static_configs:
       - targets: ['alloy:12345']
-        labels: {zone: local}

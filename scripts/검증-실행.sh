@@ -13,7 +13,7 @@ usage() {
 저장소 장애: 카프카, 카프카-복제, 레디스, 포스트그레스, 다이나모DB
 성능 PoC: 성능-PoC
 그 밖의 도구: 로컬-점검, DDB-인덱스, DDB-분리, 전체흐름-대조, PoC-대조, PoC-항목, PoC-카프카, 입력기록, 입력완료,
-             모니터링-데모, 모니터링-측정,
+             모니터링-데모,
              모니터링-검증(Java), 대시보드-검증(Java), 정체-분석(Java), 실행파일-보관(Java)
 
 준비와 실제 JVM 시험에는 JDK 21이 필요하고, 실제 JVM 시험에는 Docker도 필요합니다.
@@ -35,13 +35,13 @@ case "$scenario" in
   준비) exec "${JAVA_HOME:+$JAVA_HOME/bin/}java" scripts/testing/PocSetup.java "$@" ;;
   Java-단위) exec bash scripts/test-java.sh unit "$@" ;;
   Java-통합) exec bash scripts/test-java.sh integration "$@" ;;
-  정체-분석|모니터링-검증|모니터링-데모|대시보드-검증|로컬-점검|DDB-인덱스|DDB-분리|전체흐름-대조|PoC-대조|PoC-항목|PoC-카프카|입력기록|입력완료)
+  모니터링-데모) exec bash scripts/monitoring.sh demo "$@" ;;
+  모니터링-검증) exec bash scripts/monitoring.sh verify "$@" ;;
+  정체-분석|대시보드-검증|로컬-점검|DDB-인덱스|DDB-분리|전체흐름-대조|PoC-대조|PoC-항목|PoC-카프카|입력기록|입력완료)
     ./mvnw -q -pl verification-tools -am -DskipTests package
     java_bin=java
     [[ -z "${JAVA_HOME:-}" ]] || java_bin="$JAVA_HOME/bin/java"
     command=stall
-    [[ "$scenario" != 모니터링-검증 ]] || command=monitoring
-    [[ "$scenario" != 모니터링-데모 ]] || command=demo
     [[ "$scenario" != 대시보드-검증 ]] || command=dashboards
     [[ "$scenario" != 로컬-점검 ]] || command=local-smoke
     [[ "$scenario" != DDB-인덱스 ]] || command=lifecycle-index
@@ -97,7 +97,6 @@ case "$scenario" in
     ./mvnw -q -pl verification-tools -am -DskipTests package
     script=scripts/poc/다이나모DB_복구.py ;;
   성능-PoC) script=scripts/poc/실행.py ;;
-  모니터링-측정) script=scripts/monitoring/성능_측정.py ;;
   실행파일-보관) exec java scripts/testing/MonitorArtifacts.java snapshot ;;
   *) usage >&2; exit 2 ;;
 esac

@@ -1,188 +1,113 @@
 {
-  "uid": "delivery-trace",
-  "title": "발송 관제 · 메시지 추적",
-  "schemaVersion": 39,
+  "uid": "messaging-trace",
+  "title": "메시징 서비스 · 메시지 추적",
+  "schemaVersion": 41,
   "version": 1,
-  "editable": false,
-  "tags": [
-    "delivery-platform"
-  ],
-  "timezone": "browser",
-  "refresh": "10s",
   "time": {
-    "from": "now-15m",
+    "from": "now-1h",
     "to": "now"
   },
+  "timezone": "browser",
+  "refresh": "10s",
+  "editable": false,
   "panels": [
     {
       "id": 1,
-      "title": "메시지 단계별 상세 · Loki",
-      "type": "text",
-      "gridPos": {
-        "x": 0,
-        "y": 0,
-        "w": 24,
-        "h": 4
-      },
-      "options": {
-        "mode": "markdown",
-        "content": "상단에 deliveryId를 입력하면 해당 메시지의 API 접수·Ingress 인계·Dispatch 접수·중복 차단·오류를 조회합니다. 로그를 펼치면 tenantId, attemptId, provider, code가 보입니다.\n\n이 목록은 관측 로그이며 현재 DB 상태 목록이 아닙니다. 로그 부재를 발송 유실로 판정하지 않습니다. 본문·토큰·고객 메시지 내용은 기록하지 않습니다."
-      }
-    },
-    {
-      "id": 2,
-      "title": "메시지 처리 기록",
+      "title": "clientMsgId로 AP 로그 찾기",
       "type": "logs",
-      "gridPos": {
-        "x": 0,
-        "y": 4,
-        "w": 24,
-        "h": 18
-      },
-      "description": "",
       "datasource": {
         "type": "loki",
         "uid": "platform-loki"
       },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "noValue": "데이터 없음",
-          "color": {
-            "mode": "palette-classic"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "orange",
-                "value": 80
-              },
-              {
-                "color": "red",
-                "value": 100
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
       "targets": [
         {
-          "refId": "A",
-          "expr": "{service=~\"api|ingress|dispatch\",zone=\"local\"} |= \"$delivery\" | json | line_format \"{{.stage}} · {{.outcome}} | deliveryId={{.deliveryId}} | tenant={{.tenantId}} | attempt={{.attemptId}} | {{.provider}} {{.code}}\"",
-          "queryType": "range",
-          "maxLines": 200
+          "expr": "{service=~\".+\"} |~ \"$clientMsgId\"",
+          "refId": "A"
         }
       ],
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 11
+      },
       "options": {
         "showTime": true,
-        "showLabels": false,
+        "showLabels": true,
         "showCommonLabels": false,
-        "wrapLogMessage": true,
-        "prettifyLogMessage": true,
-        "enableLogDetails": true,
-        "sortOrder": "Descending",
-        "dedupStrategy": "none"
+        "wrapLogMessage": true
       }
     },
     {
-      "id": 3,
-      "title": "후속 단계",
-      "type": "text",
+      "id": 2,
+      "title": "메시징 토픽별 누적 offset",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "platform-prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum by (topic) (platform_kafka_log_end_offset{topic=~\"message.*|MSG_RESULT|MSG-RESULT-FINALIZED|WEBHOOK-SEND\"})",
+          "refId": "A"
+        }
+      ],
       "gridPos": {
         "x": 0,
-        "y": 22,
+        "y": 11,
         "w": 24,
-        "h": 3
+        "h": 8
       },
-      "options": {
-        "mode": "markdown",
-        "content": "웹훅 결과와 TCP 2차 로그를 연결할 수 있습니다. 만료·고객 통지는 후속이며 새 앱 빌드 적용이 필요합니다. 운영자가 실제 상태를 조회·조치하는 API는 별도 구현이 필요합니다."
-      }
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {}
     }
   ],
   "links": [
     {
-      "title": "통합 관제",
-      "url": "/d/delivery-overview",
-      "type": "link",
-      "keepTime": true,
-      "includeVars": true
+      "title": "overview",
+      "url": "/d/messaging-overview",
+      "type": "link"
     },
     {
-      "title": "서비스",
-      "url": "/d/delivery-services",
-      "type": "link",
-      "keepTime": true,
-      "includeVars": true
+      "title": "services",
+      "url": "/d/messaging-services",
+      "type": "link"
     },
     {
-      "title": "외부 업체",
-      "url": "/d/delivery-providers",
-      "type": "link",
-      "keepTime": true,
-      "includeVars": true
+      "title": "providers",
+      "url": "/d/messaging-providers",
+      "type": "link"
     },
     {
-      "title": "고객",
-      "url": "/d/delivery-customers",
-      "type": "link",
-      "keepTime": true,
-      "includeVars": true
+      "title": "customers",
+      "url": "/d/messaging-customers",
+      "type": "link"
     },
     {
-      "title": "오류코드",
-      "url": "/d/delivery-errors",
-      "type": "link",
-      "keepTime": true,
-      "includeVars": true
+      "title": "errors",
+      "url": "/d/messaging-errors",
+      "type": "link"
     },
     {
-      "title": "인프라",
-      "url": "/d/delivery-infra",
-      "type": "link",
-      "keepTime": true,
-      "includeVars": true
-    },
-    {
-      "title": "메시지 추적",
-      "url": "/d/delivery-trace",
-      "type": "link",
-      "keepTime": true,
-      "includeVars": true
+      "title": "infra",
+      "url": "/d/messaging-infra",
+      "type": "link"
     }
   ],
   "templating": {
     "list": [
       {
-        "name": "delivery",
-        "label": "메시지 ID (빈 값은 전체)",
+        "name": "clientMsgId",
         "type": "textbox",
+        "label": "clientMsgId",
         "query": "",
         "current": {
           "text": "",
           "value": ""
         }
-      }
-    ]
-  },
-  "annotations": {
-    "list": [
-      {
-        "name": "Annotations & Alerts",
-        "type": "dashboard",
-        "datasource": {
-          "type": "grafana",
-          "uid": "-- Grafana --"
-        },
-        "enable": true,
-        "hide": true,
-        "iconColor": "rgba(255, 96, 96, 1)"
       }
     ]
   }

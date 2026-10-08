@@ -1,31 +1,31 @@
 logging { level = "warn" }
 local.file_match "apps" {
   path_targets = [
-    {"__path__" = "/logs/api.log", "service" = "api", "zone" = "local"},
-    {"__path__" = "/logs/ingress.log", "service" = "ingress", "zone" = "local"},
-    {"__path__" = "/logs/dispatch.log", "service" = "dispatch", "zone" = "local"},
-    {"__path__" = "/logs/result.log", "service" = "result", "zone" = "local"},
+    {"__path__" = "/logs/api.log", "service" = "api"},
+    {"__path__" = "/logs/pre-send.log", "service" = "pre-send"},
+    {"__path__" = "/logs/skt-sender.log", "service" = "skt-sender"},
+    {"__path__" = "/logs/kt-sender.log", "service" = "kt-sender"},
+    {"__path__" = "/logs/lgu-sender.log", "service" = "lgu-sender"},
+    {"__path__" = "/logs/webhook-receive.log", "service" = "webhook-receive"},
+    {"__path__" = "/logs/result-manager.log", "service" = "result-manager"},
+    {"__path__" = "/logs/complete-manager.log", "service" = "complete-manager"},
+    {"__path__" = "/logs/webhook-sender.log", "service" = "webhook-sender"},
+    {"__path__" = "/logs/tcp-sender.log", "service" = "tcp-sender"},
   ]
 }
 loki.source.file "apps" {
   targets = local.file_match.apps.targets
-  forward_to = [loki.process.audit.receiver]
+  forward_to = [loki.process.app_logs.receiver]
 }
-loki.process "audit" {
-  // Ship only the explicit field allowlist emitted by delivery.audit.
+loki.process "app_logs" {
   stage.json {
-    expressions = { ts = "\"@timestamp\"", audit_logger = "logger_name" }
-  }
-  stage.labels { values = { audit_logger = "" } }
-  stage.match {
-    selector = "{service=~\".+\",audit_logger!=\"delivery.audit\"}"
-    action = "drop"
+    expressions = { ts = "\"@timestamp\"" }
   }
   stage.timestamp {
     source = "ts"
     format = "RFC3339Nano"
   }
-  stage.label_drop { values = ["filename", "audit_logger"] }
+  stage.label_drop { values = ["filename"] }
   forward_to = [loki.write.local.receiver]
 }
 loki.write "local" {

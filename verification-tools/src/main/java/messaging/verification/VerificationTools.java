@@ -39,18 +39,6 @@ public final class VerificationTools {
             System.out.println(JSON.writerWithDefaultPrettyPrinter().writeValueAsString(analyzeStall(Path.of(args[1]))));
             return;
         }
-        if (args.length == 1 && args[0].equals("monitoring")) {
-            MonitoringVerification.run(Path.of(""), "http://127.0.0.1:13000", "http://127.0.0.1:19099");
-            return;
-        }
-        if (args.length == 4 && args[0].equals("monitoring")) {
-            MonitoringVerification.run(Path.of(args[1]), args[2], args[3]);
-            return;
-        }
-        if (args.length >= 1 && args[0].equals("demo")) {
-            MonitoringDemo.run(java.util.Arrays.copyOfRange(args, 1, args.length));
-            return;
-        }
         if (args.length == 1 && args[0].equals("dashboards")) {
             DashboardValidation.run(Path.of(""));
             return;
@@ -68,7 +56,6 @@ public final class VerificationTools {
             return;
         }
         if (args.length == 1 && args[0].equals("collector")) { MonitoringCollector.serve(); return; }
-        if (args.length == 1 && args[0].equals("collector-inside")) { MonitoringCollector.inside(); return; }
         if (args.length == 1 && args[0].equals("full-flow-reconcile")) { FullFlowReconciliation.run(); return; }
         if (args.length == 1 && args[0].equals("poc-reconcile")) { PocReconciliation.run(); return; }
         if (args.length == 2 && args[0].equals("manifest")) { LoadInputEvidence.runManifest(Path.of(args[1])); return; }
@@ -88,7 +75,7 @@ public final class VerificationTools {
         if (args.length >= 3 && args[0].equals("supervise-process")) {
             OwnedProcessSupervisor.run(java.util.Arrays.copyOfRange(args, 1, args.length)); return;
         }
-        throw new IllegalArgumentException("Usage: java -jar verification-tools/target/verification-tools-1.0-SNAPSHOT.jar <stall directory|monitoring [root grafana-url prometheus-url]|demo [--rate N] [--seconds N] [--errors]|dashboards|local-smoke [--metrics]|lifecycle-index [options]|split-table [options]|full-flow-reconcile|poc-reconcile|manifest file|input-complete planned started answered iterations dropped|poc-items local-url|poc-kafka bootstrap|kafka-expiry|redis-complete|postgres-outage|dynamo-blocked|process-evidence|full-flow-delivery|lifecycle-evidence|stop-owned-process pid terminate|kill|supervise-process log-path executable [args...]|collector|collector-inside>");
+        throw new IllegalArgumentException("Usage: java -jar verification-tools/target/verification-tools-1.0-SNAPSHOT.jar <stall directory|dashboards|local-smoke [--metrics]|lifecycle-index [options]|split-table [options]|full-flow-reconcile|poc-reconcile|manifest file|input-complete planned started answered iterations dropped|poc-items local-url|poc-kafka bootstrap|kafka-expiry|redis-complete|postgres-outage|dynamo-blocked|process-evidence|full-flow-delivery|lifecycle-evidence|stop-owned-process pid terminate|kill|supervise-process log-path executable [args...]|collector>");
     }
 
     static Map<String, Object> analyzeStall(Path directory) throws IOException {

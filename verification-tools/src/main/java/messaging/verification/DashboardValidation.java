@@ -43,7 +43,7 @@ final class DashboardValidation {
                 errors.add(name + ": invalid JSON: " + failure.getMessage());
                 continue;
             }
-            if (!("delivery-" + name).equals(board.path("uid").asText())) errors.add(name + ": UID mismatch");
+            if (!("messaging-" + name).equals(board.path("uid").asText())) errors.add(name + ": UID mismatch");
             if (board.path("title").asText().isBlank()) errors.add(name + ": missing title");
             if (board.path("editable").asBoolean(true)) errors.add(name + ": dashboard must be read-only in Grafana");
             var panels = board.path("panels");
@@ -72,7 +72,7 @@ final class DashboardValidation {
             }
             for (JsonNode link : board.path("links")) {
                 String url = link.path("url").asText();
-                if (!NAMES.stream().anyMatch(other -> url.equals("/d/delivery-" + other)))
+                if (!NAMES.stream().anyMatch(other -> url.equals("/d/messaging-" + other)))
                     errors.add(name + ": unknown dashboard link " + url);
             }
         }

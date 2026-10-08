@@ -29,15 +29,20 @@ import java.util.concurrent.Executors;
 /** Read-only Kafka observations and authenticated API metrics relay. */
 final class MonitoringCollector {
     private static final JsonMapper JSON = JsonMapper.builder().build();
-    private static final String REQUESTED = "delivery.requested.v1";
-    private static final String DISPATCH = "delivery.dispatch-requested.v1";
-    private static final String DLT = "delivery.requested.dlt.v1";
-    private static final List<String> TOPICS = List.of(REQUESTED, DISPATCH, DLT);
-    private static final Map<String, String> GROUPS = Map.of(REQUESTED, "delivery-ingress-worker", DISPATCH, "delivery-dispatch-worker");
+    private static final List<String> TOPICS = List.of(
+            "message.received.v1", "message.skt.http.send.v1", "message.kt.http.send.v1",
+            "message.lgu.http.send.v1", "MSG_RESULT", "MSG-RESULT-FINALIZED",
+            "WEBHOOK-SEND", "message.tcp.requested.v1");
+    private static final Map<String, String> GROUPS = Map.of(
+            "message.received.v1", "messaging-pre-send-manager",
+            "message.skt.http.send.v1", "messaging-skt-http-sender",
+            "message.kt.http.send.v1", "messaging-kt-http-sender",
+            "message.lgu.http.send.v1", "messaging-lgu-http-sender",
+            "MSG_RESULT", "messaging-result-manager",
+            "MSG-RESULT-FINALIZED", "messaging-complete-manager",
+            "WEBHOOK-SEND", "messaging-webhook-sender",
+            "message.tcp.requested.v1", "messaging-tcp-sender");
     private static final String API = "http://api:8080";
-    private static final String SIMULATOR = "http://simulator:19090";
-    private static final Map<String, String> SCRAPES = Map.of("api", "http://api:19080", "ingress", "http://ingress:19081",
-            "dispatch", "http://dispatch:19082", "simulator", SIMULATOR);
 
     private MonitoringCollector() {}
 
@@ -54,57 +59,6 @@ final class MonitoringCollector {
         server.setExecutor(Executors.newCachedThreadPool());
         server.start();
         System.out.println("Collector listening on 9800");
-    }
-
-    static void inside() throws Exception {
-        JsonNode input = JSON.readTree(System.in);
-        try (var http = httpClient()) {
-            System.out.println(JSON.writeValueAsString(inside(input, http, SCRAPES, SIMULATOR)));
-        }
-    }
-
-    static Object inside(JsonNode input, HttpClient http, Map<String, String> scrapes, String simulator) throws Exception {
-        String mode = input.path("mode").asText();
-            Object result;
-            if (mode.equals("metrics")) {
-                String token = input.get("token").asText();
-                var output = new LinkedHashMap<String, String>();
-                try (var pool = Executors.newFixedThreadPool(4)) {
-                    var futures = new LinkedHashMap<String, java.util.concurrent.Future<String>>();
-                    for (String app : List.of("api", "ingress", "dispatch", "simulator")) {
-                        futures.put(app, pool.submit(() -> {
-                            var response = request(http, scrapes.get(app) + "/actuator/prometheus",
-                                    app.equals("api") ? token : null, null);
-                            if (response.statusCode() != 200) throw new IOException(app + " metrics HTTP " + response.statusCode());
-                            return new String(response.body(), StandardCharsets.UTF_8);
-                        }));
-                    }
-                    for (var entry : futures.entrySet()) output.put(entry.getKey(), entry.getValue().get());
-                }
-                result = output;
-            } else if (mode.equals("counts")) {
-                var output = new LinkedHashMap<String, Object>();
-                try (var pool = Executors.newFixedThreadPool(8)) {
-                    var futures = new LinkedHashMap<String, java.util.concurrent.Future<Object>>();
-                    for (JsonNode delivery : input.get("deliveries")) {
-                        String attempt = UUID.nameUUIDFromBytes(("attempt:" + delivery.asText() + ":mock-provider:1:1")
-                                .getBytes(StandardCharsets.UTF_8)).toString();
-                        futures.put(attempt, pool.submit(() -> {
-                            var response = request(http, simulator + "/actuator/simulator/" + attempt, null, null);
-                            if (response.statusCode() == 404) return Map.of("calls", 0, "effects", 0);
-                            if (response.statusCode() == 200) return JSON.readTree(response.body());
-                            throw new IOException("Simulator counts HTTP " + response.statusCode());
-                        }));
-                    }
-                    for (var entry : futures.entrySet()) output.put(entry.getKey(), entry.getValue().get());
-                }
-                result = output;
-            } else if (mode.equals("summary")) {
-                var response = request(http, simulator + "/actuator/simulator", null, null);
-                if (response.statusCode() != 200) throw new IOException("Simulator summary HTTP " + response.statusCode());
-                result = JSON.readTree(response.body());
-            } else throw new IllegalArgumentException("Unknown collector mode: " + mode);
-            return result;
     }
 
     private interface Body { byte[] read() throws Exception; }
