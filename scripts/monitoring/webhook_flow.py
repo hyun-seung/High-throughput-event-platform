@@ -85,13 +85,18 @@ def result_offset():
 
 
 def completion_lag():
+    return consumer_lag("messaging-complete-manager", "MSG-RESULT-FINALIZED")
+
+
+def consumer_lag(group, topic):
     raw = compose("exec", "-T", "kafka", "/opt/kafka/bin/kafka-consumer-groups.sh",
-                  "--bootstrap-server", "kafka:29092", "--describe", "--group", "messaging-complete-manager")
-    rows = [line.split() for line in raw.splitlines() if line.startswith("messaging-complete-manager ")]
-    rows = [row for row in rows if row[1] == "MSG-RESULT-FINALIZED"]
-    if not rows or any(row[5] == "-" for row in rows):
-        raise AssertionError("No committed completion offsets found")
-    return sum(int(row[5]) for row in rows)
+                  "--bootstrap-server", "kafka:29092", "--describe", "--group", group)
+    rows = [line.split() for line in raw.splitlines() if line.startswith(group + " ")]
+    rows = [row for row in rows if row[1] == topic]
+    if not rows or any(row[5] == "-" and row[4] != "0" for row in rows):
+        raise AssertionError(f"No committed offsets found for {group}/{topic}")
+    # An empty partition may not have a committed offset on a freshly started stack.
+    return sum(0 if row[5] == "-" else int(row[5]) for row in rows)
 
 
 def postgres_ready():
@@ -101,16 +106,17 @@ def postgres_ready():
         return False
 
 
-def histories(run_id):
+def histories(run_id, prefix="webhook"):
     raw = sql("SELECT COALESCE(json_agg(json_build_object('id',m.client_msg_id,'outcome',m.outcome,"
               "'stage',m.final_stage,'source',m.result_source,'carrier',m.carrier,'invocation',m.invocation,"
-              "'error',m.error_code,'cleanup',m.cleanup_status,'billable',(SELECT count(*) "
+              "'error',m.error_code,'cleanup',m.cleanup_status,'cleanupAttempts',m.cleanup_attempts,"
+              "'cleanupError',m.cleanup_last_error,'billable',(SELECT count(*) "
               "FROM messaging_completion.tbl_cdr_hist c WHERE c.client_msg_id=m.client_msg_id),"
               "'delivered',(SELECT count(*) FROM messaging_webhook.tbl_webhook_outbox o "
               "WHERE o.client_msg_id=m.client_msg_id AND o.status='DELIVERED' AND EXISTS "
               "(SELECT 1 FROM messaging_webhook.tbl_webhook_hist h WHERE h.batch_id=o.batch_id "
               "AND h.acknowledged))))::text,'[]') FROM messaging_completion.tbl_msg_hist m "
-              f"WHERE m.message_id LIKE 'webhook-{run_id}-%'")
+              f"WHERE m.message_id LIKE '{prefix}-{run_id}-%'")
     return {row["id"]: row for row in json.loads(raw)}
 
 

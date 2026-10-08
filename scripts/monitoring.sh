@@ -53,7 +53,8 @@ case "${1:-help}" in
   verify) exec python3 scripts/monitoring/main_flow.py verify ;;
   policy-test) shift; exec python3 scripts/monitoring/policy_flow.py "$@" ;;
   webhook-test) exec python3 scripts/monitoring/webhook_flow.py ;;
+  storage-test) exec python3 scripts/monitoring/storage_flow.py ;;
   diagnose) exec python3 scripts/monitoring/main_flow.py diagnose ;;
   recovery-test) shift; exec python3 scripts/monitoring/main_flow.py recovery-test "$@" ;;
-  *) echo 'Usage: bash scripts/monitoring.sh <up|status|stop|logs SERVICE|demo|verify|diagnose|recovery-test|policy-test|webhook-test>' ;;
+  *) echo 'Usage: bash scripts/monitoring.sh <up|status|stop|logs SERVICE|demo|verify|diagnose|recovery-test|policy-test|webhook-test|storage-test>' ;;
 esac

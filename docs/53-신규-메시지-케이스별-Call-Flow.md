@@ -419,9 +419,9 @@ flowchart LR
 |---|---|
 | ORIGIN 저장 직후 API 종료·최초 Kafka ack 불명확 | 발행 복구 앱이 ORIGIN의 동일 원문·고정 `clientMsgId`로 `message.received.v1` 재발행. Kafka 중복 가능 |
 | PRE-SEND-MANAGER의 통신사 토픽 발행 ack 불명확 | 같은 통신사·전문·`attemptId`·`clientMsgId`로 재인계. 업체의 같은 ID 중복 차단은 정해진 보장 시간 안에만 적용됨 |
-| Redis 발송 중복 정보 유실 | 내부 중복 제어가 약해진다. 같은 발송 명령에는 동일 `clientMsgId`를 업체에 전달해 발송 중·성공한 ID의 약 2시간 중복을 막는 것으로 파악했지만 확인 전이다. 그 이후의 재전달은 내부 상태로 막아야 함 |
-| 업체 호출 뒤 sender의 DynamoDB 결과 기록 전 종료 | 업체 효과가 불명확하다. 무조건 새 호출하지 않고 저장 조회·운영 확인·원래 deadline 정책이 필요. 신규 복구 절차 미정 |
-| HTTP `200 OK` 뒤 DynamoDB 갱신 실패·응답 불명 | 업체 접수는 됐을 수 있다. 같은 발송을 곧바로 재호출하지 않고 웹훅·저장 상태와 원래 기한으로 복구. 신규 복구 절차 미정 |
+| Redis 발송 중복 정보 유실 | 같은 명령의 STEP이 `OBSERVED`면 기존 관찰을 재사용하고 업체를 재호출하지 않는다. `SENDING`이면 바로 호출하지 않고 복구 유예를 기다린다. 정리 후 ORIGIN이 없으면 명령을 무시한다. 업체의 약 2시간 중복 차단 보장 범위와 고객 접수 중복 키 유실은 별도 경계다. |
+| 업체 호출 뒤 sender의 DynamoDB 결과 기록 전 종료 | STEP의 `SENDING`이 30초 이상이면 Kafka 재전달에서 `HTTP_TIMEOUT` 관찰로 고정해 결과 Manager에 인계한다. 같은 회차를 바로 호출하지 않는다. 업체의 실제 접수 여부와 이후 늦은 웹훅·재발송의 경합은 남는다. |
+| HTTP `200 OK` 뒤 DynamoDB 갱신 실패·응답 불명 | 관찰 저장이 확인되면 그대로 재사용한다. `SENDING`만 남았으면 30초 복구 유예 이후 타임아웃으로 고정한다. 접수 여부가 불명확하므로 웹훅과 Manager의 1분 재발송 예약이 경합할 수 있다. |
 | 명시적 비-200 기록 뒤 `MSG_RESULT` 발행 실패·ack 불명확 | DynamoDB의 발행 대기 결과를 동일 `resultId`·고정 `clientMsgId` key로 재발행. 업체 HTTP 호출을 반복하지 않고 Manager가 중복 결과를 제거 |
 | `MSG_RESULT` 소비 후 Manager 판단 저장·후속 Kafka 발행 사이 종료 | DynamoDB에 고정한 판단·명령을 같은 ID로 재발행. 먼저 저장되지 않았다면 원본 결과를 재처리 |
 | 웹훅 배치 1레코드의 Kafka 저장 실패·ack 불명확 | `WEBHOOK-RECEIVE-API`가 실패 응답을 반환하면 업체가 같은 묶음을 재전송. 두 레코드가 모두 저장될 수도 있으므로 Manager가 항목별 저장 상태로 멱등 처리 |
@@ -431,7 +431,7 @@ flowchart LR
 | 최종 DDB 저장 뒤 `WEBHOOK-SEND` 발행 실패 | `MSG-RESULT-FINALIZED` 발행 성공과 무관하게 같은 최종 결과 ID로 고객 웹훅 인계만 재발행. Sender가 중복 제거 |
 | PostgreSQL 이력·과금 commit 뒤 DynamoDB 삭제 실패 | SQL 정리 대기 행에서 재시도한다. TTL 설정 뒤 삭제가 실패한 항목은 TTL도 최후 정리 수단이 된다. |
 
-이 표의 *목표 복구 경계*와 *현재 코드에서 검증된 복구*는 다르다. 신규 sender·Manager·`MSG_RESULT` 경로의 장애 주입 시험은 아직 수행하지 않았다.
+이 표의 코드상 복구 경계와 실제 장애 시험 범위는 구분한다. 최초 발행 실패 복구와 PostgreSQL 중단·복구를 포함한 수행 결과·재현 명령은 [모니터링 실행 문서](19-그라파나-대시보드-실행과-PPT-항목-대응.md)에 기록한다. 저장된 HTTP 관찰을 재사용하는 경로와, 관찰 저장 전 접수 여부가 불명확한 경로는 같은 검증으로 취급하지 않는다.
 
 ## 즉시 실패 인계와 오류 코드
 

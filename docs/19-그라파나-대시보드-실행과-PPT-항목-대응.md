@@ -139,3 +139,34 @@ bash scripts/monitoring.sh webhook-test
 동일 통신사의 다음 회차 대기 중 이전 회차 웹훅이 다시 오는 모호성은 이 검증의 해결 범위에 포함되지 않는다. 업체의 회차 식별자가 없는 상태에서 기존에 보류한 정책을 유지한다. 이번 장애 시험은 PostgreSQL 중단·복구를 다루며 Redis 유실·DynamoDB 중단·Kafka 중단은 각각 별도 검증 범위다.
 
 2026-10-08 검증 `runId=29628013`이 통과했다. SQL 중단 중 원본 100건과 완료 lag 100건을 확인했고, 복구 후 조기 웹훅 사례를 포함한 이력 101건·과금 대상 51건·고객 결과 101건·원본 삭제 101건과 lag 0을 확인했다. 늦은 결과 103건 처리 후 70초 동안 추가 발송·과금·고객 웹훅은 없었다. 복구 뒤 Prometheus 대상 17개와 Grafana 화면 7개를 포함한 관측 검증도 통과했다.
+
+## Redis 발송 키 유실·저장소 장애 복구 검증
+
+```bash
+bash scripts/monitoring.sh storage-test
+```
+
+기동된 모니터링 스택에서 실행한다. 이 명령은 시험 메시지의 Redis HTTP 발송 키 1개를 제거하고, Redis 프로세스를 pause해 응답을 중단하고 DynamoDB 컨테이너는 일시 정지한다. 완료 AP의 DynamoDB 주소를 잠시 연결 불가 주소로 바꾸는 시험도 포함한다. 장애 구간마다 `finally`에서 서비스와 설정을 복원하며, 같은 스택의 다른 트래픽 생성·장애 시험·`up`과 함께 실행하지 않는다. 결과는 `.monitoring/storage-latest.json`에 남긴다.
+
+| 검증 구간 | 확인 내용 |
+|---|---|
+| HTTP 200 기록 후 Redis 발송 키 유실 | 해당 키를 제거한 뒤 저장된 원본 명령을 Kafka에 3번 재발행해도 HTTP 호출 1회 유지. 관찰 기록이 바뀌거나 Redis 키가 다시 생기지 않음 |
+| 최종 정리 이후 발송 명령 재전달 | 같은 원본 명령을 다시 발행해도 ORIGIN 부재로 새 발송 없음 |
+| 첫 발송 전 Redis 응답 중단 | STEP은 `PENDING`, Sender lag는 1, 업체 호출은 0회. Redis 복구 후 같은 명령으로 발송·완료 |
+| HTTP 200 기록 후 DynamoDB 중단 | 성공 웹훅은 Kafka 저장 후 202로 접수. 결과 Manager와 재전달을 받은 Sender는 lag 1씩 유지하고 최종 이력·새 HTTP 호출 없음 |
+| DynamoDB 복구 | 웹훅·고객 요청을 다시 제출하지 않고 결과 처리·이력·과금·고객 웹훅·원본 정리 완료 |
+| SQL 저장 후 DynamoDB 정리 연결 실패 | SQL 이력·과금은 각 1건, ORIGIN 유지, `cleanup_status=PENDING`과 시도 횟수·오류 기록. 연결 복구 후 정리 재시도 |
+
+모든 메시지에 대해 HTTP 호출·최종 이력·과금 대상·고객 결과 각 1건, ORIGIN 삭제, Sender·결과·완료 소비 그룹의 lag 0을 확인한다. 완료 후 70초를 추가 관측하고 같은 검증을 반복한다. 업체·고객 수신기는 mock이며 업무 AP와 저장소는 실제 실행한다.
+
+Redis 유실 시험은 **기존 `clientMsgId`의 발송 키 1개 유실**이다. Redis 전체 초기화나 고객의 접수 중복 키 유실 뒤 새 API 요청을 보내는 경우까지 검증한 것은 아니다. DynamoDB 시험도 **HTTP 관찰이 저장된 뒤의 연결 중단**과 **완료 AP의 정리 연결 실패**를 다룬다. 업체 호출 직후 HTTP 관찰 저장 전에 끊기는 경우, 전체 데이터 유실, DynamoDB TTL의 실제 만료 삭제는 별도 검증 범위다.
+
+로컬 Redis 응답 중단 시험은 Sender를 잠시 pause해 명령을 대기시킨 다음 Redis를 pause하고 Sender를 재개한다. 두 컨테이너를 stop/start하면 Docker가 IP를 서로 바꿔 할당할 수 있고, 기존 AP가 캐시한 이전 Redis 주소로 재접속을 계속 시도하는 현상이 초기 시험에서 관찰됐다. 주소 변경과 응답 중단을 구분하기 위해 이 시험은 네트워크 주소를 유지한다. Redis 엔드포인트 주소 변경에 따른 DNS 재조회·재연결은 별도 검증 범위다.
+
+2026-10-08 검증 `runId=5eab0a20`의 네 시나리오가 통과했다. Redis 키 유실·정리 이후 명령을 총 4회 재발행해도 해당 메시지의 외부 호출은 1회였다. Redis 응답 중단 중 호출 0회·Sender lag 1, DynamoDB 중단 중 Sender/결과 lag 각 1·최종 이력 0건을 확인했다. 정리 연결 실패는 `PENDING`, 시도 1회, `SdkClientException`으로 기록됐고 과금 대상과 ORIGIN은 보존됐다.
+
+최종적으로 외부 HTTP 호출·메시지 이력·과금 대상·고객 결과·원본 삭제가 각 4건, 관련 소비 lag가 0이었다. 완료 후 70초 동안 추가 발송은 없었다. 서비스·설정 복원 뒤 Prometheus 대상 17개와 Grafana 화면 7개를 포함한 관측 검증이 통과했고, 공통 검증 함수 변경 후 이전 웹훅 시험의 이력 101건·과금 51건·고객 결과 101건도 다시 대조했다.
+
+추가 전체 health 점검에서 Redis를 사용하지 않는 웹훅 수신·결과 Manager·완료 Manager·고객 웹훅 Sender가 공통 모듈의 전이 의존성으로 `localhost:6379`에 연결하며 503을 반환하는 문제를 발견했다. 네 AP에서 미사용 Redis 의존성을 제외하고 실행 JAR에서도 제거됐는지 확인했다. 관련 Java 테스트 116개와 수정 후 정상·최종 실패·TCP 전환의 세 경로가 통과했다.
+
+`verify`는 이제 mock 컨테이너의 내부 네트워크에서 AP 11개의 `/actuator/health`를 조회한다. 접수 API는 로컬 JWT로 인증한다. 하나라도 전체 상태가 `UP`이 아니면 검증에 실패하고 `.monitoring/verification.json`의 `applicationHealth`에 기록한다. 수정 후 AP 11개 전체가 `UP`이며 Prometheus 대상 17개·Grafana 화면 7개를 포함한 관측 검증이 통과했다. 지표 수집 가능 여부와 AP 전체 health를 함께 확인해야 한다.
