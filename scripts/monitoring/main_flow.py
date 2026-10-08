@@ -19,6 +19,10 @@ ROOT = Path(__file__).resolve().parents[2]
 COMPOSE = ["docker", "compose", "-p", "platform-messaging-monitoring", "-f", "compose.yml",
            "-f", "monitoring/compose.yml"]
 API = "http://127.0.0.1:38080"
+AP_HEALTH_ENDPOINTS = {"api": 19080, "pre-send": 19093, "publication-recovery": 19098,
+                       "skt-sender": 19091, "kt-sender": 19091, "lgu-sender": 19091,
+                       "webhook-receive": 19089, "result-manager": 19094, "complete-manager": 19095,
+                       "webhook-sender": 19096, "tcp-sender": 19097}
 DEMO_JOBS = {"api", "pre-send", "skt-sender", "webhook-receive", "result-manager",
              "complete-manager", "webhook-sender"}
 
@@ -195,13 +199,46 @@ def verify() -> None:
             time.sleep(2)
         if not log_found:
             errors.append(f"{service} structured log was not found in Loki")
-    report = {"targets": observed, "dashboards": boards, "errors": errors, "pass": not errors}
+    health = {}
+    try:
+        health = application_health()
+        for service in AP_HEALTH_ENDPOINTS:
+            if health.get(service) != "UP":
+                errors.append(f"{service} application health: {health.get(service, 'missing')}")
+    except Exception as failure:
+        errors.append(f"Application health check unavailable: {failure}")
+    report = {"targets": observed, "applicationHealth": health, "dashboards": boards, "errors": errors, "pass": not errors}
     destination = ROOT / ".monitoring/verification.json"
     destination.parent.mkdir(exist_ok=True)
     destination.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"Monitoring verification {'PASS' if not errors else 'FAIL'}: {destination}")
     if errors:
         raise AssertionError("; ".join(errors))
+
+
+def application_health() -> dict:
+    code = """
+import concurrent.futures, json, sys
+from urllib.request import Request, urlopen
+def check(entry):
+    name, port = entry
+    try:
+        headers = {}
+        if name == 'api':
+            login = Request('http://api:8080/api/v1/auth/token',
+                data=json.dumps({'username':'local-user','password':'local-password'}).encode(),
+                headers={'Content-Type':'application/json'})
+            with urlopen(login, timeout=5) as response:
+                headers['Authorization'] = 'Bearer ' + json.load(response)['data']['accessToken']
+        request = Request(f'http://{name}:{port}/actuator/health', headers=headers)
+        with urlopen(request, timeout=5) as response:
+            return name, json.load(response)['status']
+    except Exception as failure:
+        return name, str(failure)
+with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+    print(json.dumps(dict(pool.map(check, json.loads(sys.argv[1]).items()))))
+"""
+    return json.loads(compose("exec", "-T", "mock", "python", "-c", code, json.dumps(AP_HEALTH_ENDPOINTS)))
 
 
 def diagnose() -> None:
