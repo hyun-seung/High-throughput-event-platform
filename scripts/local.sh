@@ -37,12 +37,15 @@ case "${1:-help}" in
     ;;
   cdc)
     # The local connector captures only the reference tables used by PRE-SEND-MANAGER.
+    bash scripts/check-kafka-volume.sh docker compose
     docker compose up -d --wait --wait-timeout 180 postgres kafka redis
     docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U delivery -d delivery < scripts/cdc/init.sql
     docker compose --profile cdc up -d --wait --wait-timeout 180 debezium-connect
     connect_url="http://127.0.0.1:${DEBEZIUM_HOST_PORT:-18083}"
-    curl --fail --silent --show-error --max-time 5 --retry 20 --retry-delay 2 --retry-connrefused "$connect_url/connectors" > /dev/null
-    curl --fail --silent --show-error --request PUT --header 'Content-Type: application/json' \
+    curl --fail --silent --show-error --max-time 5 --retry 30 --retry-delay 2 --retry-all-errors \
+      "$connect_url/connectors" > /dev/null
+    curl --fail --silent --show-error --max-time 10 --retry 30 --retry-delay 2 --retry-all-errors \
+      --request PUT --header 'Content-Type: application/json' \
       --data-binary @scripts/cdc/connector-config.json \
       "$connect_url/connectors/messaging-reference-postgres/config" > /dev/null
     echo "Local reference CDC connector registered."
