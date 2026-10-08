@@ -108,10 +108,14 @@ def verify_flow(env: dict[str, str], event_file: Path, client_id: int,
     before = int(redis(["GET", usage_key], env) or "0")
     recipient = "010" + f"{secrets.randbelow(100000000):08d}"
     message_id = "primary-flow-" + uuid.uuid4().hex[:20]
-    status, response = post_json(api + "/api/v1/messages", {
+    secondary = scenario.startswith("secondary-")
+    submission = {
         "messageId": message_id, "recipientNumber": recipient,
         "messageCategory": "GENERAL", "payload": {"text": "first-send local flow"},
-    }, token)
+    }
+    if secondary:
+        submission["secondarySendPayload"] = {"text": "fallback local flow"}
+    status, response = post_json(api + "/api/v1/messages", submission, token)
     if status != 202:
         raise AssertionError(f"Message admission returned {status}")
     tps_count = int(redis(["HGET", f"message:usage:{{client:{client_id}}}:10s", "count"], env) or "0")
@@ -134,6 +138,8 @@ def verify_flow(env: dict[str, str], event_file: Path, client_id: int,
         customer = [event for event in found if event["kind"] == "customer_webhook"
                     and any(item.get("clientMsgId") == client_msg_id
                             for item in event["body"].get("results", []))]
+        tcp_requests = [event for event in found if event["kind"] == "tcp_request"
+                        and event["clientMsgId"] == client_msg_id]
         if scenario.startswith("no-response-") and requests and not first_timeout_checked:
             observed = ddb("Query", {"TableName": "STEP", "ConsistentRead": True,
                 "KeyConditionExpression": "pk = :pk AND begins_with(sk, :prefix)",
@@ -164,16 +170,21 @@ def verify_flow(env: dict[str, str], event_file: Path, client_id: int,
             "tps-exhausted": ["SKT"] * 4,
             "no-response-retry": ["SKT", "SKT"],
             "no-response-exhausted": ["SKT"] * 4,
+            "secondary-success": ["SKT"], "secondary-failure": ["SKT"],
         }[scenario]
         failure_codes = {"carrier-exhausted": 40002, "tps-exhausted": 40001,
-                         "no-response-exhausted": 40003}
+                         "no-response-exhausted": 40003, "secondary-failure": 70001}
         expected_error = failure_codes.get(scenario)
         expected_success = expected_error is None
-        expected_history = ("PRIMARY|SUCCESS|DONE||" if expected_success else
-                            f"PRIMARY|FAILURE|DONE|{expected_error}|")
-        if hist.startswith(expected_history) and cdr == ("1" if expected_success else "0") \
+        expected_stage = "SECONDARY" if secondary else "PRIMARY"
+        expected_history = (f"{expected_stage}|SUCCESS|DONE||" if expected_success else
+                            f"{expected_stage}|FAILURE|DONE|{expected_error}|")
+        expected_cdr = "1" if expected_success and not secondary else "0"
+        expected_callbacks = 1 if expected_success and not secondary else 0
+        if hist.startswith(expected_history) and cdr == expected_cdr \
                 and webhook == "DELIVERED" and len(requests) == len(expected_carriers) \
-                and len(callbacks) == (1 if expected_success else 0) and customer:
+                and len(callbacks) == expected_callbacks and customer \
+                and len(tcp_requests) == (1 if secondary else 0):
             if scenario.startswith("no-response-") and not first_timeout_checked:
                 raise AssertionError("First HTTP timeout observation was not captured")
             if [item["carrier"] for item in requests] != expected_carriers:
@@ -183,6 +194,18 @@ def verify_flow(env: dict[str, str], event_file: Path, client_id: int,
                 if request["clientMsgId"] != client_msg_id or request["recipientNumber"] != recipient \
                         or request["tenantId"] != client_id or request["payload"]["text"] != "first-send local flow":
                     raise AssertionError("Carrier request differs from admitted message")
+            if secondary:
+                tcp_request = tcp_requests[0]["request"]
+                if tcp_request["clientMsgId"] != client_msg_id \
+                        or tcp_request["clientId"] != client_id \
+                        or tcp_request["messageId"] != message_id \
+                        or tcp_request["recipientNumber"] != recipient \
+                        or tcp_request["messageCategory"] != "GENERAL" \
+                        or tcp_request["payload"] != submission["secondarySendPayload"]:
+                    raise AssertionError("TCP request differs from the admitted secondary payload")
+                if psql(f"SELECT result_source FROM messaging_completion.tbl_msg_hist "
+                        f"WHERE client_msg_id='{client_msg_id}'", env) != "TCP_RESPONSE":
+                    raise AssertionError("Final result was not recorded from the TCP response")
             if scenario.startswith("tps-"):
                 if [item["invocation"] for item in requests] != list(range(1, len(requests) + 1)):
                     raise AssertionError("66002 retry invocation sequence is incorrect")
@@ -197,7 +220,7 @@ def verify_flow(env: dict[str, str], event_file: Path, client_id: int,
                              for earlier, later in zip(requests, requests[1:])]
                 if any(interval < 64 for interval in intervals):
                     raise AssertionError(f"HTTP timeout retry was sent too early: {intervals}")
-            if expected_success and callbacks[0]["carrier"] != expected_carriers[-1]:
+            if callbacks and callbacks[0]["carrier"] != expected_carriers[-1]:
                 raise AssertionError("Webhook came from the wrong carrier")
             result = next(item for item in customer[0]["body"]["results"]
                           if item["clientMsgId"] == client_msg_id)
@@ -219,7 +242,7 @@ def verify_flow(env: dict[str, str], event_file: Path, client_id: int,
     raise TimeoutError(f"First-send flow did not finish: clientMsgId={client_msg_id}, "
                        f"history={hist!r}, cdr={cdr!r}, webhook={webhook!r}, "
                        f"carrierRequests={len(requests)}, carrierCallbacks={len(callbacks)}, "
-                       f"customerWebhooks={len(customer)}")
+                       f"tcpRequests={len(tcp_requests)}, customerWebhooks={len(customer)}")
 
 
 def main() -> int:
@@ -228,7 +251,8 @@ def main() -> int:
     parser.add_argument("--skip-infra", action="store_true")
     parser.add_argument("--scenario", choices=("success", "carrier-mismatch",
                                                "carrier-exhausted", "tps-retry", "tps-exhausted",
-                                               "no-response-retry", "no-response-exhausted"),
+                                               "no-response-retry", "no-response-exhausted",
+                                               "secondary-success", "secondary-failure"),
                         default="success")
     parser.add_argument("--timeout", type=int, default=120)
     args = parser.parse_args()
@@ -278,9 +302,10 @@ def main() -> int:
             raise RuntimeError("local-user contract is inactive; test will not overwrite it")
         redis(["DEL", f"message:contract:{{client:{client_id}}}"], env)
 
+        modules = MODULES + (("messaging-tcp-sender",) if args.scenario.startswith("secondary-") else ())
         if not args.skip_build:
-            run(["./mvnw", "-pl", ",".join(MODULES), "-am", "package", "-DskipTests", "-q"], env)
-        for module in MODULES:
+            run(["./mvnw", "-pl", ",".join(modules), "-am", "package", "-DskipTests", "-q"], env)
+        for module in modules:
             if not (ROOT / module / "target" / f"{module}-1.0-SNAPSHOT.jar").is_file():
                 raise RuntimeError(f"Build first: missing {module} JAR")
 
@@ -312,6 +337,7 @@ def main() -> int:
             "messaging-complete-manager": env.get("MSG_COMPLETE_MANAGER_PORT", "8103"),
             "messaging-webhook-sender": env.get("MSG_WEBHOOK_SENDER_PORT", "8104"),
             "messaging-api": env.get("DELIVERY_API_PORT", "8080"),
+            "messaging-tcp-sender": env.get("MSG_TCP_SENDER_PORT", "8105"),
         }
         carrier_ports = {"SKT": app_ports["messaging-carrier-http-sender"],
                          "KT": env.get("FLOW_KT_SENDER_PORT", "8111"),
@@ -330,8 +356,12 @@ def main() -> int:
                 }}}}),
             }),
             "messaging-api": override("api", {"MESSAGING_ADMISSION_ENABLED": "true"}),
+            "messaging-tcp-sender": override("tcp-sender", {
+                "MSG_TCP_PROVIDER_HOST": "127.0.0.1",
+                "MSG_TCP_PROVIDER_PORT": str(mock_urls["tcpPort"]),
+            }),
         }
-        for module in MODULES:
+        for module in modules:
             if module == "messaging-carrier-http-sender":
                 for carrier in carrier_ports:
                     sender = f"{module}-{carrier.lower()}"

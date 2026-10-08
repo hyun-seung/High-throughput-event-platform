@@ -4,8 +4,11 @@
 import argparse
 import json
 import os
+import socketserver
+import struct
 import threading
 import time
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.request import Request, urlopen
@@ -85,13 +88,15 @@ def handler_for(kind: str, events: Events, webhook_base_url: str, secret: str,
                     or scenario == "carrier-exhausted"
                 tps = carrier == "SKT" and (scenario == "tps-exhausted"
                     or (scenario == "tps-retry" and invocation == 1))
-                if mismatch or tps:
+                general_failure = scenario.startswith("secondary-") and carrier == "SKT"
+                if mismatch or tps or general_failure:
                     self.send_response(400)
                     self.send_header("Content-Type", "application/json")
                     self.end_headers()
-                    code = "41001" if mismatch else "42002"
+                    code = "41001" if mismatch else "42002" if tps else "61001"
                     self.wfile.write(json.dumps({"status": "4xx", "error": {
-                        "code": code, "message": "not our carrier" if mismatch else "TPS exceeded",
+                        "code": code, "message": "not our carrier" if mismatch else
+                        "TPS exceeded" if tps else "carrier failure",
                     }}).encode())
                     return
                 self.send_response(200)
@@ -128,6 +133,42 @@ def handler_for(kind: str, events: Events, webhook_base_url: str, secret: str,
     return Handler
 
 
+def tcp_handler_for(events: Events, scenario: str):
+    class Handler(socketserver.BaseRequestHandler):
+        def handle(self):
+            self.request.settimeout(5)
+            try:
+                header = receive_exact(self.request, 4)
+                length = struct.unpack(">I", header)[0]
+                if not 0 < length <= 1048576:
+                    raise ValueError("invalid TCP frame length")
+                payload = json.loads(receive_exact(self.request, length))
+                client_msg_id = payload["clientMsgId"]
+                events.write("tcp_request", clientMsgId=client_msg_id, request=payload)
+                failed = scenario == "secondary-failure"
+                reply = {"clientMsgId": client_msg_id,
+                         "status": "fail" if failed else "success",
+                         "error": {"code": 70001, "message": "simulated TCP rejection"} if failed else None,
+                         "processedAt": datetime.now(timezone.utc).isoformat()}
+                body = json.dumps(reply).encode()
+                self.request.sendall(struct.pack(">I", len(body)) + body)
+            except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as error:
+                events.write("tcp_mock_error", reason=str(error))
+
+    return Handler
+
+
+def receive_exact(connection, length: int) -> bytes:
+    chunks = []
+    while length:
+        chunk = connection.recv(length)
+        if not chunk:
+            raise ValueError("incomplete TCP frame")
+        chunks.append(chunk)
+        length -= len(chunk)
+    return b"".join(chunks)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--ready-file", type=Path, required=True)
@@ -135,7 +176,8 @@ def main():
     parser.add_argument("--webhook-base-url", required=True)
     parser.add_argument("--scenario", choices=("success", "carrier-mismatch",
                                                 "carrier-exhausted", "tps-retry", "tps-exhausted",
-                                                "no-response-retry", "no-response-exhausted"),
+                                                "no-response-retry", "no-response-exhausted",
+                                                "secondary-success", "secondary-failure"),
                         default="success")
     args = parser.parse_args()
     secrets_by_carrier = {carrier: os.environ.get(f"FLOW_WEBHOOK_SECRET_{carrier}", "")
@@ -150,14 +192,19 @@ def main():
     customer = ThreadingHTTPServer(("127.0.0.1", 0),
                                    handler_for("customer", events, args.webhook_base_url,
                                                "", args.scenario))
+    tcp = socketserver.ThreadingTCPServer(("127.0.0.1", 0),
+                                          tcp_handler_for(events, args.scenario))
     for server in carriers.values():
         server.daemon_threads = True
         threading.Thread(target=server.serve_forever, daemon=True).start()
     customer.daemon_threads = True
+    tcp.daemon_threads = True
     threading.Thread(target=customer.serve_forever, daemon=True).start()
+    threading.Thread(target=tcp.serve_forever, daemon=True).start()
     ready = {"carrierUrls": {name: f"http://127.0.0.1:{server.server_port}"
                               for name, server in carriers.items()},
-             "customerUrl": f"http://127.0.0.1:{customer.server_port}/hook"}
+             "customerUrl": f"http://127.0.0.1:{customer.server_port}/hook",
+             "tcpPort": tcp.server_address[1]}
     temporary = args.ready_file.with_suffix(".tmp")
     temporary.write_text(json.dumps(ready), encoding="utf-8")
     os.replace(temporary, args.ready_file)
@@ -167,6 +214,7 @@ def main():
         for server in carriers.values():
             server.shutdown()
         customer.shutdown()
+        tcp.shutdown()
 
 
 if __name__ == "__main__":
