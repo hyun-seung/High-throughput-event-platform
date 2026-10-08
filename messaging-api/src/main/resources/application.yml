@@ -71,7 +71,7 @@ delivery:
 
 messaging:
   admission:
-    enabled: ${MESSAGING_ADMISSION_ENABLED:false}
+    enabled: ${MESSAGING_ADMISSION_ENABLED:true}
 
 management:
   endpoint:

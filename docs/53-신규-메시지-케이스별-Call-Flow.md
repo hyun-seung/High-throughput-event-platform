@@ -27,16 +27,16 @@
 
 | 단계 | AP 이름 | 구현 상태 |
 |---|---|---|
-| 고객 접수 | `MSG-RECEIVE-API` | `messaging-api`에 신규 접수 경로 구현, 기본 비활성화 |
+| 고객 접수 | `MSG-RECEIVE-API` | `messaging-api`에 신규 접수 경로 구현, 기본 활성화. `MESSAGING_ADMISSION_ENABLED=false`로 중지 가능 |
 | 1차 발송 준비 | `PRE-SEND-MANAGER` | 참조 조회·명령 또는 발송 불가 결과를 ORIGIN에 고정하고 Kafka 인계 구현 |
 | 1차 HTTP 발송 | `MSG-SKT-SENDER`, `MSG-KT-SENDER`, `MSG-LGU-SENDER` | 공통 `messaging-carrier-http-sender` 실행 JAR을 통신사별 URL·토픽·소비 그룹으로 분리. 명령 소비·Redis/STEP 선점·HTTP 호출·결과 기록과 실패 인계 구현 |
 | 웹훅 접수 | `WEBHOOK-RECEIVE-API` | 독립 `messaging-webhook-receive-api`에 인증·1~100건 검증·`MSG_RESULT` 단일 레코드 발행 구현. 기존 `receipt-api`는 이관 전 경로 |
 | 결과 판단 | `MSG-RESULT-MANAGER` | 혼합 `MSG_RESULT` 소비·source/key 검사·메시지별 STEP inbox 보존·HTTP 실패의 후속 발송 판단 연결. 웹훅 실패의 통신사 이동·동일 통신사 재시도 연결. 웹훅 성공·발송 전 실패·1차 소진의 ORIGIN 결정 고정. 최종/2차 토픽 발행 기본 활성 |
 | 2차 TCP 발송 | `MSG-TCP-SENDER` | 임시 TCP 규격 발송·결과 보존·MSG_RESULT 인계 구현, 기본 활성 |
-| 1차 성공 과금·메시지 발송 이력·DynamoDB 정리 | `MSG-COMPLETE-MANAGER` | 독립 `messaging-complete-manager`가 `MSG-RESULT-FINALIZED`의 1차 최종 결과를 SQL 이력·과금 대상 기록으로 원자 저장. 소비 기본 활성, 금액 산정은 하지 않으며 DynamoDB 정리는 후속 작업 |
+| 1차 성공 과금·메시지 발송 이력·DynamoDB 정리 | `MSG-COMPLETE-MANAGER` | 독립 `messaging-complete-manager`가 `MSG-RESULT-FINALIZED`의 1·2차 최종 결과를 SQL 이력에 원자 저장하고 1차 성공만 과금 대상으로 기록. 소비 기본 활성, 금액 산정은 하지 않으며 DynamoDB 정리는 후속 작업 |
 | 고객 결과 웹훅 발송 | `MSG-WEBHOOK-SENDER` | `WEBHOOK-SEND` 소비·SQL 대기열 보존 기본 활성. 고객별 URL이 있으면 최대 100건 묶음으로 HTTP 발송하고 이력을 기록 |
 
-이전 단일 `messaging-http-sender` 모듈은 제거했으며, `messaging-publication-recovery-app`·`messaging-reference-cache`는 각각 최초 Kafka 발행 복구와 CDC 캐시 투영을 돕는 별도 AP다. 현재 `delivery-result-worker`는 최종 이력·고객 통지·정리를 한 모듈에서 수행한다. 신규 `MSG-COMPLETE-MANAGER`의 1차 최종 결과 소비·SQL 저장은 구현했고, `MSG-WEBHOOK-SENDER`와 2차 최종 결과 연결은 아직 구현 전이다.
+이전 단일 `messaging-http-sender` 모듈은 제거했으며, `messaging-publication-recovery-app`·`messaging-reference-cache`는 각각 최초 Kafka 발행 복구와 CDC 캐시 투영을 돕는 별도 AP다. 현재 `delivery-result-worker`는 이관 전 경로의 최종 이력·고객 통지·정리를 한 모듈에서 수행한다. 신규 경로의 1·2차 최종 결과는 `MSG-COMPLETE-MANAGER`의 SQL 이력과 `MSG-WEBHOOK-SENDER`의 고객 통지로 연결된다.
 
 신규 `messaging-carrier-http-sender`는 같은 JAR을 통신사별 Pod에서 실행한다. `MSG_HTTP_CARRIER`·`MSG_HTTP_BASE_URL`·해당 명령 토픽·고유 소비 그룹을 기동 때 확인해 자기 통신사 명령만 소비한다. 각 명령이 ORIGIN에 고정된 원문과 같을 때만 STEP을 `PENDING`으로 예약하고, Redis의 통신사·시도·회차 키를 선점한 실행만 STEP을 `SENDING`으로 전이한다. Redis 키가 유실돼도 이미 `SENDING`인 호출은 자동 재발송하지 않는다. 공통 요청 경로의 현재 기본값은 `/api/v1/messages`이며 Pod 설정으로 바꿀 수 있다. 비-200 응답은 `{status: "4xx", error: {code: "4xxxx", message: "..."}}`의 문자열 코드를 원본으로 보존한다. 불일치·TPS 원본 코드 매핑은 Pod 기동 필수 설정이고, 그 외 6만 대역이 아닌 코드는 임시 공통 실패 `66999`로 정규화한다.
 
@@ -116,7 +116,7 @@ sequenceDiagram
         K->>F: MSG-RESULT-FINALIZED
         F->>Q: TBL_MSG_HIST + TBL_CDR_HIST 원자 commit
         F->>R: 성공 시각부터 중복키 2시간 차단
-        F->>D: ORIGIN·STEP 조건부 삭제 시도
+        Note over F,D: ORIGIN·STEP 정리는 후속 작업
     and 고객 결과 통지
         K->>N: WEBHOOK-SEND
         N->>N: 묶음·중복·재시도 관리
@@ -310,22 +310,20 @@ sequenceDiagram
 | 1차 실패이고 2차 비대상 | 최종 실패 저장 후 `MSG-RESULT-FINALIZED`와 고객 웹훅 대상의 `WEBHOOK-SEND` | `MSG-COMPLETE-MANAGER`는 이력만 저장하며 과금하지 않음 |
 | 중복·늦은 결과 | 새 후속 발행 없음 | 저장된 현재 판단 유지 |
 
-`MSG-COMPLETE-MANAGER`는 **결과를 다시 판단하지 않는다.** 이미 고정된 결과로 `TBL_MSG_HIST` 발송 이력을 저장하고, 1차 발송의 최종 성공이면 `TBL_CDR_HIST` 과금을 저장한 뒤 DynamoDB 데이터 삭제를 시도한다. 고객 결과 웹훅은 `MSG-RESULT-MANAGER`가 `WEBHOOK-SEND`로 직접 인계하고 `MSG-WEBHOOK-SENDER`가 발송한다. 웹훅 배치의 offset은 1~100개 항목 모두가 STEP inbox에 내구성 있게 저장된 뒤 완료한다. 각 항목의 후속 업무 판단은 inbox 인덱스에서 이어받아야 한다.
+`MSG-COMPLETE-MANAGER`는 **결과를 다시 판단하지 않는다.** 이미 고정된 결과로 `TBL_MSG_HIST` 발송 이력을 저장하고, 1차 발송의 최종 성공이면 `TBL_CDR_HIST`에 과금 대상을 기록한다. DynamoDB 데이터 정리는 후속 작업이다. 고객 결과 웹훅은 `MSG-RESULT-MANAGER`가 `WEBHOOK-SEND`로 직접 인계하고 `MSG-WEBHOOK-SENDER`가 발송한다. 웹훅 배치의 offset은 1~100개 항목 모두가 STEP inbox에 내구성 있게 저장된 뒤 완료한다. 각 항목의 후속 업무 판단은 inbox 인덱스에서 이어받아야 한다.
 
-미결정 경계는 2차 TCP 전문의 상세 필드·응답 코드 매핑, 5초 무응답 때 실제 접수 후 늦게 올 수 있는 웹훅과 재발송의 경합, 영구적으로 잘못된 웹훅 배치 항목의 격리 방식이다. 신규 Manager의 inbox 소비·HTTP 실패와 웹훅 실패의 통신사 이동·재시도 승인, 통신사별 Sender는 연결됐다. 웹훅 성공·발송 전 실패·1차 소진은 ORIGIN과 STEP의 1차 결정으로 고정된다. 해당 결정의 최종/2차 토픽 발행기는 저장된 불변 전문을 사용하며 기본 활성이다. TCP Sender는 즉시 응답을 인계한다. 고객 웹훅 발송은 별도 AP에 연결됐으나 소비와 URL 설정은 별도로 활성화해야 한다. 완료 Manager의 1차 최종 결과 SQL 저장과 결과 Manager의 `WEBHOOK-SEND` 발행·복구 상태는 구현했다.
+미결정 경계는 2차 TCP 전문의 상세 필드·응답 코드 매핑, 5초 무응답 때 실제 접수 후 늦게 올 수 있는 웹훅과 재발송의 경합, 영구적으로 잘못된 웹훅 배치 항목의 격리 방식이다. 신규 Manager의 inbox 소비·HTTP 실패와 웹훅 실패의 통신사 이동·재시도 승인, 통신사별 Sender는 연결됐다. 웹훅 성공·발송 전 실패·1차 소진은 ORIGIN과 STEP의 1차 결정으로 고정된다. 해당 결정의 최종/2차 토픽 발행기는 저장된 불변 전문을 사용하며 기본 활성이다. TCP Sender는 즉시 응답을 인계한다. 고객 웹훅 발송 AP의 소비는 기본 활성이고 고객별 URL 설정이 있어야 실제 HTTP 호출이 이뤄진다. 완료 Manager의 1·2차 최종 결과 SQL 저장과 결과 Manager의 `WEBHOOK-SEND` 발행·복구 상태는 구현했다.
 
 ## 6. 웹훅 미수신과 1차 만료
 
-HTTP `200 OK` 뒤 웹훅이 오지 않으면 HTTP 성공만으로 최종 성공을 만들지 않는다. 1차 결과 판단 deadline은 **최초 인입 +3시간**이며, Redis는 빠른 만료 후보 일정이고 DynamoDB는 최종 판단·복구의 기준이다. 2차로 전환했다면 2차 결과 판단 deadline은 **1차 결과 판단 시각 +4시간**이다. 이 기한들은 웹훅 API의 수신 만료가 아니다. 업체에는 웹훅 재전송 최대 기간이 없으므로 훨씬 늦게 도착할 수 있다. deadline은 `200 OK` 시점에 새로 시작하지 않는다. **200 경로에서는** Sender가 `MSG_RESULT`를 발행하지 않으므로 웹훅이 없는 실행을 찾는 만료 스케줄러·복구 조회가 별도로 필요하다. Redis 후보를 언제 등록할지는 신규 경로에서 미정이며, 웹훅 소비 뒤에만 등록하면 미수신 실행을 놓친다.
+HTTP `200 OK` 뒤 웹훅이 오지 않으면 HTTP 성공만으로 최종 성공을 만들지 않는다. 1차 결과 판단 deadline은 **최초 인입 +3시간**이며, 현재 구현은 DynamoDB 만료 인덱스로 후보를 조회하고 ORIGIN의 현재 상태로 최종 판단한다. 2차로 전환했다면 2차 결과 판단 deadline은 **1차 결과 판단 시각 +4시간**이다. 이 기한들은 웹훅 API의 수신 만료가 아니다. 업체에는 웹훅 재전송 최대 기간이 없으므로 훨씬 늦게 도착할 수 있다. deadline은 `200 OK` 시점에 새로 시작하지 않는다. **200 경로에서는** Sender가 `MSG_RESULT`를 발행하지 않으므로 웹훅이 없는 실행은 접수 때 기록한 DynamoDB 만료 인덱스와 결과 Manager의 주기적 조회로 찾는다.
 
-`66002`·5초 무응답 재시도는 이 deadline까지 남은 시간을 따로 계산하지 않는다. 최초 호출 이후 최대 3회, 실패 판단 1분 이후의 예약을 유지한다. 만료 작업이 ORIGIN의 1차 단계를 먼저 닫으면 예약 발행·Sender 선점이 그 상태를 확인하고 멈춘다. 반대로 재시도 선점이 먼저 이뤄지면 기한이 지났다는 이유만으로 이미 시작된 호출을 취소하지 않는다. 신규 경로의 만료 스케줄러와 이 경합의 조건부 전이는 아직 구현 전이다.
+`66002`·5초 무응답 재시도는 이 deadline까지 남은 시간을 따로 계산하지 않는다. 최초 호출 이후 최대 3회, 실패 판단 1분 이후의 예약을 유지한다. 만료 작업이 ORIGIN의 1차 단계를 먼저 닫으면 예약 발행·Sender 선점이 그 상태를 확인하고 멈춘다. 반대로 재시도 선점이 먼저 이뤄지면 기한이 지났다는 이유만으로 이미 시작된 호출을 취소하지 않는다. 만료 스케줄러와 현재 상태를 확인하는 조건부 판단은 구현했다.
 
 ```mermaid
 flowchart TD
-    A[HTTP 200 뒤 웹훅 대기] --> R[Redis deadline 후보]
-    A --> G[DynamoDB 복구 인덱스]
-    R --> M[만료 판단 작업]
-    G --> M
+    A[HTTP 200 뒤 웹훅 대기] --> G[DynamoDB 만료 인덱스]
+    G --> M[만료 판단 작업]
     M --> D{원래 1차 deadline 경과·미완료?}
     D -->|아니오| W[남은 기한까지 대기]
     D -->|예| C[조건부 1차 만료 판단]
@@ -334,7 +332,7 @@ flowchart TD
     F -->|아니오| E[EXPIRED 최종화]
 ```
 
-Redis 일정이 유실돼도 DynamoDB 조회로 누락을 찾는다. 인증·형식이 유효한 늦은 웹훅은 API가 Kafka 저장 확인 후 접수 성공으로 응답하고 Manager가 관측하되 이미 확정한 만료·2차 전환·최종 결과를 바꾸지 않는다. 업체의 재전송 최대 기간이 없으므로 정리된 실행이나 알 수 없는 `clientMsgId`도 뒤늦게 도착할 수 있다. 웹훅 배치 Kafka key는 인입 `traceId`이고 Manager는 각 항목의 `clientMsgId`로 실행을 조회한다. 저장 원본이 없으면 새 실행·발송을 만들지 않고 관측 보존·격리한다. 구체적인 보존 위치는 추가 설계가 필요하다. 2차 전환을 늦게 처리해도 2차 deadline을 임의로 연장하지 않는다.
+만료 후보는 DynamoDB 인덱스에서 조회한다. 인증·형식이 유효한 늦은 웹훅은 API가 Kafka 저장 확인 후 접수 성공으로 응답하고 Manager가 관측하되 이미 확정한 만료·2차 전환·최종 결과를 바꾸지 않는다. 업체의 재전송 최대 기간이 없으므로 정리된 실행이나 알 수 없는 `clientMsgId`도 뒤늦게 도착할 수 있다. 웹훅 배치 Kafka key는 인입 `traceId`이고 Manager는 각 항목의 `clientMsgId`로 실행을 조회한다. 저장 원본이 없으면 새 실행·발송을 만들지 않고 관측 보존·격리한다. 구체적인 보존 위치는 추가 설계가 필요하다. 2차 전환을 늦게 처리해도 2차 deadline을 임의로 연장하지 않는다.
 
 ## 7. 2차 TCP 발송
 
