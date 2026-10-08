@@ -56,6 +56,8 @@ class FollowupHttpDispatcherTest {
         var capture = org.mockito.ArgumentCaptor.forClass(UpdateItemRequest.class);
         verify(db).updateItem(capture.capture());
         assertTrue(capture.getValue().updateExpression().contains("REMOVE #bucket, #due"));
+        assertTrue(capture.getValue().conditionExpression().contains("#authorization = :authorization"));
+        assertEquals("authorization", capture.getValue().expressionAttributeNames().get("#authorization"));
         assertEquals(step.get("authorization"),
                 capture.getValue().expressionAttributeValues().get(":authorization"));
     }

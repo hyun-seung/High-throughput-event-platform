@@ -104,9 +104,10 @@ public class FollowupHttpDispatcher {
     private void markDone(Map<String, AttributeValue> key, Map<String, AttributeValue> stored, long now) {
         try {
             db.updateItem(UpdateItemRequest.builder().tableName(STEP).key(key)
-                    .conditionExpression("authorization = :authorization AND #bucket = :bucket AND #due = :due")
+                    .conditionExpression("#authorization = :authorization AND #bucket = :bucket AND #due = :due")
                     .updateExpression("SET published_at_ms = :published REMOVE #bucket, #due")
-                    .expressionAttributeNames(Map.of("#bucket", FollowupDispatchIndex.BUCKET,
+                    .expressionAttributeNames(Map.of("#authorization", "authorization",
+                            "#bucket", FollowupDispatchIndex.BUCKET,
                             "#due", FollowupDispatchIndex.DUE))
                     .expressionAttributeValues(Map.of(
                             ":authorization", stored.get("authorization"),

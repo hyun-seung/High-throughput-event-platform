@@ -111,7 +111,10 @@ class CarrierHttpAttemptStoreTest {
             var writes = builder.build().transactItems();
             assertEquals(3, writes.size());
             assertTrue(writes.get(0).conditionCheck().conditionExpression().contains("result_decision_id = :decision"));
-            assertTrue(writes.get(1).conditionCheck().conditionExpression().contains("authorization = :authorization"));
+            assertTrue(writes.get(1).conditionCheck().conditionExpression()
+                    .contains("#authorization = :authorization"));
+            assertEquals("authorization", writes.get(1).conditionCheck()
+                    .expressionAttributeNames().get("#authorization"));
         }
 
         origin.put("result_decision_id", AttributeValue.fromS("newer-result"));

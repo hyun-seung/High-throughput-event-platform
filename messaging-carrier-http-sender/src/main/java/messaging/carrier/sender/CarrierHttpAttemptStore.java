@@ -220,7 +220,8 @@ public class CarrierHttpAttemptStore {
         if (authorization.decisionId() != null) {
             writes.add(TransactWriteItem.builder().conditionCheck(ConditionCheck.builder().tableName(STEP)
                     .key(FollowupHttpCommand.key(command))
-                    .conditionExpression("decision_id = :decision AND authorization = :authorization")
+                    .conditionExpression("decision_id = :decision AND #authorization = :authorization")
+                    .expressionAttributeNames(Map.of("#authorization", "authorization"))
                     .expressionAttributeValues(Map.of(
                             ":decision", s(authorization.decisionId()),
                             ":authorization", s(authorization.encoded()))).build()).build());
