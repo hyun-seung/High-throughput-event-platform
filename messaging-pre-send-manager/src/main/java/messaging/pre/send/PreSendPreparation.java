@@ -12,22 +12,19 @@ import java.util.Optional;
 
 /** Prepares one stable first-send command from an admitted message and current references. */
 public final class PreSendPreparation {
-    public sealed interface Decision permits Ready, Rejected, Inactive, Expired { }
+    public sealed interface Decision permits Ready, Rejected, Expired { }
     public record Ready(HttpSendCommand command, boolean carrierMapped) implements Decision { }
     public record Rejected(Reason reason) implements Decision { }
-    public record Inactive() implements Decision { }
     public record Expired() implements Decision { }
     public enum Reason { CONTRACT_MISSING, CONTRACT_DISABLED }
 
     private final PreSendReferenceReader references;
-    private final InitialCarrierStore carriers;
     private final Clock clock;
     private final Duration primaryTtl;
 
-    public PreSendPreparation(PreSendReferenceReader references, InitialCarrierStore carriers,
+    public PreSendPreparation(PreSendReferenceReader references,
                               Clock clock, Duration primaryTtl) {
         this.references = Objects.requireNonNull(references);
-        this.carriers = Objects.requireNonNull(carriers);
         this.clock = Objects.requireNonNull(clock);
         this.primaryTtl = Objects.requireNonNull(primaryTtl);
         if (primaryTtl.isNegative() || primaryTtl.isZero()) {
@@ -35,7 +32,7 @@ public final class PreSendPreparation {
         }
     }
 
-    public Decision prepare(MessageSubmission admission) {
+    public Decision prepare(MessageSubmission admission, CarrierResolution storedCarrier) {
         Objects.requireNonNull(admission);
         Instant deadline = admission.receivedAt().plus(primaryTtl);
         if (!clock.instant().isBefore(deadline)) return new Expired();
@@ -44,10 +41,8 @@ public final class PreSendPreparation {
         if (contract.isEmpty()) return new Rejected(Reason.CONTRACT_MISSING);
         if (!contract.get().enabled()) return new Rejected(Reason.CONTRACT_DISABLED);
 
-        Optional<CarrierResolution> selected = carriers.resolve(admission,
-                () -> references.firstCarrier(admission.recipientNumber()));
-        if (selected.isEmpty()) return new Inactive();
-        CarrierResolution route = selected.get();
+        CarrierResolution route = storedCarrier != null ? storedCarrier
+                : references.firstCarrier(admission.recipientNumber());
         String attemptId = HttpSendCommand.attemptId(admission.clientMsgId(), route.carrier());
         HttpProviderRequest request = new HttpProviderRequest(admission.clientMsgId(), admission.clientId(),
                 admission.messageCategory().name(), admission.recipientNumber(), admission.payload(),

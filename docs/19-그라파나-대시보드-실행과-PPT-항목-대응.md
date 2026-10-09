@@ -155,6 +155,37 @@ rate(messaging_complete_sql_batch_size_sum{job="complete-manager"}[5m])
 
 시험·빌드·SQL 시간 비교 로그는 `.monitoring/completion-batch/`, 전체 경로의 요청·결과는 실행별 `.monitoring/performance/<runId>/`에 보존한다. offset·재시도·영구 오류 처리 한계는 [완료 처리 계약](53-신규-메시지-케이스별-Call-Flow.md#81-msg-complete-manager의-처리-로직)에 있다.
 
+### 발송 전 통신사·전문 확정의 저장소 호출 축소 — 2026-10-10
+
+PRE-SEND-MANAGER의 신규 정상 처리에서 `PreSendDecisionStore → PreSendPreparation → InitialCarrierStore`를 디버거로 재현했다. 같은 원본을 각각 읽은 뒤 통신사와 전문을 따로 갱신하는 순서가 관측됐다. 이 디버거 재현은 실제 업무 클래스와 mock DynamoDB를 사용한 호출 경로 확인이며 저장소 지연 측정은 아니다.
+
+첫 통신사와 `pre_send_dispatch`를 하나의 조건부 UpdateItem으로 묶었다. 정상 신규 건은 DynamoDB 조회 2회·갱신 2회에서 **조회 1회·갱신 1회**로 줄었고, 재전달은 조회 1회로 저장된 결과를 재사용한다. 기존 `InitialCarrierStore` 클래스와 별도 빈은 제거했다. 다른 소비자가 먼저 저장하면 그 결과를 사용하고, 만료가 먼저 확정되면 새 명령을 만들지 않는다. 구버전의 통신사만 저장된 원본도 유지하며, 준비 중 구버전이 다른 통신사를 고정한 경우 조건 실패로 재시도한다. Kafka 발행 확인 후 offset 반영과 실패 재처리 방식은 유지한다.
+
+완료된 검증은 발송 전 AP 테스트 28개이며 실제 DynamoDB 조건 검증 6개를 포함한다. 통신사·전문의 동시 저장, 참조 데이터 변경 후 재전달, 8개 동시 소비의 서로 다른 통신사 선택, 구버전 원본 및 동시 갱신, 저장 직전 완료 전이, 계약 실패를 확인했다. 실제 DB 시험은 임의 이름의 전용 테이블로 격리하고 종료 시 제거한다. 기존 통합 시험 스크립트의 `DYNAMODB_TEST_ENDPOINT`를 사용한다.
+
+```bash
+# 실행 중인 로컬 DynamoDB의 전용 시험 테이블에서 검증
+DYNAMODB_TEST_ENDPOINT=http://127.0.0.1:38000 \
+  ./mvnw -pl messaging-pre-send-manager -am -Dtest='PreSend*Test' \
+  -Dsurefire.failIfNoSpecifiedTests=false test
+```
+
+변경 전 `e7c7d95b`와 변경 후 `6cda61ad`를 동일한 20 TPS·60초·정상 80%/1차 실패 10%/TCP 성공 10%·대조 대기 300초로 측정했다. 두 실행 모두 접수·이력·고객 통지·원본 정리 1,200건과 과금 대상 960건이 일치했고, 접수 오류·도구 미발송·추가 업체 호출은 없었다. 각 실행의 mock HTTP 수신도 1,200개 ID·1,200회였다. 최종 lag 0과 AP 전체 health·모니터링 검증도 통과했다. JAR 목록을 대조해 PRE-SEND만 교체했음을 확인했다.
+
+| 관측 항목 | 변경 전 | 변경 후 |
+|---|---:|---:|
+| 접수 → 첫 업체 HTTP 수신 p95 | 27.195초 | 18.943초 |
+| 업체 HTTP 수신 → 최종 판단 p95 | 49.903초 | 41.420초 |
+| 최종 판단 → SQL 이력 p95 | 28.353초 | 22.250초 |
+| SQL 이력 → DynamoDB 정리 p95 | 23.653초 | 23.364초 |
+| 접수 → 전체 완료 p95 | 107.536초 | 81.356초 |
+| PRE-SEND 소비 그룹 최대 lag | 371건 | 54건 |
+| SKT Sender 소비 그룹 최대 lag | 89건 | 274건 |
+
+접수→업체 HTTP에는 PRE-SEND뿐 아니라 Sender의 소비·저장소 대기도 포함된다. 각 구간 p95는 같은 메시지의 구간 차이를 계산한 분포이며 서로 더할 수 없다. 전후 각 1회인 로컬 관측으로, 저장소 호출 절반 감소를 전체 처리량 2배나 운영 SLA 달성으로 환산하지 않는다. 앞단 적체는 줄었지만 Sender 적체가 커졌고, 결과 판단 이후 이력 인계도 여전히 수십 초 걸렸다. **다음 범위는 HTTP Sender의 저장소 대기와 결과 Manager의 inbox/outbox 예약 처리 지연 진단**이다. 이번에는 그 구간의 병렬도·재시도·스케줄 정책을 바꾸지 않았다.
+
+디버거 근거·테스트 로그·변경 전 JAR 목록과 전후 비교 자료는 `.monitoring/pre-send-performance/`에 보존한다. 업무 정책·메시지 규격·토픽·실행 AP 및 모듈 수는 바꾸지 않았다.
+
 ## 화면과 데이터 경로
 
 Grafana는 [통합 관제](http://localhost:13000/d/messaging-overview), [서비스](http://localhost:13000/d/messaging-services), [통신사](http://localhost:13000/d/messaging-providers), [고객](http://localhost:13000/d/messaging-customers), [오류](http://localhost:13000/d/messaging-errors), [인프라](http://localhost:13000/d/messaging-infra), [메시지 추적](http://localhost:13000/d/messaging-trace) 화면을 제공한다. Prometheus는 [19099](http://localhost:19099), 테스트 API는 `127.0.0.1:38080`이다. `trace` 화면에서는 `clientMsgId`로 로그를 찾는다.

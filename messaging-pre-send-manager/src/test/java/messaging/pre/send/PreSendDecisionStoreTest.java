@@ -1,26 +1,14 @@
 package messaging.pre.send;
 
-import messaging.common.messages.HttpCarrier;
-import messaging.common.messages.HttpProviderRequest;
-import messaging.common.messages.HttpSendCommand;
-import messaging.common.messages.MessageCategory;
-import messaging.common.messages.MessageOriginCodec;
-import messaging.common.messages.MessageSubmission;
-import messaging.common.messages.PreSendFailure;
+import messaging.common.messages.*;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
-import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
-import software.amazon.awssdk.services.dynamodb.model.GetItemResponse;
-import software.amazon.awssdk.services.dynamodb.model.UpdateItemRequest;
+import software.amazon.awssdk.services.dynamodb.model.*;
 import tools.jackson.databind.json.JsonMapper;
 
-import java.time.Clock;
-import java.time.Instant;
-import java.time.Duration;
-import java.time.ZoneOffset;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Optional;
+import java.time.*;
+import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -33,47 +21,144 @@ class PreSendDecisionStoreTest {
     private final JsonMapper mapper = JsonMapper.builder().build();
     private final DynamoDbClient db = mock(DynamoDbClient.class);
     private final PreSendReferenceReader references = mock(PreSendReferenceReader.class);
-    private final InitialCarrierStore carriers = mock(InitialCarrierStore.class);
     private final Clock clock = Clock.fixed(NOW.plusSeconds(5), ZoneOffset.UTC);
-    private final PreSendPreparation preparation = new PreSendPreparation(references, carriers, clock, Duration.ofHours(3));
+    private final PreSendPreparation preparation = new PreSendPreparation(references, clock, Duration.ofHours(3));
+    private final PreSendDecisionStore store = new PreSendDecisionStore(db, mapper, preparation, clock);
 
     @Test
-    void storesTheCommandBeforeReplayAndDoesNotReevaluateReferences() {
-        var item = new HashMap<>(MessageOriginCodec.encode(admission, mapper));
-        when(db.getItem(any(software.amazon.awssdk.services.dynamodb.model.GetItemRequest.class)))
-                .thenAnswer(ignored -> GetItemResponse.builder().item(item).build());
-        var command = new HttpSendCommand("attempt-1", HttpCarrier.KT, 1, NOW.plusSeconds(100),
-                new HttpProviderRequest(admission.clientMsgId(), 42L, "GENERAL", "01012345678",
-                        admission.payload(), NOW));
-        when(references.findContract(42L)).thenReturn(Optional.of(new ClientMessageContract(42L, true)));
-        when(carriers.resolve(eq(admission), any())).thenReturn(Optional.of(new CarrierResolution(HttpCarrier.KT, true)));
-        when(db.updateItem(any(UpdateItemRequest.class))).thenAnswer(call -> {
-            UpdateItemRequest request = call.getArgument(0);
-            item.put(PreSendDecisionStore.DISPATCH, request.expressionAttributeValues().get(":dispatch"));
-            return software.amazon.awssdk.services.dynamodb.model.UpdateItemResponse.builder().build();
-        });
+    void freezesCarrierAndCommandTogetherWithOneReadAndOneWrite() {
+        origin(originItem());
+        validContract();
+        when(references.firstCarrier(admission.recipientNumber())).thenReturn(new CarrierResolution(HttpCarrier.KT, true));
 
-        var first = new PreSendDecisionStore(db, mapper, preparation, clock).prepareOrLoad(admission);
-        var replay = new PreSendDecisionStore(db, mapper, preparation, clock).prepareOrLoad(admission);
+        var result = store.prepareOrLoad(admission).orElseThrow();
 
-        assertEquals(first, replay);
-        assertEquals(command.carrier(), first.orElseThrow().command().carrier());
-        assertEquals(command.request(), first.orElseThrow().command().request());
-        verify(references, times(1)).findContract(42L);
-        verify(db, times(1)).updateItem(any(UpdateItemRequest.class));
+        assertEquals(HttpCarrier.KT, result.command().carrier());
+        var read = ArgumentCaptor.forClass(GetItemRequest.class);
+        verify(db).getItem(read.capture());
+        assertTrue(read.getValue().consistentRead());
+        var update = ArgumentCaptor.forClass(UpdateItemRequest.class);
+        verify(db).updateItem(update.capture());
+        var request = update.getValue();
+        assertEquals("KT", request.expressionAttributeValues().get(":carrier").s());
+        assertTrue(request.expressionAttributeValues().get(":mapped").bool());
+        assertEquals(result, mapper.readValue(request.expressionAttributeValues().get(":dispatch").s(), PreSendDispatch.class));
+        assertTrue(request.conditionExpression().contains("attribute_not_exists(completion_event_id)"));
+        assertTrue(request.conditionExpression().contains("attribute_not_exists(#dispatch)"));
+    }
+
+    @Test
+    void replayDoesNotReevaluateReferencesOrWrite() {
+        var item = originItem();
+        var expected = dispatch(HttpCarrier.KT);
+        item.put(PreSendDecisionStore.DISPATCH, AttributeValue.fromS(mapper.writeValueAsString(expected)));
+        origin(item);
+
+        assertEquals(Optional.of(expected), store.prepareOrLoad(admission));
+        verifyNoInteractions(references);
+        verify(db, never()).updateItem(any(UpdateItemRequest.class));
+    }
+
+    @Test
+    void legacyFrozenCarrierIsPreservedWithoutReadingPhoneCache() {
+        var item = originItem();
+        item.put(PreSendDecisionStore.CARRIER, AttributeValue.fromS("LGU"));
+        item.put(PreSendDecisionStore.MAPPED, AttributeValue.fromBool(false));
+        origin(item);
+        validContract();
+
+        assertEquals(HttpCarrier.LGU, store.prepareOrLoad(admission).orElseThrow().command().carrier());
+        verify(references, never()).firstCarrier(any());
     }
 
     @Test
     void freezesContractRejectionAsAPreSendResult() {
-        var item = MessageOriginCodec.encode(admission, mapper);
-        when(db.getItem(any(software.amazon.awssdk.services.dynamodb.model.GetItemRequest.class)))
-                .thenReturn(GetItemResponse.builder().item(item).build());
+        origin(originItem());
         when(references.findContract(42L)).thenReturn(Optional.of(new ClientMessageContract(42L, false)));
+        var result = store.prepareOrLoad(admission).orElseThrow();
+        assertEquals(PreSendFailure.Reason.CONTRACT_DISABLED, result.failure().reason());
+        var update = ArgumentCaptor.forClass(UpdateItemRequest.class);
+        verify(db).updateItem(update.capture());
+        assertFalse(update.getValue().expressionAttributeValues().containsKey(":carrier"));
+        verify(references, never()).firstCarrier(any());
+    }
 
-        var result = new PreSendDecisionStore(db, mapper, preparation, clock).prepareOrLoad(admission);
+    @Test
+    void concurrentDecisionReturnsTheStoredWinner() {
+        var winner = originItem();
+        var expected = dispatch(HttpCarrier.LGU);
+        winner.put(PreSendDecisionStore.DISPATCH, AttributeValue.fromS(mapper.writeValueAsString(expected)));
+        when(db.getItem(any(GetItemRequest.class))).thenReturn(response(originItem()), response(winner));
+        validContract();
+        when(references.firstCarrier(any())).thenReturn(new CarrierResolution(HttpCarrier.SKT, false));
+        when(db.updateItem(any(UpdateItemRequest.class))).thenThrow(ConditionalCheckFailedException.builder().build());
 
-        assertEquals(PreSendFailure.Reason.CONTRACT_DISABLED, result.orElseThrow().failure().reason());
-        assertEquals("PRE_SEND", result.orElseThrow().failure().source());
-        verify(db).updateItem(any(UpdateItemRequest.class));
+        assertEquals(Optional.of(expected), store.prepareOrLoad(admission));
+    }
+
+    @Test
+    void completionWinningDuringPreparationDoesNotPublish() {
+        var completed = originItem();
+        completed.put("completion_event_id", AttributeValue.fromS("final-1"));
+        when(db.getItem(any(GetItemRequest.class))).thenReturn(response(originItem()), response(completed));
+        validContract();
+        when(references.firstCarrier(any())).thenReturn(new CarrierResolution(HttpCarrier.SKT, false));
+        when(db.updateItem(any(UpdateItemRequest.class))).thenThrow(ConditionalCheckFailedException.builder().build());
+
+        assertTrue(store.prepareOrLoad(admission).isEmpty());
+    }
+
+    @Test
+    void failedWriteNeverReturnsAnUnpersistedCommand() {
+        origin(originItem());
+        validContract();
+        when(references.firstCarrier(any())).thenReturn(new CarrierResolution(HttpCarrier.SKT, false));
+        when(db.updateItem(any(UpdateItemRequest.class))).thenThrow(DynamoDbException.builder().message("unavailable").build());
+        assertThrows(DynamoDbException.class, () -> store.prepareOrLoad(admission));
+    }
+
+    @Test
+    void missingOrClosedOriginDoesNotReadReferences() {
+        var closed = originItem();
+        closed.put("completion_event_id", AttributeValue.fromS("final-1"));
+        var inactive = originItem();
+        inactive.put("status", AttributeValue.fromS("COMPLETED"));
+        when(db.getItem(any(GetItemRequest.class)))
+                .thenReturn(response(Map.of()), response(closed), response(inactive));
+        for (int i = 0; i < 3; i++) assertTrue(store.prepareOrLoad(admission).isEmpty());
+        verifyNoInteractions(references);
+        verify(db, never()).updateItem(any(UpdateItemRequest.class));
+    }
+
+    @Test
+    void mismatchedAdmissionCannotFreezeACommand() {
+        origin(originItem());
+        var changed = new MessageSubmission(admission.clientMsgId(), admission.clientId(), admission.messageId(),
+                admission.recipientNumber(), admission.messageCategory(), Map.of("text", "changed"), null, NOW);
+        assertThrows(IllegalStateException.class, () -> store.prepareOrLoad(changed));
+        verifyNoInteractions(references);
+        verify(db, never()).updateItem(any(UpdateItemRequest.class));
+    }
+
+    @Test
+    void incompleteLegacyCarrierCannotBeOverwritten() {
+        var item = originItem();
+        item.put(PreSendDecisionStore.MAPPED, AttributeValue.fromBool(true));
+        origin(item);
+        assertThrows(IllegalStateException.class, () -> store.prepareOrLoad(admission));
+        verifyNoInteractions(references);
+        verify(db, never()).updateItem(any(UpdateItemRequest.class));
+    }
+
+    private void validContract() {
+        when(references.findContract(42L)).thenReturn(Optional.of(new ClientMessageContract(42L, true)));
+    }
+    private Map<String, AttributeValue> originItem() { return new HashMap<>(MessageOriginCodec.encode(admission, mapper)); }
+    private void origin(Map<String, AttributeValue> item) { when(db.getItem(any(GetItemRequest.class))).thenReturn(response(item)); }
+    private static GetItemResponse response(Map<String, AttributeValue> item) { return GetItemResponse.builder().item(item).build(); }
+    private PreSendDispatch dispatch(HttpCarrier carrier) {
+        return new PreSendDispatch(new HttpSendCommand(HttpSendCommand.attemptId(admission.clientMsgId(), carrier),
+                carrier, 1, NOW.plus(Duration.ofHours(3)), new HttpProviderRequest(admission.clientMsgId(),
+                admission.clientId(), admission.messageCategory().name(), admission.recipientNumber(), admission.payload(), NOW)), null);
     }
 }

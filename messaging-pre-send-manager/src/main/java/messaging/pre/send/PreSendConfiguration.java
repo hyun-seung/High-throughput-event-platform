@@ -26,13 +26,9 @@ public class PreSendConfiguration {
         return new PreSendReferenceReader(redis, jdbc, mapper);
     }
 
-    @Bean InitialCarrierStore initialCarrierStore(DynamoDbClient db, JsonMapper mapper) {
-        return new InitialCarrierStore(db, mapper);
-    }
-
-    @Bean PreSendPreparation preSendPreparation(PreSendReferenceReader references, InitialCarrierStore carriers,
+    @Bean PreSendPreparation preSendPreparation(PreSendReferenceReader references,
                                                Clock clock) {
-        return new PreSendPreparation(references, carriers, clock, PrimaryExpiryIndex.TTL);
+        return new PreSendPreparation(references, clock, PrimaryExpiryIndex.TTL);
     }
 
     @Bean PreSendDecisionStore preSendDecisionStore(DynamoDbClient db, JsonMapper mapper,

@@ -157,13 +157,15 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    E[message.received.v1 소비] --> C[Redis 계약 조회]
+    E[message.received.v1 소비] --> O[ORIGIN 일관 조회·원문 및 활성 상태 확인]
+    O -->|미확정| C[Redis 계약 조회]
+    O -->|기존 전문·실패 사유 있음| R[고정 결과 재사용 후 해당 토픽 발행]
     C -->|누락| P[PostgreSQL 계약 조회]
     C -->|있음| V[계약·발송 조건 확인]
     P --> V
     V -->|발송 불가| F[ORIGIN에 사유 고정 후 MSG_RESULT 발행]
     V -->|발송 가능| N[Redis 전화번호→통신사 조회]
-    N -->|SKT·KT·LGU| B[전문·통신사·attemptId 고정]
+    N -->|SKT·KT·LGU| B[한 번의 조건부 갱신으로 전문·통신사·attemptId 함께 고정]
     B --> T[해당 통신사 HTTP 발송 토픽]
     N -->|누락| S[SKT를 첫 통신사로 선택]
     S --> B
@@ -172,6 +174,8 @@ flowchart TD
 계약 원본과 번호 매핑 원본은 PostgreSQL이며 CDC가 Redis를 갱신한다. **계약 캐시 누락은 PostgreSQL 조회, 번호→통신사 캐시 누락은 SKT 첫 발송**으로 처리한다. 번호 매핑 누락 때문에 접수를 거절하거나 통신사 찾기를 위해 PostgreSQL을 인라인 조회하지 않는다. `messaging-pre-send-manager`에는 ORIGIN 원문과 접수 레코드가 일치할 때 첫 통신사를 조건부로 저장하고, 재전달에서는 그 값을 우선 재사용하는 코드가 있다. 이 저장은 경로 고정이며 발송 중복 선점은 아니다. 한 번 발행한 *통신사 시도*의 전문·`attemptId`는 Kafka 재전달 중 바꾸지 않는다. 현재 계약 테이블에 발송 전문 생성에 필요한 모든 정보가 있는 것도 아니므로 계약·설정 스키마는 추가 설계가 필요하다.
 
 `messaging-pre-send-manager`는 `message.received.v1`을 소비해 계약의 존재·활성 여부, 1차 기한, ORIGIN의 활성 여부를 확인한다. 정상 건의 `HttpSendCommand`는 같은 `clientMsgId`·통신사에 대해 결정적인 `attemptId`, 최초 인입 +3시간 기한과 원본 발송 payload를 사용한다. 명령 또는 발송 불가 사유(`CONTRACT_MISSING`·`CONTRACT_DISABLED`·`PRIMARY_EXPIRED`)를 ORIGIN의 `pre_send_dispatch`에 조건부로 고정한 후 해당 통신사 토픽 또는 `MSG_RESULT`에 발행한다. 발송 불가 레코드는 `source=PRE_SEND`, 고정 `clientMsgId`·`resultId`, 사유와 관찰 시각을 담는다. Kafka 저장 확인 뒤 접수 offset을 완료하며 발행 실패·ack 불명 때는 고정된 내용을 다시 발행한다. 이미 끝난 ORIGIN은 새 명령을 발행하지 않는다. 현 계약 테이블에 없는 발송 설정 필드는 규격 확정 뒤 추가해야 한다. 발송 불가 사유가 계약 누락·비활성·1차 기한 만료 중 무엇이든 ORIGIN에 `secondarySendPayload`가 있으면 2차 TCP로 인계하고, 없으면 최종 실패로 처리한다. 최종 고객 오류 코드는 별도로 배정해야 한다.
+
+정상 신규 건은 ORIGIN을 한 번 일관 조회한 뒤 `initial_http_carrier`·`initial_http_carrier_mapped`와 `pre_send_dispatch`를 **한 번의 조건부 UpdateItem으로 함께 확정**한다. 첫 통신사만 따로 저장하던 단계를 합쳐 DynamoDB 호출은 기존 조회 2회·갱신 2회에서 조회 1회·갱신 1회로 줄었다. 재전달은 저장된 전문을 조회해 재사용하며 계약·번호 매핑을 다시 판단하지 않는다. 구버전이 통신사만 고정한 원본은 그 통신사를 우선 사용한다. 준비 중 구버전이 다른 통신사를 먼저 고정하면 덮어쓰지 않고 재시도하며, 다른 소비자가 전문을 먼저 저장하면 그 결과를 반환한다. 완료·만료가 먼저 확정된 원본에는 명령을 새로 저장하지 않는다. 조건 충돌 때의 재조회·재시도는 정상 경로의 2회 호출 상한에 포함되지 않는다.
 
 현재 소비 오류는 무제한 재시도하여 offset을 건너뛰지 않는다. 영구 불량 레코드가 있으면 해당 파티션이 멈추므로 격리·DLT 및 운영 재처리 경로가 필요하다. Kafka 발행 ack가 불명확해 같은 명령이 중복될 수 있으므로 통신사별 Sender는 고정 `attemptId`·회차와 저장 상태를 기준으로 중복 발송을 막아야 한다.
 
