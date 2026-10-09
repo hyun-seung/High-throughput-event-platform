@@ -9,6 +9,8 @@ import org.springframework.stereotype.Component;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.util.Objects;
+import java.util.ArrayList;
+import java.util.List;
 
 /** Acknowledges Kafka only after the SQL history and optional CDR transaction commits. */
 @Component
@@ -23,14 +25,18 @@ public class FinalizedResultConsumer {
     }
 
     @KafkaListener(topics = MessageTopics.MSG_RESULT_FINALIZED, groupId = "messaging-complete-manager")
-    public void receive(ConsumerRecord<String, String> record) {
-        if (record.key() == null || record.value() == null) {
-            throw new IllegalArgumentException("Finalized result requires key and value");
+    public void receive(List<ConsumerRecord<String, String>> records) {
+        var batch = new ArrayList<FinalizedMessageResult>(records.size());
+        for (var record : records) {
+            if (record.key() == null || record.value() == null) {
+                throw new IllegalArgumentException("Finalized result requires key and value");
+            }
+            var finalized = mapper.readValue(record.value(), FinalizedMessageResult.class);
+            if (!record.key().equals(finalized.decision().clientMsgId())) {
+                throw new IllegalArgumentException("Finalized Kafka key differs from clientMsgId");
+            }
+            batch.add(finalized);
         }
-        var finalized = mapper.readValue(record.value(), FinalizedMessageResult.class);
-        if (!record.key().equals(finalized.decision().clientMsgId())) {
-            throw new IllegalArgumentException("Finalized Kafka key differs from clientMsgId");
-        }
-        history.store(finalized);
+        history.storeBatch(batch);
     }
 }

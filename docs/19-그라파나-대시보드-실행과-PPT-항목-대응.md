@@ -124,6 +124,37 @@ Docker 할당은 10 CPU·7.75 GiB, 실행 컨테이너는 다른 프로젝트를
 
 최종 JAR의 저장소 장애 재검증 `storage-test`, `runId=d4a4080b`도 통과했다. Redis 발송 키 유실·Redis 중단·DynamoDB 중단·완료 정리 연결 실패의 네 사례에서 이력·과금 대상·고객 결과·업체 호출·ORIGIN 삭제가 각각 4건이었다. 정리 연결 실패 중 SQL은 `PENDING`과 재시도 정보를 보존했고 복구 후 완료됐다. 추가 70초 동안 중복 발송 없이 소비 lag 0을 확인했다. 이어 `verify`에서 AP 11개 health, Prometheus 대상 17개, Grafana 7개와 로그 조회가 통과했다.
 
+### 완료 이력·과금 대상의 SQL 배치 저장 — 2026-10-10
+
+과금 대상 판단은 메시지별로 유지하고, 완료 토픽의 한 poll에서 받은 최대 100건을 한 SQL 트랜잭션으로 저장한다. Kafka 레코드는 메시지당 한 건 그대로다. `TBL_MSG_HIST`는 전체 메시지, `TBL_CDR_HIST`는 그중 1차 성공만 JDBC batch로 INSERT한다. 기존 행의 내용 대조도 목록 단위로 수행한다. 예를 들어 1차 성공 80건·실패 10건·TCP 성공 10건이면 같은 트랜잭션에 이력 100건·과금 대상 80건을 기록한다. 한 건이라도 오류·충돌이 있으면 전체 rollback하며, commit이 끝난 뒤 Kafka offset을 반영한다.
+
+100건이 모일 때까지 기다리지는 않는다. 브로커 fetch는 16KiB 또는 최대 25ms를 기준으로 응답하고 소비자는 받은 만큼 저장한다. 이 지연 상한은 배치를 만들기 위한 브로커 대기만 가리킨다. DynamoDB 정리는 commit된 SQL 대기 행을 읽는 별도 작업으로 유지해, 저장소 정리가 느려도 소비 스레드의 이력·과금 저장을 직접 막지 않도록 한다. 판단·저장·정리는 기존 완료 AP 안에 있으며 새 AP·테이블·토픽은 추가하지 않았다.
+
+실제 PostgreSQL·Kafka를 사용하는 테스트를 포함해 완료 AP 테스트 31개가 통과했다. 혼합 100건·배치 내 중복·상충 결과·과금 INSERT 실패·역순으로 겹친 동시 배치·빈 입력·상한 초과를 확인했다. Kafka 시험에서는 과금 INSERT를 실패시켜 이력/과금 0건과 offset 0을 확인하고, DB commit 직후 offset 반영을 막은 상태에서 소비자를 재시작했다. 재전달 후에도 이력·과금은 각각 100건이고 offset만 100으로 진행했다. 이후 별도 1건도 정상 처리해 100건 충족을 기다리지 않음을 확인했다. 시험용 토픽·소비 그룹·SQL 스키마는 제거했다.
+
+동일한 저장 구현을 `storeBatch(1건)`으로 100회 호출한 경우와 `storeBatch(100건)`으로 한 번 호출한 경우를 워밍업 후 순서를 바꿔 세 번 측정했다. 100건 모두 1차 성공이며 테이블·고유키·내용 검증 조건은 같다. 최종 실행의 단건 방식은 **197.073~224.993ms**, 100건 배치는 **14.966~17.287ms**였다. 이는 호스트 JVM·로컬 PostgreSQL의 SQL 저장 구간 비교이며 예전 구현과의 직접 비교나 전체 서비스 TPS 개선율이 아니다. 시간에 대한 합격 임계값을 테스트에 넣지 않았고, 실제 행 수·중복 방지·트랜잭션 수를 검사했다.
+
+변경 전 전체 경로 재측정 `5eb1761d`는 요청 생성기 미발송 7건과 제한 시간 내 새 lag 0 표본 미확인으로 실패 표시됐다. 접수된 1,193건은 모두 완료됐고 과금 대상 954건·고객 통지·원본 삭제가 일치했다. 당시 Docker VM의 I/O pressure와 스왑 활동이 관측됐으며 원인 전체를 확정한 것은 아니다. 이 실행은 변경 전후 성능 개선율 산출에서 제외한다.
+
+변경 후 `45993c7e`는 20 TPS·60초, 정상 80%·1차 실패 10%·TCP 성공 10%의 1,200건을 오류·미발송 없이 접수하고 모두 완료했다. 이력·고객 통지·원본 삭제 1,200건, 과금 대상 960건이 일치했다. 인입 후 대조 제한 시간은 기존 180초에서 300초로 늘려 검증했으며 업무 정책은 바꾸지 않았다. 접수 p95는 110.139ms, 인입→이력 p95는 85.312초, 전체 완료 p95는 106.746초였다. **전체 서비스의 지연 문제가 해소됐다는 결과는 아니다.**
+
+해당 실행의 실제 SQL commit은 1,153회, 처리 레코드는 1,200건으로 평균 1.041건/배치였고 관측 최대 크기는 3건이었다. DB 트랜잭션 시도 시간 합계는 4.814초였다. 현재 20 TPS 경로에서는 앞단에서 결과가 천천히 도착해 큰 배치가 거의 형성되지 않았다. 100건 집중 저장 시험의 이득을 이 실행의 전체 처리량 개선으로 환산하지 않는다. 배치는 밀린 결과를 효율적으로 저장할 준비이며, 발송 전 준비·결과 인계 구간의 지연 진단은 계속 필요하다.
+
+별도 Docker 웹훅·장애 복구 시험 `3ed8dbf1`도 통과했다. PostgreSQL 중단 중 원본 100건과 완료 lag 100을 보존했고, 복구 후 선행 웹훅 1건을 포함한 이력·고객 통지·원본 삭제 101건 및 과금 대상 51건을 대조했다. 이 실행의 성공 SQL 배치는 3회·101건, 관측 최대 크기는 99건이었다. 늦은 중복·상충·미등록 웹훅을 처리한 뒤 70초 동안 추가 발송이 없었으며 완료 lag은 0이었다. 복구 후 모니터링 최종 검증도 통과했다.
+
+Prometheus에는 다음 지표를 추가했다. 배치 크기 count/sum은 **성공적으로 commit된 소비 레코드 수를 재전달 포함** 집계하므로 고유 메시지 수나 과금 건수로 사용하지 않는다. DB duration은 실패한 트랜잭션 시도도 포함한다.
+
+```promql
+# 성공한 SQL 트랜잭션의 평균 배치 크기
+rate(messaging_complete_sql_batch_size_sum{job="complete-manager"}[5m])
+  / rate(messaging_complete_sql_batch_size_count{job="complete-manager"}[5m])
+# 트랜잭션 한 번의 평균 DB 시간(ms)
+1000 * rate(messaging_complete_sql_batch_duration_seconds_sum{job="complete-manager"}[5m])
+  / rate(messaging_complete_sql_batch_duration_seconds_count{job="complete-manager"}[5m])
+```
+
+시험·빌드·SQL 시간 비교 로그는 `.monitoring/completion-batch/`, 전체 경로의 요청·결과는 실행별 `.monitoring/performance/<runId>/`에 보존한다. offset·재시도·영구 오류 처리 한계는 [완료 처리 계약](53-신규-메시지-케이스별-Call-Flow.md#81-msg-complete-manager의-처리-로직)에 있다.
+
 ## 화면과 데이터 경로
 
 Grafana는 [통합 관제](http://localhost:13000/d/messaging-overview), [서비스](http://localhost:13000/d/messaging-services), [통신사](http://localhost:13000/d/messaging-providers), [고객](http://localhost:13000/d/messaging-customers), [오류](http://localhost:13000/d/messaging-errors), [인프라](http://localhost:13000/d/messaging-infra), [메시지 추적](http://localhost:13000/d/messaging-trace) 화면을 제공한다. Prometheus는 [19099](http://localhost:19099), 테스트 API는 `127.0.0.1:38080`이다. `trace` 화면에서는 `clientMsgId`로 로그를 찾는다.

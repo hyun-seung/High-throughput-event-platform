@@ -16,6 +16,8 @@ spring:
       schema: ${MSG_COMPLETE_DB_SCHEMA:messaging_completion}
       maximum-pool-size: 6
       connection-timeout: 3000
+      data-source-properties:
+        reWriteBatchedInserts: true
   flyway:
     default-schema: ${MSG_COMPLETE_DB_SCHEMA:messaging_completion}
     schemas: ${MSG_COMPLETE_DB_SCHEMA:messaging_completion}
@@ -23,9 +25,13 @@ spring:
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     listener:
-      ack-mode: record
+      type: batch
+      ack-mode: batch
       concurrency: ${MSG_COMPLETE_CONCURRENCY:3}
     consumer:
+      max-poll-records: 100
+      fetch-min-size: 16KB
+      fetch-max-wait: 25ms
       auto-offset-reset: earliest
       enable-auto-commit: false
       key-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer

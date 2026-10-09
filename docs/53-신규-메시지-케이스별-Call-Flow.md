@@ -397,10 +397,10 @@ flowchart LR
 
 | 순서 | 목표 처리 | 멱등·장애 기준 |
 |---|---|---|
-| 1. 결과 확인 | `MSG-RESULT-FINALIZED` 1레코드에서 고정 `clientMsgId`, 고객의 `messageId`, 고객 식별자·수신번호, 최종 상태·단계·결과 ID를 확인한다. | 같은 결과의 Kafka 재전달은 같은 `clientMsgId`와 결과 ID로 처리한다. 서로 다른 최종 내용은 충돌로 격리한다. |
+| 1. 결과 확인 | `MSG-RESULT-FINALIZED`에서 최대 100레코드를 받아 각 메시지의 고정 `clientMsgId`, 고객의 `messageId`, 고객 식별자·수신번호, 최종 상태·단계·결과 ID를 확인한다. | 같은 결과의 Kafka 재전달은 같은 `clientMsgId`와 결과 ID로 처리한다. 서로 다른 최종 내용은 충돌로 거부하고 배치의 offset을 보류한다. |
 | 2. 메시지 이력 | **최종 메시지당 `TBL_MSG_HIST` 1건**을 저장한다. 성공·실패·만료와 2차 결과도 최종 메시지이면 기록한다. | `clientMsgId` 고유 제약으로 같은 실행의 중복 이력을 막고 저장된 내용이 같은지 확인한다. |
 | 3. 1차 성공 과금 | 최종 단계가 1차이고 최종 결과가 성공일 때만 `TBL_CDR_HIST` 1건을 저장한다. HTTP `200 OK`나 2차 성공은 과금하지 않는다. | `clientMsgId`에 UNIQUE를 걸면 **동일 접수 실행당 CDR 최대 1건**이다. 실패·만료에는 CDR 0건이다. |
-| 4. SQL commit | 이력과 해당하는 과금을 같은 DB 트랜잭션으로 commit한다. | commit 전 Kafka offset을 완료하거나 DynamoDB 원본을 삭제하지 않는다. commit 뒤 Kafka ack 유실은 같은 행 대조로 멱등 처리한다. |
+| 4. SQL commit | 받은 배치의 이력과 건별 판단으로 선택한 과금 대상만 JDBC batch로 저장하고 한 DB 트랜잭션으로 commit한다. 정리 대기 상태도 이력과 함께 저장된다. | 오류·충돌은 배치 전체 rollback. commit 전 Kafka offset을 완료하거나 DynamoDB 원본을 삭제하지 않는다. commit 뒤 Kafka ack 유실은 같은 행 대조로 멱등 처리한다. |
 | 5. DynamoDB 정리 | SQL 이력의 정리 대기 행을 주기적으로 조회한다. 최종 결과와 고객 웹훅 명령의 Kafka 발행 완료를 확인한 뒤 ORIGIN·STEP에 TTL 속성을 설정하고 STEP → ORIGIN 순서로 삭제한다. | 고객 웹훅 `204`를 기다리지 않는다. 실패·중간 종료는 SQL 대기 행에서 재시도하며 Kafka 완료 offset은 막지 않는다. TTL은 삭제 실패 때의 최후 정리 수단이다. |
 
 **과금 고유 키는 고정 `clientMsgId` 하나로 둔다.** `TBL_CDR_HIST.client_msg_id`에 접수 시 생성한 값을 저장하고 UNIQUE를 걸면 같은 실행의 Kafka 재전달·통신사 이동·회차 재시도에도 CDR은 최대 1건이다. 업체 요청·웹훅에도 같은 값을 사용한다. 고객이 보낸 `messageId`는 고객 간 동일 값이 가능하므로 전역 UNIQUE로 둘 수 없다. 현재 API는 Redis 중복 키 유실·연결 실패 중 같은 고객 요청을 새 `clientMsgId`로 접수할 수 있다. 두 실행이 모두 1차 성공하면 각 실행별 CDR 1건이 가능하다. 고객의 재요청 자체를 한 건으로 묶는 정책이 필요하면 접수 단계의 ID 복원 규칙을 별도로 정해야 한다.
@@ -408,6 +408,12 @@ flowchart LR
 `TBL_MSG_HIST`는 메시지당 최종 행 1건으로 확정한다. 통신사 이동·`66002` 재시도처럼 여러 시도의 개별 이력이 운영에 필요하다면 이 최종 행의 보존 가능한 상세 정보 또는 별도 시도 이력 저장소를 추가할 수 있다. 최종 행의 필수 내용은 `clientMsgId`, 고객 메시지 식별자, 최종 상태·코드, 최종 통신사/2차 업체, 최종 시각과 고객 조회·늦은 웹훅 대조에 필요한 참조값이다. CDR은 금액 산정 없이 과금 대상 식별자·1차 성공 통신사·시각을 고정한다. 두 이력 테이블이 같은 PostgreSQL DB라는 현재 가정이 다르면 원자 저장 대신 별도의 대사·복구 방식이 필요하다.
 
 현재 완료 AP의 `TBL_CDR_HIST`는 과금 대상 여부와 식별자·통신사·시각만 보존한다. 금액·요율 계산은 서비스 범위에 넣지 않는다. `MSG-RESULT-FINALIZED` 소비 후 SQL commit 전에 오류가 나면 Kafka offset을 완료하지 않고 재전달받는다. 고객 웹훅 인계는 결과 Manager outbox의 `PUBLISHED` 상태로 확인하며 고객 HTTP 응답까지 기다리지는 않는다.
+
+**업무 판단은 메시지별, 물리적 SQL 저장은 최대 100건 배치**로 한다. Kafka 레코드 규격은 메시지당 한 레코드 그대로이며 소비자가 한 poll에서 받은 목록을 한 트랜잭션으로 처리한다. `max.poll.records=100`, batch listener, `AckMode.BATCH`, 자동 commit 비활성으로 구성한다. 묶음 크기를 확보하는 브로커 fetch 기준은 16KiB·최대 25ms이며, 100건을 채울 때까지 기다리지 않는다. 1건만 있어도 처리된다. 이 25ms는 [Kafka fetch의 묶음 대기 상한](https://kafka.apache.org/42/configuration/consumer-configs/)이지 전체 처리 시간 보장이 아니다.
+
+메시지·CDR INSERT는 각각 JDBC batch로 실행하고 [pgJDBC `reWriteBatchedInserts`](https://jdbc.postgresql.org/documentation/use/)를 켠다. 기존 행과 결과 JSON·최초 전문·과금 내용이 같은지 확인하는 조회도 목록 단위로 수행한다. 여러 배치가 같은 ID를 포함할 때 잠금 순서가 뒤집히지 않도록 `clientMsgId` 순서로 저장한다. 한 건이라도 DB 오류나 충돌이 있으면 해당 poll 전체를 rollback하고 [Spring Kafka의 전체 배치 재시도](https://docs.spring.io/spring-kafka/reference/kafka/annotation-error-handling.html)를 사용한다. 저장되지 않은 앞부분을 commit할 수 있는 부분 배치 실패 예외를 사용하지 않는다. 영구 오류도 자동 폐기하지 않으므로 운영 수정·재처리 전에는 해당 소비자의 배치가 대기할 수 있다. 자동 격리·건너뛰기 정책은 별도 운영 범위다.
+
+정리는 소비자에서 동기 실행하지 않는다. SQL commit 후 같은 AP의 정리 작업이 SQL 대기 행을 읽어 처리하므로, Kafka commit 전에 프로세스가 종료되거나 DynamoDB가 느려도 이력·과금 대사 기준과 정리 재시도 근거가 남는다. Kafka와 PostgreSQL을 하나의 분산 트랜잭션으로 묶은 것은 아니며 **재전달 + DB 고유키·내용 대조**로 중복 이력·과금을 방지한다.
 
 완료 관리자는 `ORIGIN`·`STEP` 테이블에 `ttl_epoch_seconds` TTL을 활성화한다. SQL 이력 commit과 고객 웹훅 토픽 발행 확인 후 각 항목에 기본 7일 만료 시각을 설정하고 삭제한다. 삭제가 실패하면 SQL 정리 대기 행으로 재시도한다. 아주 늦게 온 업체 웹훅이 정리 뒤 생성한 결과 inbox에도 7일 TTL을 설정한다. AWS 문서에 따르면 [TTL은 만료 항목을 백그라운드에서 삭제하며 삭제 전까지 읽기에 나타날 수 있다](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/ttl-expired-items.html). 따라서 TTL은 삭제 실패의 저장 공간 정리 수단으로 쓰고, 업무상 완료·과금·중복 여부는 SQL 고유 키와 최종 결과 상태로 판단한다. 업체 웹훅에는 최대 만료 기간이 없으므로 정리 후 늦게 온 결과를 구분할 SQL 참조 정보도 필요하다.
 

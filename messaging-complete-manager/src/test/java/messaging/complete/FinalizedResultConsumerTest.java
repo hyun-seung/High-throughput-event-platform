@@ -11,6 +11,7 @@ import tools.jackson.databind.json.JsonMapper;
 
 import java.time.Instant;
 import java.util.Map;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.*;
@@ -24,10 +25,10 @@ class FinalizedResultConsumerTest {
     void matchingKeyPassesFinalResultToSqlStore() {
         var finalized = success("a".repeat(32));
 
-        consumer.receive(new ConsumerRecord<>("MSG-RESULT-FINALIZED", 0, 1L,
-                finalized.decision().clientMsgId(), mapper.writeValueAsString(finalized)));
+        consumer.receive(List.of(new ConsumerRecord<>("MSG-RESULT-FINALIZED", 0, 1L,
+                finalized.decision().clientMsgId(), mapper.writeValueAsString(finalized))));
 
-        verify(history).store(finalized);
+        verify(history).storeBatch(List.of(finalized));
     }
 
     @Test
@@ -35,10 +36,26 @@ class FinalizedResultConsumerTest {
         var finalized = success("a".repeat(32));
 
         assertThrows(IllegalArgumentException.class, () -> consumer.receive(
-                new ConsumerRecord<>("MSG-RESULT-FINALIZED", 0, 1L, "wrong",
-                        mapper.writeValueAsString(finalized))));
+                List.of(new ConsumerRecord<>("MSG-RESULT-FINALIZED", 0, 1L, "wrong",
+                        mapper.writeValueAsString(finalized)))));
 
         verifyNoInteractions(history);
+    }
+
+    @Test
+    void validatesTheWholePollBeforeWritingAndDoesNotSwallowDatabaseFailure() {
+        var first = success("a".repeat(32));
+        var second = success("b".repeat(32));
+        var one = new ConsumerRecord<>("MSG-RESULT-FINALIZED", 0, 1L,
+                first.decision().clientMsgId(), mapper.writeValueAsString(first));
+        var two = new ConsumerRecord<>("MSG-RESULT-FINALIZED", 1, 2L,
+                second.decision().clientMsgId(), mapper.writeValueAsString(second));
+        assertThrows(IllegalArgumentException.class, () -> consumer.receive(List.of(one,
+                new ConsumerRecord<>("MSG-RESULT-FINALIZED", 1, 2L, "wrong", two.value()))));
+        verifyNoInteractions(history);
+        doThrow(new IllegalStateException("database unavailable")).when(history).storeBatch(List.of(first, second));
+        assertThrows(IllegalStateException.class, () -> consumer.receive(List.of(one, two)));
+        verify(history).storeBatch(List.of(first, second));
     }
 
     private static FinalizedMessageResult success(String id) {
