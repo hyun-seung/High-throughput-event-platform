@@ -57,7 +57,8 @@ case "${1:-help}" in
   redis-dns-test) exec python3 scripts/monitoring/redis_dns_flow.py ;;
   kafka-test) exec python3 scripts/monitoring/kafka_flow.py ;;
   sender-crash-test) exec python3 scripts/monitoring/sender_crash_flow.py ;;
+  performance) shift; exec python3 scripts/monitoring/performance_flow.py "$@" ;;
   diagnose) exec python3 scripts/monitoring/main_flow.py diagnose ;;
   recovery-test) shift; exec python3 scripts/monitoring/main_flow.py recovery-test "$@" ;;
-  *) echo 'Usage: bash scripts/monitoring.sh <up|status|stop|logs SERVICE|demo|verify|diagnose|recovery-test|policy-test|webhook-test|storage-test|redis-dns-test|kafka-test|sender-crash-test>' ;;
+  *) echo 'Usage: bash scripts/monitoring.sh <up|status|stop|logs SERVICE|demo|verify|diagnose|recovery-test|policy-test|webhook-test|storage-test|redis-dns-test|kafka-test|sender-crash-test|performance>' ;;
 esac

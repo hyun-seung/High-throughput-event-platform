@@ -27,6 +27,38 @@ bash scripts/monitoring.sh stop
 
 `up`은 AP를 순서대로 띄우며 각 관리 지표가 수집될 때까지 기다린다. Prometheus와 Alloy도 재시작해 변경된 지표·로그 수집 설정을 반영한다. 로컬 Compose에서는 JVM 메모리와 Kafka 소비자 병렬도를 낮춰 기동한다. 실제 처리량 측정에는 이 로컬 설정을 그대로 사용하지 않는다.
 
+## 성능 측정 도구
+
+```bash
+# 정상 경로의 낮은 부하
+bash scripts/monitoring.sh performance --rate 5 --seconds 20
+# 정상 80%·1차 최종 실패 10%·HTTP 실패 후 TCP 성공 10%
+bash scripts/monitoring.sh performance --rate 5 --seconds 20 --failure-percent 10 --secondary-percent 10
+# 집계 계산 회귀 검사
+python3 -m unittest discover -s scripts/monitoring -p test_performance_flow.py
+```
+
+기동된 격리 모니터링 스택에서 단독 실행한다. AP 전체 health와 주요 소비 그룹 8개의 lag 0, AP 11개의 CPU·힙·수집 상태를 확인한 뒤 요청을 일정 간격으로 보낸다. 대기열을 무제한 늘리지 않고 `--workers`(기본 32)만큼만 요청을 진행한다. 송신 슬롯이 없거나 예정 시각보다 `max(50ms, 요청 간격)` 이상 늦으면 해당 요청을 보내지 않고 원인을 기록한다. 애플리케이션의 TPS·Quota 정책은 변경하지 않는다.
+
+`--rate`는 1~1000, `--seconds`는 10~600이며 한 실행은 최대 100,000건이다. 이 범위는 도구의 입력 제한이지 서비스 처리량 보장이 아니다. 혼합 비율은 100건 단위의 고정 순서로 적용하고 실제 접수된 경로별 건수도 기록한다. 기본 HTTP 대기는 10초, 인입 종료 후 처리 대기는 180초이며 `--request-timeout`·`--timeout`으로 조절한다. 각 요청은 한 번만 보내고 자동 재접수하지 않는다.
+
+| 측정 항목 | 의미 |
+|---|---|
+| 목표·실제 TPS | 설정한 예정 요청 수와 실제 HTTP 시작·202 접수·완료 건수를 분리. 부하 시간 내 TPS와 남은 처리까지 포함한 전체 구간 평균 완료 TPS를 각각 기록 |
+| 접수 지연 | 클라이언트의 HTTP 시작~응답을 monotonic 시계로 측정. 전체 응답과 202 접수의 p50/p95/p99·최대, 예정 시각 대비 실제 시작 지연을 별도로 기록 |
+| 최종 완료 지연 | 서버 `received_at`부터 최종 판단·이력 기록·고객 통지 확인 기록·DynamoDB 정리 기록까지 각각 측정. 최종 완료는 `max(recorded_at, outbox.updated_at, cleaned_at)` 기준 |
+| 오류 | HTTP 상태별 건수·접수 오류율·발행 여부가 불명확한 응답·부하 도구 자체 미발송을 구분. 예상된 업체 실패와 TCP 전환은 접수 오류로 세지 않음 |
+| 적체 | Prometheus에서 수집한 그룹/토픽별 Kafka lag와 최대 합계. 결과 대조 후 새 collector 표본에서 lag 0을 확인한 부하 종료 후 시간도 기록 |
+| 자원 | AP별 CPU 비율·JVM 힙 사용량의 관측 최대값, Docker CPU·메모리 할당, 실행 JAR 경로/해시·측정 소스 해시·Git 상태 |
+
+5초마다 Prometheus를 조회하며 실제 scrape·Kafka 관측기 주기는 각각 10초이므로 표본 사이의 순간 피크는 놓칠 수 있다. CPU 비율은 JVM 지표이며 힙은 컨테이너 전체 메모리/RSS가 아니다. `lagZeroObservedAfterLoadSeconds`는 결과 대조·수집 지연이 포함된 **lag 0 확인 시간의 상한 관측값**으로, 실제 적체가 사라진 정확한 시각이 아니다. DB의 기록 시각도 트랜잭션 commit 완료 시각과 완전히 같지는 않다. 서버와 부하 도구의 시계 차이 추정치·불확실성을 함께 남긴다.
+
+보고서는 `.monitoring/performance-latest.json`, 실행별 원본은 `.monitoring/performance/<runId>/`의 `report.json`, `requests.jsonl`, `results.json`, `telemetry.jsonl`, `jars.env`다. 요청 시간·실제 메시지 ID, 1초별 건수, 원래 표본을 보존하므로 집계를 다시 대조할 수 있다. 네트워크 타임아웃·5xx는 미접수 확정이 아니며 `unconfirmedAdmissions`에 포함한다. 이런 실행은 실패로 표시하고 같은 실행 ID의 늦은 이력을 추가 확인해야 한다.
+
+**`pass=true`는 성능 SLA 합격이 아니라 측정·데이터 대조 성공**이다. 예정한 요청이 모두 접수되고 동일한 메시지 ID·예상 결과·과금 대상·고객 통지·정리 상태가 맞아야 한다. ORIGIN 삭제를 직접 확인하고, 필수 지표 누락·부하 도구 미발송·접수 오류가 있으면 성공으로 표시하지 않는다. `capacityOrSlaVerdict`는 아직 `not-evaluated`다. 단계별 처리량 한계와 지속 부하 결과는 별도로 측정한다.
+
+2026-10-10 최종 도구 검증 `runId=c8755276`은 5 TPS·20초의 혼합 100건을 모두 접수했다. 정상 1차 성공 80건·1차 실패 10건·TCP 성공 10건의 최종 이력·고객 통지·원본 삭제 100건과 과금 대상 80건이 일치했다. HTTP 오류와 도구 미발송은 0건이었다. 접수 p95/p99는 230.576/595.039ms, 정리까지 포함한 전체 완료 p95/p99는 21.014/22.766초였다. 부하 시간 내 완료 TPS는 1.30, 남은 처리까지 포함한 31.714초 구간의 평균 완료 TPS는 3.153이었다. 이는 시작·종료 효과를 포함한 짧은 실행이며 지속 처리량이 아니다. 필수 지표 10개 표본 모두 유효했고, 관측 최대 Kafka lag 합계는 4였다. 집계 회귀 검사 10개가 통과했다.
+
 ## 화면과 데이터 경로
 
 Grafana는 [통합 관제](http://localhost:13000/d/messaging-overview), [서비스](http://localhost:13000/d/messaging-services), [통신사](http://localhost:13000/d/messaging-providers), [고객](http://localhost:13000/d/messaging-customers), [오류](http://localhost:13000/d/messaging-errors), [인프라](http://localhost:13000/d/messaging-infra), [메시지 추적](http://localhost:13000/d/messaging-trace) 화면을 제공한다. Prometheus는 [19099](http://localhost:19099), 테스트 API는 `127.0.0.1:38080`이다. `trace` 화면에서는 `clientMsgId`로 로그를 찾는다.
