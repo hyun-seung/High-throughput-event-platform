@@ -1,2 +1,2 @@
 messaging.common.dynamodb.DynamoDbAutoConfiguration
-messaging.common.messages.RedisDnsAutoConfiguration
+messaging.common.messages.RedisConnectionAutoConfiguration

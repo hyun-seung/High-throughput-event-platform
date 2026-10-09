@@ -177,14 +177,31 @@ Redis 유실 시험은 **기존 `clientMsgId`의 발송 키 1개 유실**이다.
 bash scripts/monitoring.sh redis-dns-test
 ```
 
-기동된 격리 모니터링 스택에서 단독 실행한다. Redis 컨테이너의 데이터는 유지한 채 해당 프로젝트 네트워크의 빈 IPv4 주소로 옮기고 기존 일반 클라이언트 연결을 종료한다. 호스트명 `redis`와 별칭은 유지한다. AP를 재시작하지 않고 전체 health 11개가 회복되는지, 정상·최종 실패·TCP 전환 3건의 이력·과금 대상·고객 웹훅·원본 정리가 완료되는지 확인한다. `finally`에서 원래 IP와 별칭을 복원하고 health 회복까지 기다린다. 결과와 복구 관측 시간은 `.monitoring/redis-dns-latest.json`에 남긴다. 다른 장애 시험·`up`·트래픽 생성과 함께 실행하지 않는다.
+기동된 격리 모니터링 스택에서 단독 실행한다. 먼저 정상·최종 실패·TCP 전환 3건을 완료해 health용 비동기 연결과 업무용 동기 Redis 연결을 만든다. Redis 컨테이너의 데이터는 유지한 채 해당 프로젝트 네트워크의 빈 IPv4 주소로 옮기고 서버의 기존 일반 클라이언트 연결을 종료한다. 호스트명 `redis`와 별칭은 유지한다. AP 전체 health와 AP별 Redis 연결 수가 회복된 뒤 같은 세 경로를 다시 확인한다. AP 시작 시각을 비교해 재시작이 없었는지 검증하고, `finally`에서 원래 IP·별칭을 복원한 뒤 다시 연결 회복을 확인한다. 메시지 6건의 ORIGIN 삭제는 DynamoDB 일관 읽기로 직접 대조한다. 결과는 `.monitoring/redis-dns-latest.json`에 남긴다. 다른 장애 시험·`up`·트래픽 생성과 함께 실행하지 않는다.
 
-원인은 사용 중인 Lettuce 7.5.2의 Netty DNS 캐시가 DNS 응답 TTL을 그대로 유지하는 데 있었다. TTL 600초의 로컬 DNS 재현에서 서버 주소를 `10.20.0.1`에서 `10.20.0.2`로 바꾼 뒤에도 동일 resolver가 이전 IP를 반환했고 DNS 질의 횟수는 1회였다. IntelliJ 로그포인트로 실제 반환값과 서버 주소를 확인했다.
+주소 변경 지연에는 두 원인이 있었다.
 
-공통 Redis 자동 설정은 주소·CNAME·권한 DNS 서버 캐시의 최대 TTL을 기본 5초로 제한하고 실패한 DNS 조회는 캐시하지 않는다. `messaging.redis.dns.max-ttl-seconds`로 1~300초 범위에서 조정할 수 있다. Lettuce의 네이티브 전송 선택은 유지하며 Redis 의존성이 없는 AP에는 적용되지 않는다. 직접 `ClientResources` 빈을 제공하는 경우에는 해당 빈의 DNS 정책이 우선한다. 캐시 5초는 연결 복구 보장 시간이 아니며 연결 단절 감지·접속 timeout·재시도 간격이 추가될 수 있다. Redis 전체 데이터 유실·복제 failover·Sentinel/Cluster 전환 시험은 아니다.
+- Lettuce 7.5.2의 기본 Netty DNS 캐시는 DNS 응답 TTL을 유지한다. TTL 600초의 로컬 DNS 재현에서 서버 주소를 바꿔도 이전 IP를 반환했고 질의 횟수는 1회였다. IntelliJ 로그포인트로 반환값과 서버 주소를 확인했다.
+- DNS 캐시만 제한한 첫 실제 IP 변경 시험 `1204522b`는 90초 내에 복구되지 않았다. Redis AP 6개가 명령 시간 초과를 반복했고 새 Redis 주소에 업무 연결이 생기지 않았다. 원래 IP 복원 후에는 13.8초에 전체 health가 회복됐다. 별도 재현 테스트의 로그포인트에서 명령 timeout 이후 `openAfterTimeout=true`, `tcpUserTimeout=false`, `NioSocketChannel`을 확인했다. 명령 timeout만으로 기존 TCP 연결이 닫히지는 않았다.
 
-2026-10-09 코드 검증에서는 전체 Java 테스트 209개가 실패·생략 없이 통과했다. DNS 회귀 테스트는 긴 TTL의 이전 주소 유지, 제한 TTL 이후 같은 resolver의 새 주소 조회, 잘못된 TTL 설정 거부를 확인했다. PostgreSQL 이력·과금·웹훅 테스트와 Redis 사용량 제한 테스트도 포함한다.
+공통 `RedisConnectionAutoConfiguration`은 주소·CNAME·권한 DNS 서버 캐시의 최대 TTL을 기본 5초로 제한하고 실패한 DNS 조회는 캐시하지 않는다. Linux에서는 미확인 TCP 전송을 제한하는 `TCP_USER_TIMEOUT`을 기본 10초로 적용한다. 설정은 각각 `messaging.redis.dns.max-ttl-seconds`, `messaging.redis.tcp.user-timeout-seconds`이며 1~300초를 허용한다. 기존 접속 timeout 등 소켓 설정은 유지한다.
 
-**실제 IP 변경 통합 시험은 아직 미완료다.** 새 JAR 반영 중 Docker VM의 Kafka가 `OOMKilled=true`, 종료 코드 137로 중단됐다. Kafka는 재기동 후 healthy로 돌아왔지만 `db-init`과 새 API 컨테이너의 시작 요청이 계속 대기했다. Compose 명령을 중단하고 AP만 `--no-deps`로 기동해도 API 시작이 완료되지 않았다. API는 재생성됐으나 기동을 확인하지 못했고 다른 AP는 이전 JAR로 실행 중이다. Redis IP 변경 명령은 실행하지 않아 원래 주소 `10.254.252.2`를 유지한다. 다른 프로젝트 컨테이너와 볼륨은 변경하지 않았다. Docker 기동 문제를 복구한 뒤 `up`, `redis-dns-test`, `verify`를 순서대로 다시 실행해야 하며, 위의 과거 전체 health 성공 결과를 현재 상태의 검증으로 해석하면 안 된다.
+TCP 제한을 실제 적용하기 위해 Redis를 사용하는 접수 API·발송 전 준비·HTTP Sender·TCP Sender·참조 캐시 AP에 Linux ARM64와 x86_64용 Netty epoll 라이브러리를 포함했다. Redis가 없는 AP에는 추가하지 않았다. macOS의 NIO 실행에는 이 Linux TCP 제한이 적용되지 않는다. 직접 `ClientResources` 빈을 제공하면 공통 자동 설정이 적용되지 않으므로 해당 빈과 클라이언트 설정에서 연결 정책을 관리해야 한다. 네이티브 전송과 TCP 제한의 적용 조건은 [Lettuce 운영 안내](https://redis.io/docs/latest/develop/clients/lettuce/produsage/)를 참고한다.
 
-같은 날 후속 복구에서 `docker desktop restart --timeout 180`도 종료 단계의 시간 초과로 실패했다. 이후 Desktop 상태는 `stopping`이며 `docker ps` 조회도 15초 내에 응답하지 않았다. 현재 AP와 다른 프로젝트의 실행 상태를 확인할 수 없으므로 정상 가동으로 간주하지 않는다. 재시작 전 실행 목록은 메시징 컨테이너 22개와 `rcs` 컨테이너 6개였다. 강제 종료·재기동은 아직 수행하지 않았으며 전체 프로젝트에 영향을 주는 복구 작업이다. 복구 후 기존 실행 목록을 대조하고, 메시징 AP 갱신 및 위의 두 검증 명령을 완료해야 한다. Redis IP 변경 시험과 복구 시간 측정은 여전히 미실행 상태다.
+2026-10-09 검증 `runId=690bce4b`가 Linux ARM64에서 통과했다. x86_64는 네이티브 라이브러리의 실행 JAR 포함까지 확인했으며 이 환경에서 실행 검증한 것은 아니다.
+
+| 확인 항목 | 결과 |
+|---|---|
+| Redis 주소 | `10.254.252.18` → `10.254.252.254` → `10.254.252.18` |
+| 새 주소에서 연결 회복 | 20.38초, Redis AP 6개의 연결 10개·전체 AP health 11개 정상 |
+| 원래 주소 복원 후 회복 | 18.67초, 동일 연결 수·health 정상 |
+| AP 재시작 | 없음 |
+| 변경 전·후 메시지 | 각각 정상·최종 실패·TCP 전환 3건 완료 |
+| 최종 이력·과금 대상·고객 결과·ORIGIN 삭제 | 6건·2건·6건·6건 |
+| 후속 관측 검증 | AP health 11개, Prometheus 대상 17개, Grafana 화면 7개 정상 |
+
+회복 시간은 주소 이동 명령이 끝난 뒤 health와 연결 수를 함께 관측한 값이다. DNS 5초와 TCP 제한 10초를 전체 복구 시간의 보장으로 해석하지 않는다. Redis 전체 데이터 유실, 복제 failover, Sentinel/Cluster 전환, 목표 처리량은 검증 범위에 포함하지 않는다.
+
+전체 Java 테스트 212개가 실패·생략 없이 통과했다. DNS 주소 갱신, 명령 timeout 이후 연결 유지 재현, TCP 제한 적용 시 기존 연결 설정 보존, 잘못된 설정 거부와 기존 PostgreSQL·Redis 회귀 테스트를 포함한다.
+
+앞서 JAR 반영 중 발생한 Docker Kafka OOM 종료와 Desktop 종료 대기는 사용자 승인 후 Docker를 다시 기동해 복구했다. 기존 `rcs` 컨테이너 6개를 재기동하고 메시징 AP를 새 JAR로 갱신했다. 현재 위의 IP 변경·원복·전체 관측 검증까지 완료했으며, 기동 문제로 통합 시험이 보류됐던 상태는 해소됐다.

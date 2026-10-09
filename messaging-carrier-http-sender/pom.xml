@@ -10,6 +10,16 @@
     </parent>
     <artifactId>messaging-carrier-http-sender</artifactId>
     <dependencies>
+        <!-- Linux TCP_USER_TIMEOUT for Redis endpoint replacement, one JAR for both deployment architectures. -->
+        <dependency>
+            <groupId>io.netty</groupId><artifactId>netty-transport-native-epoll</artifactId>
+            <classifier>linux-aarch_64</classifier><scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.netty</groupId><artifactId>netty-transport-native-epoll</artifactId>
+            <classifier>linux-x86_64</classifier><scope>runtime</scope>
+        </dependency>
+
         <dependency><groupId>org.side.project.messaging</groupId><artifactId>messaging-common</artifactId><version>${project.version}</version></dependency>
         <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-data-redis</artifactId></dependency>
         <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-kafka</artifactId></dependency>

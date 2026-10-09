@@ -14,6 +14,16 @@
     <artifactId>messaging-api</artifactId>
 
     <dependencies>
+        <!-- Linux TCP_USER_TIMEOUT for Redis endpoint replacement, one JAR for both deployment architectures. -->
+        <dependency>
+            <groupId>io.netty</groupId><artifactId>netty-transport-native-epoll</artifactId>
+            <classifier>linux-aarch_64</classifier><scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.netty</groupId><artifactId>netty-transport-native-epoll</artifactId>
+            <classifier>linux-x86_64</classifier><scope>runtime</scope>
+        </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>

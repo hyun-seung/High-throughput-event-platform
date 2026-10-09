@@ -34,7 +34,7 @@ class RedisDnsResolutionTest {
     @Test
     void boundedResolverRefreshesChangedAddressWithoutRestart() throws Exception {
         try (var dns = new ChangingDns(); var resolvers = new DnsAddressResolverGroup(
-                RedisDnsAutoConfiguration.boundCache(dns.builder(), 1))) {
+                RedisConnectionAutoConfiguration.boundCache(dns.builder(), 1))) {
             var resolver = resolvers.getResolver(dns.loops.next());
             var target = InetSocketAddress.createUnresolved("redis.test.invalid", 6379);
             var first = resolver.resolve(target).get(3, TimeUnit.SECONDS);
@@ -51,9 +51,9 @@ class RedisDnsResolutionTest {
     @Test
     void invalidCacheLifetimeFailsAtStartup() {
         assertThrows(IllegalArgumentException.class,
-                () -> RedisDnsAutoConfiguration.boundCache(new DnsNameResolverBuilder(), 0));
+                () -> RedisConnectionAutoConfiguration.boundCache(new DnsNameResolverBuilder(), 0));
         assertThrows(IllegalArgumentException.class,
-                () -> RedisDnsAutoConfiguration.boundCache(new DnsNameResolverBuilder(), 301));
+                () -> RedisConnectionAutoConfiguration.boundCache(new DnsNameResolverBuilder(), 301));
     }
 
     @Test
