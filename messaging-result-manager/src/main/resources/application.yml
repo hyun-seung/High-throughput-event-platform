@@ -7,6 +7,12 @@ spring:
     name: messaging-result-manager
   lifecycle:
     timeout-per-shutdown-phase: 30s
+  task:
+    scheduling:
+      # Inbox, outbox, follow-up, expiry and optional backfill must not queue behind each other.
+      pool:
+        size: 5
+      thread-name-prefix: result-scheduling-
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     listener:

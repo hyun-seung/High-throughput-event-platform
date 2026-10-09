@@ -186,6 +186,34 @@ DYNAMODB_TEST_ENDPOINT=http://127.0.0.1:38000 \
 
 디버거 근거·테스트 로그·변경 전 JAR 목록과 전후 비교 자료는 `.monitoring/pre-send-performance/`에 보존한다. 업무 정책·메시지 규격·토픽·실행 AP 및 모듈 수는 바꾸지 않았다.
 
+### 결과 Manager 예약 작업의 실행 대기 분리 — 2026-10-10
+
+실제 `PendingResultDispatcher`와 `PrimaryDecisionOutboxDispatcher`를 등록한 Spring 컨텍스트로, inbox의 DynamoDB 조회를 보류했을 때 outbox가 진행하는지 재현했다. 기존 AP 설정을 읽은 디버거에서 스케줄러 풀 크기 1과 outbox 미진행을 확인했다. 이는 mock 저장소로 실행 순서를 통제한 재현이며 실제 DynamoDB의 응답 시간을 측정한 결과는 아니다.
+
+결과 Manager의 `spring.task.scheduling.pool.size`를 5로 명시했다. inbox 결과 판단·outbox 발행·후속 HTTP 발행·1차 만료·선택적으로 활성화하는 만료 backfill, 총 5개 예약 작업이 다른 작업의 실행 종료를 기다리지 않도록 한다. 각 작업은 기존 fixed-delay와 동기화된 poll을 유지해 동일 작업을 중첩 실행하지 않는다. 기본 5초 조회 간격·1분 후 재시도·최초 이후 3회 재시도·만료 정책과 DynamoDB 조건부 전이는 유지했다. AP·모듈·토픽 추가는 없다.
+
+공통 31개·결과 Manager 70개, 총 101개 Java 테스트가 통과했다. 새 Spring 컨텍스트 시험은 운영 YAML과 실제 inbox/outbox 예약 메서드를 사용해, 한쪽 저장소 조회가 기다리는 동안 다른 쪽이 진행하는지를 양방향으로 확인한다. 같은 poll의 중첩 실행도 발생하지 않았다. 스레드 풀은 AP 내부 실행 대기를 분리하며 공유 DynamoDB·Kafka의 자원 경합까지 제거하지는 않는다.
+
+변경 전 `8a73646c`와 변경 후 `791e43bb`를 20 TPS·60초·정상 80%/1차 실패 10%/TCP 성공 10%·대조 대기 300초로 측정했다. 두 실행 모두 1,200건 접수·이력·고객 통지·원본 정리, 과금 대상 960건과 업체 HTTP 요청 1,200회를 대조했다. 접수 오류·도구 미발송은 없었고 전체 AP health와 새 lag 0 표본도 확인했다. 실행 JAR 목록의 차이는 결과 Manager 한 개였다.
+
+| p95 구간 | 변경 전 | 변경 후 |
+|---|---:|---:|
+| 접수 → 첫 업체 HTTP 수신 | 26.626초 | 23.167초 |
+| 업체 HTTP 수신 → 최종 판단 | 61.480초 | 44.939초 |
+| 최종 판단 → SQL 이력 | 34.850초 | 28.198초 |
+| SQL 이력 → DynamoDB 정리 | 33.437초 | 33.082초 |
+| 접수 → 전체 완료 | 114.096초 | 81.100초 |
+
+구간별 p95는 메시지별 시각 차이의 분포이고 합산할 수 없다. 전후 각 1회의 개발 환경 관측이며, 저장소 경합·스케줄 시작 시점 등의 변동을 포함한다. 스케줄러 대기가 분리됐다는 회귀 시험과 별개로 이 수치를 운영 성능 개선율로 보장하지 않는다. HTTP Sender 코드는 이번에 변경하지 않았고, Sender 저장소 대기·결과 Manager의 페이지 처리 시간·완료 정리 지연은 후속 진단 범위다.
+
+배포 후 Prometheus의 `executor_pool_core_threads{job="result-manager",name="taskScheduler"}` 값도 5로 확인했다. `applicationTaskExecutor`는 별도 실행기이므로 이 지표를 볼 때 `name`을 구분한다.
+
+정책 시험 `cebfee86`의 13개 사례도 통과했다. HTTP 응답·실패 웹훅 각각의 통신사 이동과 TPS 재시도, 5초 무응답, 최초 이후 재시도 3회 소진 및 TCP 전환을 확인했다. 재발송 요청 간격은 60.396~70.795초였고 이력·과금·고객 통지·원본 정리가 일치했다. 최종 처리 후 70초 추가 관찰에서도 초과 발송이 없었다.
+
+웹훅·SQL 장애 시험 `6fa95788`도 통과했다. PostgreSQL 중단 중 원본 100건·완료 lag 100건을 보존했고, 복구 후 조기 웹훅 1건을 포함한 이력·고객 통지·원본 삭제 각 101건과 과금 대상 51건이 일치했다. 늦은 중복·상충·미등록 웹훅을 처리한 뒤 70초 동안 추가 발송이 없었고 완료 lag은 0이었다.
+
+검증 로그·배포 JAR 목록·전후 비교는 `.monitoring/result-scheduling/`에 보존한다.
+
 ## 화면과 데이터 경로
 
 Grafana는 [통합 관제](http://localhost:13000/d/messaging-overview), [서비스](http://localhost:13000/d/messaging-services), [통신사](http://localhost:13000/d/messaging-providers), [고객](http://localhost:13000/d/messaging-customers), [오류](http://localhost:13000/d/messaging-errors), [인프라](http://localhost:13000/d/messaging-infra), [메시지 추적](http://localhost:13000/d/messaging-trace) 화면을 제공한다. Prometheus는 [19099](http://localhost:19099), 테스트 API는 `127.0.0.1:38080`이다. `trace` 화면에서는 `clientMsgId`로 로그를 찾는다.
