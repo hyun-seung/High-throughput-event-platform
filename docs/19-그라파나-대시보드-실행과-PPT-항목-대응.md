@@ -27,6 +27,8 @@ bash scripts/monitoring.sh stop
 
 `up`은 AP를 순서대로 띄우며 각 관리 지표가 수집될 때까지 기다린다. Prometheus와 Alloy도 재시작해 변경된 지표·로그 수집 설정을 반영한다. 로컬 Compose에서는 JVM 메모리와 Kafka 소비자 병렬도를 낮춰 기동한다. 실제 처리량 측정에는 이 로컬 설정을 그대로 사용하지 않는다.
 
+`verify`의 구조화 로그 존재 확인은 최근 24시간을 조회한다. 접수 API와 발행 복구 AP가 조용한 동안 로그를 계속 생성한다고 가정하지 않는다. `.monitoring/verification.json`의 `logEvidence`에 마지막 로그 나이와 최근 1시간 기록 여부를 남기며 AP health·Prometheus 수집 상태는 별도로 검사한다. 오래된 로그를 찾은 것만으로 현재 로그 전송 지연까지 검증한 것은 아니다. 24시간 내 기록이 전혀 없거나 조회할 수 없으면 로그 증거 부족으로 검증에 실패한다.
+
 ## 성능 측정 도구
 
 ```bash

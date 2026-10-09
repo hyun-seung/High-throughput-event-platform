@@ -185,20 +185,27 @@ def verify() -> None:
             request_json(f"http://127.0.0.1:13000/api/dashboards/uid/messaging-{name}")
         except Exception as failure:
             errors.append(f"Grafana dashboard {name}: {failure}")
+    log_evidence = {}
     for service in ("api", "publication-recovery"):
         log_found = False
         for _ in range(15):
             try:
                 log_query = request_json("http://127.0.0.1:13000/api/datasources/proxy/uid/platform-loki/loki/api/v1/query_range?" +
-                                         urlencode({"query": '{service="' + service + '"}', "limit": 1, "since": "1h"}))
+                                         urlencode({"query": '{service="' + service + '"}', "limit": 1,
+                                                    "since": "24h", "direction": "backward"}))
                 if log_query["data"]["result"]:
+                    timestamps = [int(value[0]) / 1e9 for stream in log_query["data"]["result"]
+                                  for value in stream["values"]]
+                    age = max(0, time.time() - max(timestamps))
+                    log_evidence[service] = {"lookbackHours": 24, "lastLogAgeSeconds": round(age, 1),
+                                             "seenWithinLastHour": age <= 3600}
                     log_found = True
                     break
             except Exception:
                 pass
             time.sleep(2)
         if not log_found:
-            errors.append(f"{service} structured log was not found in Loki")
+            errors.append(f"{service} structured log was not found in Loki within 24 hours")
     health = {}
     try:
         health = application_health()
@@ -207,7 +214,8 @@ def verify() -> None:
                 errors.append(f"{service} application health: {health.get(service, 'missing')}")
     except Exception as failure:
         errors.append(f"Application health check unavailable: {failure}")
-    report = {"targets": observed, "applicationHealth": health, "dashboards": boards, "errors": errors, "pass": not errors}
+    report = {"targets": observed, "applicationHealth": health, "dashboards": boards,
+              "logEvidence": log_evidence, "errors": errors, "pass": not errors}
     destination = ROOT / ".monitoring/verification.json"
     destination.parent.mkdir(exist_ok=True)
     destination.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
