@@ -161,7 +161,7 @@ bash scripts/monitoring.sh storage-test
 
 Redis 유실 시험은 **기존 `clientMsgId`의 발송 키 1개 유실**이다. Redis 전체 초기화나 고객의 접수 중복 키 유실 뒤 새 API 요청을 보내는 경우까지 검증한 것은 아니다. DynamoDB 시험도 **HTTP 관찰이 저장된 뒤의 연결 중단**과 **완료 AP의 정리 연결 실패**를 다룬다. 업체 호출 직후 HTTP 관찰 저장 전에 끊기는 경우, 전체 데이터 유실, DynamoDB TTL의 실제 만료 삭제는 별도 검증 범위다.
 
-로컬 Redis 응답 중단 시험은 Sender를 잠시 pause해 명령을 대기시킨 다음 Redis를 pause하고 Sender를 재개한다. 두 컨테이너를 stop/start하면 Docker가 IP를 서로 바꿔 할당할 수 있고, 기존 AP가 캐시한 이전 Redis 주소로 재접속을 계속 시도하는 현상이 초기 시험에서 관찰됐다. 주소 변경과 응답 중단을 구분하기 위해 이 시험은 네트워크 주소를 유지한다. Redis 엔드포인트 주소 변경에 따른 DNS 재조회·재연결은 별도 검증 범위다.
+로컬 Redis 응답 중단 시험은 Sender를 잠시 pause해 명령을 대기시킨 다음 Redis를 pause하고 Sender를 재개한다. 두 컨테이너를 stop/start하면 Docker가 IP를 서로 바꿔 할당할 수 있고, 기존 AP가 캐시한 이전 Redis 주소로 재접속을 계속 시도하는 현상이 초기 시험에서 관찰됐다. 주소 변경과 응답 중단을 구분하기 위해 이 시험은 네트워크 주소를 유지한다. Redis 엔드포인트 주소 변경은 아래 `redis-dns-test`에서 따로 검증한다.
 
 2026-10-08 검증 `runId=5eab0a20`의 네 시나리오가 통과했다. Redis 키 유실·정리 이후 명령을 총 4회 재발행해도 해당 메시지의 외부 호출은 1회였다. Redis 응답 중단 중 호출 0회·Sender lag 1, DynamoDB 중단 중 Sender/결과 lag 각 1·최종 이력 0건을 확인했다. 정리 연결 실패는 `PENDING`, 시도 1회, `SdkClientException`으로 기록됐고 과금 대상과 ORIGIN은 보존됐다.
 
@@ -170,3 +170,19 @@ Redis 유실 시험은 **기존 `clientMsgId`의 발송 키 1개 유실**이다.
 추가 전체 health 점검에서 Redis를 사용하지 않는 웹훅 수신·결과 Manager·완료 Manager·고객 웹훅 Sender가 공통 모듈의 전이 의존성으로 `localhost:6379`에 연결하며 503을 반환하는 문제를 발견했다. 네 AP에서 미사용 Redis 의존성을 제외하고 실행 JAR에서도 제거됐는지 확인했다. 관련 Java 테스트 116개와 수정 후 정상·최종 실패·TCP 전환의 세 경로가 통과했다.
 
 `verify`는 이제 mock 컨테이너의 내부 네트워크에서 AP 11개의 `/actuator/health`를 조회한다. 접수 API는 로컬 JWT로 인증한다. 하나라도 전체 상태가 `UP`이 아니면 검증에 실패하고 `.monitoring/verification.json`의 `applicationHealth`에 기록한다. 수정 후 AP 11개 전체가 `UP`이며 Prometheus 대상 17개·Grafana 화면 7개를 포함한 관측 검증이 통과했다. 지표 수집 가능 여부와 AP 전체 health를 함께 확인해야 한다.
+
+## Redis 주소 변경 후 AP 재시작 없는 복구
+
+```bash
+bash scripts/monitoring.sh redis-dns-test
+```
+
+기동된 격리 모니터링 스택에서 단독 실행한다. Redis 컨테이너의 데이터는 유지한 채 해당 프로젝트 네트워크의 빈 IPv4 주소로 옮기고 기존 일반 클라이언트 연결을 종료한다. 호스트명 `redis`와 별칭은 유지한다. AP를 재시작하지 않고 전체 health 11개가 회복되는지, 정상·최종 실패·TCP 전환 3건의 이력·과금 대상·고객 웹훅·원본 정리가 완료되는지 확인한다. `finally`에서 원래 IP와 별칭을 복원하고 health 회복까지 기다린다. 결과와 복구 관측 시간은 `.monitoring/redis-dns-latest.json`에 남긴다. 다른 장애 시험·`up`·트래픽 생성과 함께 실행하지 않는다.
+
+원인은 사용 중인 Lettuce 7.5.2의 Netty DNS 캐시가 DNS 응답 TTL을 그대로 유지하는 데 있었다. TTL 600초의 로컬 DNS 재현에서 서버 주소를 `10.20.0.1`에서 `10.20.0.2`로 바꾼 뒤에도 동일 resolver가 이전 IP를 반환했고 DNS 질의 횟수는 1회였다. IntelliJ 로그포인트로 실제 반환값과 서버 주소를 확인했다.
+
+공통 Redis 자동 설정은 주소·CNAME·권한 DNS 서버 캐시의 최대 TTL을 기본 5초로 제한하고 실패한 DNS 조회는 캐시하지 않는다. `messaging.redis.dns.max-ttl-seconds`로 1~300초 범위에서 조정할 수 있다. Lettuce의 네이티브 전송 선택은 유지하며 Redis 의존성이 없는 AP에는 적용되지 않는다. 직접 `ClientResources` 빈을 제공하는 경우에는 해당 빈의 DNS 정책이 우선한다. 캐시 5초는 연결 복구 보장 시간이 아니며 연결 단절 감지·접속 timeout·재시도 간격이 추가될 수 있다. Redis 전체 데이터 유실·복제 failover·Sentinel/Cluster 전환 시험은 아니다.
+
+2026-10-09 코드 검증에서는 전체 Java 테스트 209개가 실패·생략 없이 통과했다. DNS 회귀 테스트는 긴 TTL의 이전 주소 유지, 제한 TTL 이후 같은 resolver의 새 주소 조회, 잘못된 TTL 설정 거부를 확인했다. PostgreSQL 이력·과금·웹훅 테스트와 Redis 사용량 제한 테스트도 포함한다.
+
+**실제 IP 변경 통합 시험은 아직 미완료다.** 새 JAR 반영 중 Docker VM의 Kafka가 `OOMKilled=true`, 종료 코드 137로 중단됐다. Kafka는 재기동 후 healthy로 돌아왔지만 `db-init`과 새 API 컨테이너의 시작 요청이 계속 대기했다. Compose 명령을 중단하고 AP만 `--no-deps`로 기동해도 API 시작이 완료되지 않았다. API는 재생성됐으나 기동을 확인하지 못했고 다른 AP는 이전 JAR로 실행 중이다. Redis IP 변경 명령은 실행하지 않아 원래 주소 `10.254.252.2`를 유지한다. 다른 프로젝트 컨테이너와 볼륨은 변경하지 않았다. Docker 기동 문제를 복구한 뒤 `up`, `redis-dns-test`, `verify`를 순서대로 다시 실행해야 하며, 위의 과거 전체 health 성공 결과를 현재 상태의 검증으로 해석하면 안 된다.
