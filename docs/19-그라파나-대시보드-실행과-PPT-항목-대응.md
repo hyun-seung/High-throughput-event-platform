@@ -93,6 +93,27 @@ bash scripts/monitoring.sh verify
 
 복구 AP 추가 후 Prometheus 대상 17개와 Grafana 화면 7개가 통과했으며 API·복구 AP의 구조화 로그를 Loki에서 확인했다. 장애 시험 뒤 API의 정상 설정 복원과 복구 AP의 전체 상태 `UP`도 확인했다.
 
+## Kafka 브로커 중단·복구 검증
+
+```bash
+bash scripts/monitoring.sh kafka-test
+bash scripts/monitoring.sh verify
+```
+
+`kafka-test`는 실행 중인 `platform-messaging-monitoring`의 Kafka 컨테이너를 `pause`해 응답을 중단한다. AP나 브로커의 주소·데이터는 변경하지 않는다. 실행 전에 전체 AP health와 주요 소비 그룹의 lag 0을 확인하고, 로컬 업체 mock만 재시작해 시험용 응답 제어를 반영한다. 다른 장애 시험·`up`·트래픽 생성과 함께 실행하지 않는다. 예외가 발생해도 `finally`에서 Kafka를 `unpause`하고 mock 응답 제어 파일을 제거한다.
+
+| 경계 | 장애 중 확인 | 복구 후 확인 |
+|---|---|---|
+| 신규 접수 | `RECEIVED` 반환, ORIGIN·발행 복구 인덱스 보존, 최초 Kafka 발행 확인 실패 로그, 업체 호출 0건 | 고객 재접수 없이 성공·과금 대상·고객 웹훅 각 1건 |
+| HTTP 실패 결과 | mock이 Kafka 중단 후 HTTP 400·`61001` 반환, STEP에 `OBSERVED`·`publish_state=PENDING` 유지 | HTTP 재호출 없이 최종 실패 1건, 과금 대상 0건 |
+| 업체 성공 웹훅 | HTTP 200 기록 후 웹훅 제출, 수신 API가 `503 MESSAGE_WEBHOOK_UNCONFIRMED` 반환 | 동일 결과 재전송을 202로 접수, 성공·과금 대상·고객 웹훅 각 1건 |
+
+발행 타임아웃은 미발행 확정이 아니다. 일시 중단된 브로커가 복구 후 이미 전송된 요청을 처리할 수도 있으므로, 이 시험은 복구 AP 로그를 필수 조건으로 삼지 않는다. 실제 로그 유무는 `recoveryPublicationLogged`에 기록한다. 복구 AP의 재발행 경로 자체는 앞 절의 `recovery-test`에서 별도로 검증한다.
+
+2026-10-10 `runId=23f4d6b8`은 브로커를 23.03초 중단한 상태에서 세 경계를 확인했다. 웹훅의 503 응답은 10.11초에 도착했고, 장애 중 최종 이력은 0건이었다. 복구 후 최종 이력 3건·과금 대상 2건·고객 결과 3건·업체 HTTP 호출 3건·ORIGIN 삭제 3건을 확인했다. 추가로 70초 관측해 중복 발송·과금·고객 결과가 없었고, 주요 소비 그룹 5개의 lag는 모두 0이었다. AP 11개는 재시작 없이 복구 후 전체 health `UP`을 확인했다. 상세 ID·관찰 결과·복원 여부는 `.monitoring/kafka-latest.json`에 남는다.
+
+이는 단일 로컬 브로커의 일시 중단·재개 시험이다. 브로커 프로세스 강제 종료, 디스크 유실, 다중 브로커 리더 전환, HTTP 응답 관찰을 저장하기 전 Sender 종료까지 검증한 결과는 아니다.
+
 ## 통신사 이동·재시도 정책 검증
 
 ```bash

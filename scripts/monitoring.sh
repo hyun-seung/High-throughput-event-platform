@@ -55,7 +55,8 @@ case "${1:-help}" in
   webhook-test) exec python3 scripts/monitoring/webhook_flow.py ;;
   storage-test) exec python3 scripts/monitoring/storage_flow.py ;;
   redis-dns-test) exec python3 scripts/monitoring/redis_dns_flow.py ;;
+  kafka-test) exec python3 scripts/monitoring/kafka_flow.py ;;
   diagnose) exec python3 scripts/monitoring/main_flow.py diagnose ;;
   recovery-test) shift; exec python3 scripts/monitoring/main_flow.py recovery-test "$@" ;;
-  *) echo 'Usage: bash scripts/monitoring.sh <up|status|stop|logs SERVICE|demo|verify|diagnose|recovery-test|policy-test|webhook-test|storage-test|redis-dns-test>' ;;
+  *) echo 'Usage: bash scripts/monitoring.sh <up|status|stop|logs SERVICE|demo|verify|diagnose|recovery-test|policy-test|webhook-test|storage-test|redis-dns-test|kafka-test>' ;;
 esac

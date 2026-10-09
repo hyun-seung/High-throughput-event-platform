@@ -18,7 +18,7 @@ MAX_BODY_BYTES = 262144
 SCENARIOS = ("success", "carrier-mismatch", "carrier-exhausted", "tps-retry", "tps-exhausted",
              "no-response-retry", "no-response-exhausted", "secondary-success", "secondary-failure",
              "webhook-carrier-mismatch", "webhook-carrier-exhausted", "webhook-tps-retry", "webhook-tps-exhausted",
-             "manual-webhook", "webhook-before-response")
+             "manual-webhook", "webhook-before-response", "held-http-failure")
 
 
 class Events:
@@ -84,6 +84,16 @@ def handler_for(kind: str, events: Events, webhook_base_url: str, secret: str,
                     counts[client_msg_id] = invocation
                 events.write("carrier_request", clientMsgId=client_msg_id, carrier=carrier,
                              invocation=invocation, receivedAt=time.time(), scenario=selected, request=payload)
+                if selected == "held-http-failure":
+                    # Local fault test releases this reply only after pausing Kafka.
+                    release = events.path.parent / "http-failure-release"
+                    deadline = time.monotonic() + 4
+                    while not (release.exists() and release.read_text() == client_msg_id):
+                        if time.monotonic() >= deadline:
+                            events.write("carrier_gate_timeout", clientMsgId=client_msg_id)
+                            self.send_error(500)
+                            return
+                        time.sleep(0.02)
                 policy = selected.removeprefix("webhook-")
                 no_response = carrier == "SKT" and (
                     policy == "no-response-exhausted"
@@ -97,7 +107,8 @@ def handler_for(kind: str, events: Events, webhook_base_url: str, secret: str,
                 tps = carrier == "SKT" and (policy == "tps-exhausted"
                     or (policy == "tps-retry" and invocation == 1))
                 monitor_failure = payload.get("payload", {}).get("text") == "monitor-force-failure"
-                general_failure = carrier == "SKT" and (policy.startswith("secondary-") or monitor_failure)
+                general_failure = carrier == "SKT" and (policy.startswith("secondary-") or monitor_failure
+                                                       or selected == "held-http-failure")
                 webhook_failure = selected.startswith("webhook-") and (mismatch or tps)
                 if (mismatch or tps or general_failure) and not webhook_failure:
                     self.send_response(400)
