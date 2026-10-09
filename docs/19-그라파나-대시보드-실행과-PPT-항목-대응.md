@@ -61,6 +61,42 @@ python3 -m unittest discover -s scripts/monitoring -p test_performance_flow.py
 
 2026-10-10 최종 도구 검증 `runId=c8755276`은 5 TPS·20초의 혼합 100건을 모두 접수했다. 정상 1차 성공 80건·1차 실패 10건·TCP 성공 10건의 최종 이력·고객 통지·원본 삭제 100건과 과금 대상 80건이 일치했다. HTTP 오류와 도구 미발송은 0건이었다. 접수 p95/p99는 230.576/595.039ms, 정리까지 포함한 전체 완료 p95/p99는 21.014/22.766초였다. 부하 시간 내 완료 TPS는 1.30, 남은 처리까지 포함한 31.714초 구간의 평균 완료 TPS는 3.153이었다. 이는 시작·종료 효과를 포함한 짧은 실행이며 지속 처리량이 아니다. 필수 지표 10개 표본 모두 유효했고, 관측 최대 Kafka lag 합계는 4였다. 집계 회귀 검사 10개가 통과했다.
 
+### 단계별 혼합 부하 기준선 — 2026-10-10
+
+동일한 실행 JAR·설정과 깨끗한 작업 트리(`969516c`)에서 정상 80%·1차 최종 실패 10%·TCP 성공 10%로 측정했다. 각 단계는 60초 동안 요청하고 전체 완료·원본 삭제·새 Kafka lag 0 표본을 확인한 뒤 다음 단계를 시작했다. 실제 실행 순서는 **5 → 20 → 10 TPS**다. 20 TPS에서 지연이 크게 늘어 계획했던 50 TPS 증가는 생략하고 10 TPS로 범위를 좁혔다. 단계마다 한 번 측정했으며 별도 워밍업·반복 측정은 하지 않았다.
+
+```bash
+bash scripts/monitoring.sh diagnose
+bash scripts/monitoring.sh performance --rate 5 --seconds 60 --failure-percent 10 --secondary-percent 10
+bash scripts/monitoring.sh performance --rate 20 --seconds 60 --failure-percent 10 --secondary-percent 10
+bash scripts/monitoring.sh performance --rate 10 --seconds 60 --failure-percent 10 --secondary-percent 10
+bash scripts/monitoring.sh verify
+```
+
+Docker 할당은 10 CPU·7.75 GiB, 실행 컨테이너는 다른 프로젝트를 포함해 29개였다. AP는 소비 병렬도 1, `ActiveProcessorCount=2`, 최대 JVM 힙 320MiB의 로컬 설정을 유지했다. 동일 고객 1명·동일 수신 번호의 SKT 경로를 사용하고 실패 사례 일부만 TCP로 전환했다. 따라서 3사 균등 분산이나 다수 고객 부하는 검증하지 않았다. 업체 성공 웹훅은 mock이 약 0.5초 뒤 보내며 실제 업체 지연 분포와 다르다.
+
+| 목표 TPS / runId | 접수·완료 / 과금 대상 | 접수 p95 / p99 | 전체 완료 p95 / p99 | 관측 최대 lag 합계 |
+|---|---:|---:|---:|---:|
+| 5 / `5bf22442` | 300 / 240 | 39.455 / 65.754ms | 15.533 / 17.919초 | 5 |
+| 10 / `5670ef58` | 600 / 480 | 39.092 / 80.253ms | 25.310 / 28.732초 | 1 |
+| 20 / `3d8b459a` | 1,200 / 960 | 152.486 / 371.908ms | 102.815 / 110.566초 | 256 |
+
+총 2,100건 모두 접수·최종 이력·고객 수신 확인·ORIGIN 삭제를 확인했고 과금 대상은 1,680건이었다. HTTP 오류·발행 여부 불명확 응답·도구 미발송은 모두 0건이었다. 필수 지표 표본은 각각 18·19·35개로 모두 유효했다. 시험 후 AP 11개 health, Prometheus 대상 17개, Grafana 대시보드 7개와 로그 조회가 통과했다. 이 표의 완료는 고객 통지뿐 아니라 DynamoDB 정리 기록까지 포함한다.
+
+| 목표 TPS | 부하 60초 내 완료 TPS | 남은 처리 포함 평균 완료 TPS / 구간 | 인입→판단 p95 | 판단→이력 p95 | 이력→정리 p95 |
+|---|---:|---:|---:|---:|---:|
+| 5 | 4.167 | 4.200 / 71.432초 | 6.295초 | 5.821초 | 4.765초 |
+| 10 | 6.383 | 7.952 / 75.456초 | 10.085초 | 7.225초 | 10.284초 |
+| 20 | 3.050 | 7.661 / 156.636초 | 50.951초 | 17.672초 | 45.953초 |
+
+평균 완료 TPS는 시작·종료 효과를 포함하므로 지속 처리 한계가 아니다. 20 TPS에서 60초 내 1,198건이 202를 받았고 나머지 2건의 응답은 60초 직후 도착했다. 전체 1,200건은 모두 접수됐다. 구간별 p95는 각 메시지의 두 시각 차이를 계산한 값이며 서로 더해 전체 p95를 구할 수 없다.
+
+20 TPS의 그룹별 최대 lag는 PRE-SEND-MANAGER 207, SKT Sender 52, 결과 관리자 11이었다. 그룹별 최대값은 서로 다른 시각의 값이므로 합계 피크 256과 일치할 필요가 없다. 완료 토픽 lag는 최대 1이었지만 이력→정리 p95는 약 46초였다. **Kafka lag만으로 완료 지연을 판단할 수 없으며 DB에 남은 후속 처리도 함께 봐야 한다.** 10 TPS도 전체 완료 p95가 약 25초여서 성능 합격으로 보지 않는다.
+
+다음 진단은 PRE-SEND-MANAGER의 메시지당 처리 시간과 저장소 대기, 결과 예약 발행과 완료 정리 작업의 배치 처리 시간·대기 건수를 우선 확인한다. 코드 설정에는 결과 outbox와 완료 cleanup의 5초 조회 주기·100건 페이지가 있지만, 이번 표본만으로 특정 설정을 원인으로 확정하지 않는다. AP CPU·힙 표본과 시험 전후 VM pressure만으로 부하 중 저장소 I/O·스왑 영향을 배제할 수도 없다. 원인 증거를 확보한 뒤 한 번에 한 요소를 수정하고 같은 10/20 TPS에서 비교하는 것이 다음 작업이다.
+
+원본은 `.monitoring/performance/<runId>/`에 보존했다. 비교 집계는 `.monitoring/performance-baseline/summary.json`, 실행 로그와 전후 자원 진단은 같은 `performance-baseline/` 디렉터리에 있다. 로컬 산출물은 Git에서 제외되며 위 표와 재현 명령은 이 문서로 관리한다. 운영 SLA·최대 처리량은 미판정이며 30~60분 지속 시험, 순간 증가, 부하 중 장애 복구는 아직 남아 있다.
+
 ## 화면과 데이터 경로
 
 Grafana는 [통합 관제](http://localhost:13000/d/messaging-overview), [서비스](http://localhost:13000/d/messaging-services), [통신사](http://localhost:13000/d/messaging-providers), [고객](http://localhost:13000/d/messaging-customers), [오류](http://localhost:13000/d/messaging-errors), [인프라](http://localhost:13000/d/messaging-infra), [메시지 추적](http://localhost:13000/d/messaging-trace) 화면을 제공한다. Prometheus는 [19099](http://localhost:19099), 테스트 API는 `127.0.0.1:38080`이다. `trace` 화면에서는 `clientMsgId`로 로그를 찾는다.
