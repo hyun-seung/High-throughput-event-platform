@@ -24,12 +24,11 @@ if [[ "$mode" == integration ]]; then
   cleanup() {
     status=$?
     trap - EXIT
-    # Remove only this test project's containers/network to avoid exhausting Docker address pools.
-    # No --volumes: named data volumes remain available with the execution evidence.
-    if "${compose[@]}" down --timeout 20 >> "$evidence/cleanup.log" 2>&1; then
-      printf '{"containersStopped":true,"containersRemoved":true,"networkRemoved":true,"volumesRetained":true}\n' > "$evidence/cleanup.json"
+    # This uniquely named test project is disposable; logs and reports stay in the evidence directory.
+    if "${compose[@]}" down --timeout 20 --volumes >> "$evidence/cleanup.log" 2>&1; then
+      printf '{"containersStopped":true,"containersRemoved":true,"networkRemoved":true,"volumesRetained":false,"volumesRemoved":true}\n' > "$evidence/cleanup.json"
     else
-      printf '{"containersStopped":false,"volumesRetained":true}\n' > "$evidence/cleanup.json"
+      printf '{"containersStopped":false,"volumesRemoved":false}\n' > "$evidence/cleanup.json"
       status=1
     fi
     exit "$status"
