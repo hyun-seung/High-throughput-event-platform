@@ -10,11 +10,14 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
+import software.amazon.awssdk.services.dynamodb.model.BatchWriteItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.ConditionalCheckFailedException;
 import software.amazon.awssdk.services.dynamodb.model.DeleteItemRequest;
+import software.amazon.awssdk.services.dynamodb.model.DeleteRequest;
 import software.amazon.awssdk.services.dynamodb.model.GetItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.QueryRequest;
 import software.amazon.awssdk.services.dynamodb.model.UpdateItemRequest;
+import software.amazon.awssdk.services.dynamodb.model.WriteRequest;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -35,29 +38,40 @@ public class FinalizedDynamoCleanup {
     private final DynamoDbClient db;
     private final Clock clock;
     private final int pageSize;
+    private final int maxPagesPerPoll;
     private final Duration retention;
 
     @Autowired
     public FinalizedDynamoCleanup(JdbcTemplate jdbc, DynamoDbClient db,
                                   @Value("${messaging.complete.cleanup.page-size:100}") int pageSize,
+                                  @Value("${messaging.complete.cleanup.max-pages-per-poll:4}") int maxPagesPerPoll,
                                   @Value("${messaging.complete.cleanup.retention:7d}") Duration retention) {
-        this(jdbc, db, Clock.systemUTC(), pageSize, retention);
+        this(jdbc, db, Clock.systemUTC(), pageSize, maxPagesPerPoll, retention);
     }
 
     FinalizedDynamoCleanup(JdbcTemplate jdbc, DynamoDbClient db, Clock clock,
-                           int pageSize, Duration retention) {
+                           int pageSize, int maxPagesPerPoll, Duration retention) {
         this.jdbc = Objects.requireNonNull(jdbc);
         this.db = Objects.requireNonNull(db);
         this.clock = Objects.requireNonNull(clock);
-        if (pageSize < 1 || pageSize > 1000 || retention == null || retention.isNegative()
+        if (pageSize < 1 || pageSize > 1000 || maxPagesPerPoll < 1 || maxPagesPerPoll > 20
+                || retention == null || retention.isNegative()
                 || retention.isZero()) throw new IllegalArgumentException("Invalid cleanup settings");
         this.pageSize = pageSize;
+        this.maxPagesPerPoll = maxPagesPerPoll;
         this.retention = retention;
     }
 
     @Scheduled(initialDelayString = "${messaging.complete.cleanup.initial-delay-ms:5000}",
             fixedDelayString = "${messaging.complete.cleanup.poll-ms:5000}")
     public void poll() {
+        // Drain a bounded number of full pages before sleeping, without adding concurrent writers.
+        for (int page = 0; page < maxPagesPerPoll; page++) {
+            if (cleanupPage() < pageSize) return;
+        }
+    }
+
+    private int cleanupPage() {
         var pending = jdbc.query("""
                 SELECT client_msg_id, decision_id, final_stage FROM tbl_msg_hist
                 WHERE cleanup_status = 'PENDING' AND cleanup_next_at <= now()
@@ -78,6 +92,7 @@ public class FinalizedDynamoCleanup {
                 defer(item.clientMsgId(), failure.getClass().getSimpleName());
             }
         }
+        return pending.size();
     }
 
     boolean cleanup(Pending item) {
@@ -124,7 +139,17 @@ public class FinalizedDynamoCleanup {
         long expiresAt = clock.instant().plus(retention).getEpochSecond();
         for (var step : steps) markTtl(STEP, step, expiresAt);
         if (!origin.isEmpty()) markTtl(ORIGIN, originKey, expiresAt);
-        for (var step : steps) db.deleteItem(DeleteItemRequest.builder().tableName(STEP).key(step).build());
+        // Keep ORIGIN until every STEP delete is confirmed. Partial batches retain TTL protection
+        // and return to the existing SQL retry schedule instead of blocking this worker in a retry loop.
+        for (int start = 0; start < steps.size(); start += 25) {
+            var deletes = steps.subList(start, Math.min(start + 25, steps.size())).stream()
+                    .map(step -> WriteRequest.builder()
+                            .deleteRequest(DeleteRequest.builder().key(step).build()).build())
+                    .toList();
+            var result = db.batchWriteItem(BatchWriteItemRequest.builder()
+                    .requestItems(Map.of(STEP, deletes)).build());
+            if (result.unprocessedItems().values().stream().anyMatch(items -> !items.isEmpty())) return false;
+        }
         if (!origin.isEmpty()) db.deleteItem(DeleteItemRequest.builder().tableName(ORIGIN).key(originKey).build());
         return true;
     }

@@ -411,6 +411,8 @@ flowchart LR
 
 완료 관리자는 `ORIGIN`·`STEP` 테이블에 `ttl_epoch_seconds` TTL을 활성화한다. SQL 이력 commit과 고객 웹훅 토픽 발행 확인 후 각 항목에 기본 7일 만료 시각을 설정하고 삭제한다. 삭제가 실패하면 SQL 정리 대기 행으로 재시도한다. 아주 늦게 온 업체 웹훅이 정리 뒤 생성한 결과 inbox에도 7일 TTL을 설정한다. AWS 문서에 따르면 [TTL은 만료 항목을 백그라운드에서 삭제하며 삭제 전까지 읽기에 나타날 수 있다](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/ttl-expired-items.html). 따라서 TTL은 삭제 실패의 저장 공간 정리 수단으로 쓰고, 업무상 완료·과금·중복 여부는 SQL 고유 키와 최종 결과 상태로 판단한다. 업체 웹훅에는 최대 만료 기간이 없으므로 정리 후 늦게 온 결과를 구분할 SQL 참조 정보도 필요하다.
 
+정리 작업은 기본 100건 페이지가 가득 차면 같은 실행에서 다음 페이지를 바로 조회하며 최대 4페이지까지만 처리한다. `MSG_COMPLETE_CLEANUP_MAX_PAGES_PER_POLL`로 1~20페이지를 설정할 수 있고, 1이면 기존의 한 페이지 처리 방식이다. 빈 페이지나 덜 찬 페이지에서는 즉시 종료하며 이후 기본 5초 주기로 다시 실행한다. 별도 AP나 병렬 작업자는 추가하지 않는다. STEP 삭제는 [DynamoDB BatchWriteItem의 25건 제한과 미처리 항목 반환 규격](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_BatchWriteItem.html)에 맞춰 나눈다. TTL을 먼저 설정한 뒤 모든 STEP 삭제가 확인된 경우에만 ORIGIN을 삭제한다. `UnprocessedItems`가 남으면 SQL을 `DONE`으로 바꾸지 않고 기존 10초 지연 재시도로 넘긴다. 운영 IAM에서는 완료 AP에 STEP 테이블의 `dynamodb:BatchWriteItem` 권한이 필요하다.
+
 `messaging-complete-manager`는 PostgreSQL `messaging_completion` 스키마의 `TBL_MSG_HIST`·`TBL_CDR_HIST`에 최종 이력과 1차 성공 과금 대상을 원자적으로 저장한다. `MSG_COMPLETE_CONSUMER_ENABLED=true`와 `MSG_COMPLETE_CLEANUP_ENABLED=true`가 기본값이며 DynamoDB 정리·TTL 경로도 연결됐다. `WEBHOOK-SEND`는 결과 Manager outbox가 발행하고 `messaging-webhook-sender`가 고객별 최대 100건을 묶어 HTTP로 발송한 뒤 `messaging_webhook.tbl_webhook_hist`에 저장한다. 고객 URL이 없으면 SQL에 보류한다.
 
 ## 9. 중간 종료와 저장소 장애

@@ -50,6 +50,7 @@ messaging:
       enabled: ${MSG_COMPLETE_CLEANUP_ENABLED:true}
       poll-ms: ${MSG_COMPLETE_CLEANUP_POLL_MS:5000}
       page-size: ${MSG_COMPLETE_CLEANUP_PAGE_SIZE:100}
+      max-pages-per-poll: ${MSG_COMPLETE_CLEANUP_MAX_PAGES_PER_POLL:4}
       retention: ${MSG_COMPLETE_CLEANUP_RETENTION:7d}
 
 management:
