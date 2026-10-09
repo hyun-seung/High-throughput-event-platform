@@ -101,6 +101,10 @@ public class PendingResultDispatcher {
             var result = mapper.readValue(
                     item.payload(), messaging.common.messages.CarrierHttpResult.class);
             var outcome = http.process(result);
+            if (outcome instanceof HttpFailureFollowupService.AwaitingWebhook) {
+                inbox.defer(item, now.plus(Duration.ofSeconds(5)));
+                return;
+            }
             if (outcome instanceof HttpFailureFollowupService.PrimaryFailurePending failure) {
                 terminal.fromHttp(item, failure);
             }

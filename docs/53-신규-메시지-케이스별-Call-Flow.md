@@ -420,7 +420,7 @@ flowchart LR
 | ORIGIN 저장 직후 API 종료·최초 Kafka ack 불명확 | 발행 복구 앱이 ORIGIN의 동일 원문·고정 `clientMsgId`로 `message.received.v1` 재발행. Kafka 중복 가능 |
 | PRE-SEND-MANAGER의 통신사 토픽 발행 ack 불명확 | 같은 통신사·전문·`attemptId`·`clientMsgId`로 재인계. 업체의 같은 ID 중복 차단은 정해진 보장 시간 안에만 적용됨 |
 | Redis 발송 중복 정보 유실 | 같은 명령의 STEP이 `OBSERVED`면 기존 관찰을 재사용하고 업체를 재호출하지 않는다. `SENDING`이면 바로 호출하지 않고 복구 유예를 기다린다. 정리 후 ORIGIN이 없으면 명령을 무시한다. 업체의 약 2시간 중복 차단 보장 범위와 고객 접수 중복 키 유실은 별도 경계다. |
-| 업체 호출 뒤 sender의 DynamoDB 결과 기록 전 종료 | STEP의 `SENDING`이 30초 이상이면 Kafka 재전달에서 `HTTP_TIMEOUT` 관찰로 고정해 결과 Manager에 인계한다. 같은 회차를 바로 호출하지 않는다. 업체의 실제 접수 여부와 이후 늦은 웹훅·재발송의 경합은 남는다. |
+| 업체 호출 뒤 sender의 DynamoDB 결과 기록 전 종료 | STEP의 `SENDING`이 30초 이상이면 Kafka 재전달에서 `HTTP_TIMEOUT` 관찰로 고정해 결과 Manager에 인계한다. 같은 회차를 바로 호출하지 않는다. Manager가 타임아웃을 판단할 때 동일 메시지·통신사의 미처리 웹훅 inbox가 있으면 타임아웃을 5초 뒤 다시 확인하고 웹훅을 먼저 처리한다. 웹훅이 없으면 기존 1분 재시도를 예약한다. 업체의 실제 접수 여부와 아직 inbox에 저장되지 않은 늦은 웹훅·재발송의 경합은 남는다. |
 | HTTP `200 OK` 뒤 DynamoDB 갱신 실패·응답 불명 | 관찰 저장이 확인되면 그대로 재사용한다. `SENDING`만 남았으면 30초 복구 유예 이후 타임아웃으로 고정한다. 접수 여부가 불명확하므로 웹훅과 Manager의 1분 재발송 예약이 경합할 수 있다. |
 | 명시적 비-200 기록 뒤 `MSG_RESULT` 발행 실패·ack 불명확 | DynamoDB의 발행 대기 결과를 동일 `resultId`·고정 `clientMsgId` key로 재발행. 업체 HTTP 호출을 반복하지 않고 Manager가 중복 결과를 제거 |
 | `MSG_RESULT` 소비 후 Manager 판단 저장·후속 Kafka 발행 사이 종료 | DynamoDB에 고정한 판단·명령을 같은 ID로 재발행. 먼저 저장되지 않았다면 원본 결과를 재처리 |

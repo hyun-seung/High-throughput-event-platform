@@ -99,6 +99,72 @@ class HttpFailureFollowupServiceTest {
     }
 
     @Test
+    void persistedWebhookTakesPriorityOverRecoveredTimeout() {
+        var timeout = new CarrierHttpResult(CarrierHttpResult.id(first), admission.clientMsgId(),
+                first.attemptId(), first.carrier(), first.invocation(), "HTTP_TIMEOUT",
+                CarrierHttpResult.Status.TIMEOUT, null, null, null, null, null, NOW);
+        reads(origin(first), observation(first, timeout));
+        var webhook = new MessageResultInboxStore.WebhookItem("earlier-webhook", HttpCarrier.SKT,
+                NOW.minusSeconds(10), new messaging.common.messages.MessageWebhookResult(
+                admission.clientMsgId(), "success", null));
+        when(db.query(any(QueryRequest.class))).thenReturn(QueryResponse.builder().items(Map.of(
+                "status", AttributeValue.fromS("PENDING"), "source", AttributeValue.fromS("WEBHOOK"),
+                "result_payload", AttributeValue.fromS(mapper.writeValueAsString(webhook)))).build());
+        when(commands.freeze(anyString(), isNull(), any())).thenAnswer(call -> call.getArgument(2));
+
+        var outcome = service.process(timeout);
+
+        assertInstanceOf(HttpFailureFollowupService.AwaitingWebhook.class, outcome);
+        verifyNoInteractions(commands);
+    }
+
+    @Test
+    void failedWebhookOnALaterInboxPageAlsoTakesPriority() {
+        var timeout = new CarrierHttpResult(CarrierHttpResult.id(first), admission.clientMsgId(),
+                first.attemptId(), first.carrier(), 1, "HTTP_TIMEOUT",
+                CarrierHttpResult.Status.TIMEOUT, null, null, null, null, null, NOW);
+        reads(origin(first), observation(first, timeout));
+        var cursor = Map.of("pk", AttributeValue.fromS("DELIVERY#" + admission.clientMsgId()),
+                "sk", AttributeValue.fromS("RESULT_INBOX#page-1"));
+        var webhook = pendingWebhook(HttpCarrier.SKT, "fail");
+        when(db.query(any(QueryRequest.class))).thenReturn(
+                QueryResponse.builder().lastEvaluatedKey(cursor).build(),
+                QueryResponse.builder().items(webhook).build());
+
+        assertInstanceOf(HttpFailureFollowupService.AwaitingWebhook.class, service.process(timeout));
+
+        verify(db).query(argThat((QueryRequest request) -> cursor.equals(request.exclusiveStartKey())));
+        verifyNoInteractions(commands);
+    }
+
+    @Test
+    void processedAndOtherCarrierWebhooksDoNotBlockTimeoutRetry() {
+        var timeout = new CarrierHttpResult(CarrierHttpResult.id(first), admission.clientMsgId(),
+                first.attemptId(), first.carrier(), 1, "HTTP_TIMEOUT",
+                CarrierHttpResult.Status.TIMEOUT, null, null, null, null, null, NOW);
+        reads(origin(first), observation(first, timeout));
+        var processed = new HashMap<>(pendingWebhook(HttpCarrier.SKT, "success"));
+        processed.put("status", AttributeValue.fromS("PROCESSED"));
+        when(db.query(any(QueryRequest.class))).thenReturn(QueryResponse.builder()
+                .items(processed, pendingWebhook(HttpCarrier.KT, "success")).build());
+        when(commands.freeze(anyString(), isNull(), any())).thenAnswer(call -> call.getArgument(2));
+
+        var followup = assertInstanceOf(HttpFailureFollowupService.FollowupStored.class,
+                service.process(timeout)).value();
+
+        assertEquals(2, followup.command().invocation());
+        assertEquals(NOW.plusSeconds(60), followup.notBefore());
+    }
+
+    private Map<String, AttributeValue> pendingWebhook(HttpCarrier carrier, String status) {
+        var result = new messaging.common.messages.MessageWebhookResult(admission.clientMsgId(), status,
+                "fail".equals(status) ? new messaging.common.messages.MessageWebhookResult.Error(66002, "TPS") : null);
+        var webhook = new MessageResultInboxStore.WebhookItem("earlier-webhook", carrier, NOW.minusSeconds(10), result);
+        return Map.of("status", AttributeValue.fromS("PENDING"), "source", AttributeValue.fromS("WEBHOOK"),
+                "result_payload", AttributeValue.fromS(mapper.writeValueAsString(webhook)));
+    }
+
+    @Test
     void timeoutReservesTheSameCarrierOneMinuteLaterWithoutProviderCode() {
         var timeout = new CarrierHttpResult(CarrierHttpResult.id(first), admission.clientMsgId(),
                 first.attemptId(), first.carrier(), first.invocation(), "HTTP_TIMEOUT",
@@ -113,7 +179,8 @@ class HttpFailureFollowupServiceTest {
         assertEquals(HttpCarrier.SKT, stored.command().carrier());
         assertEquals(2, stored.command().invocation());
         assertEquals(NOW.plusSeconds(60), stored.notBefore());
-        verify(db, never()).query(any(QueryRequest.class));
+        verify(db).query(argThat((QueryRequest request) -> request.consistentRead()
+                && "RESULT_INBOX#".equals(request.expressionAttributeValues().get(":prefix").s())));
     }
 
     @Test
@@ -225,6 +292,7 @@ class HttpFailureFollowupServiceTest {
     }
 
     private void reads(Map<String, AttributeValue> origin, Map<String, AttributeValue> step) {
+        when(db.query(any(QueryRequest.class))).thenReturn(QueryResponse.builder().build());
         when(db.getItem(any(GetItemRequest.class))).thenAnswer(call -> GetItemResponse.builder().item(
                 call.getArgument(0, GetItemRequest.class).tableName().equals(
                         messaging.common.dynamodb.DynamoDbTableNames.ORIGIN) ? origin : step).build());

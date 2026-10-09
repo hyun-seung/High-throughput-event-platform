@@ -24,12 +24,13 @@ import static messaging.common.dynamodb.DynamoDbTableNames.STEP;
 
 /** Verifies the current HTTP observation and freezes its next command when one is allowed. */
 public class HttpFailureFollowupService {
-    public sealed interface Outcome permits FollowupStored, PrimaryFailurePending, Ignored { }
+    public sealed interface Outcome permits FollowupStored, PrimaryFailurePending, AwaitingWebhook, Ignored { }
     public record FollowupStored(FollowupHttpCommand value) implements Outcome { }
     /** The first-send failure still needs secondary/finalization processing. */
     public record PrimaryFailurePending(int errorCode, String previousDecisionId,
                                         HttpSendCommand command) implements Outcome { }
     public record Ignored() implements Outcome { }
+    public record AwaitingWebhook() implements Outcome { }
 
     private final DynamoDbClient db;
     private final JsonMapper mapper;
@@ -62,6 +63,11 @@ public class HttpFailureFollowupService {
                 : currentFollowupCommand(origin);
         if (!matches(result, current)) return new Ignored();
         verifyObserved(current, result);
+        // A recovered SENDING call can have a definitive webhook waiting for its HTTP observation.
+        // Let that inbox item decide before advancing the current invocation because of a timeout.
+        if (result.status() == CarrierHttpResult.Status.TIMEOUT && hasPendingWebhook(result)) {
+            return new AwaitingWebhook();
+        }
 
         var now = clock.instant();
         PrimaryHttpFailureDecision.Action action = result.status() == CarrierHttpResult.Status.TIMEOUT
@@ -82,6 +88,26 @@ public class HttpFailureFollowupService {
         var encoded = origin.get(FollowupHttpCommand.CURRENT_COMMAND);
         if (encoded == null) throw new IllegalStateException("Current HTTP command is missing from ORIGIN");
         return mapper.readValue(encoded.s(), HttpSendCommand.class);
+    }
+
+    private boolean hasPendingWebhook(CarrierHttpResult result) {
+        Map<String, AttributeValue> cursor = Map.of();
+        do {
+            var page = db.query(QueryRequest.builder().tableName(STEP).consistentRead(true)
+                    .keyConditionExpression("pk = :pk AND begins_with(sk, :prefix)")
+                    .expressionAttributeValues(Map.of(":pk", s("DELIVERY#" + result.clientMsgId()),
+                            ":prefix", s("RESULT_INBOX#")))
+                    .exclusiveStartKey(cursor.isEmpty() ? null : cursor).build());
+            for (var item : page.items()) {
+                if (!"PENDING".equals(item.getOrDefault("status", s("")).s())
+                        || !"WEBHOOK".equals(item.getOrDefault("source", s("")).s())) continue;
+                var webhook = mapper.readValue(item.get("result_payload").s(), MessageResultInboxStore.WebhookItem.class);
+                if (webhook.carrier() == result.carrier()
+                        && result.clientMsgId().equals(webhook.result().clientMsgId())) return true;
+            }
+            cursor = page.lastEvaluatedKey();
+        } while (!cursor.isEmpty());
+        return false;
     }
 
     private void verifyObserved(HttpSendCommand command, CarrierHttpResult result) {

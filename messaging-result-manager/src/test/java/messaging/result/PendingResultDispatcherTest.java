@@ -98,6 +98,22 @@ class PendingResultDispatcherTest {
     }
 
     @Test
+    void timeoutRemainsPendingWhileAnEarlierWebhookIsUndecided() {
+        var result = new CarrierHttpResult("timeout", item.clientMsgId(), "attempt-1", HttpCarrier.SKT,
+                1, "HTTP_TIMEOUT", CarrierHttpResult.Status.TIMEOUT, null, null, null, null, null, NOW);
+        var httpItem = new MessageResultInboxStore.Item(item.clientMsgId(), "timeout", "HTTP_TIMEOUT",
+                mapper.writeValueAsString(result), NOW);
+        when(inbox.loadPending(httpItem.key(), NOW)).thenReturn(httpItem);
+        when(http.process(result)).thenReturn(new HttpFailureFollowupService.AwaitingWebhook());
+
+        dispatcher.dispatch(httpItem.key(), NOW);
+
+        verify(inbox).defer(httpItem, NOW.plusSeconds(5));
+        verify(inbox, never()).processed(any());
+        verifyNoInteractions(terminal);
+    }
+
+    @Test
     void preSendFailureFreezesThePrimaryStage() {
         var preSend = new MessageResultInboxStore.Item(item.clientMsgId(), "result-pre", "PRE_SEND", "{}", NOW);
         when(inbox.loadPending(preSend.key(), NOW)).thenReturn(preSend);
