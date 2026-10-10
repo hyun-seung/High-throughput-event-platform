@@ -214,6 +214,41 @@ DYNAMODB_TEST_ENDPOINT=http://127.0.0.1:38000 \
 
 검증 로그·배포 JAR 목록·전후 비교는 `.monitoring/result-scheduling/`에 보존한다.
 
+### HTTP Sender의 발송 허가 재조회 축소 — 2026-10-10
+
+실제 업무 클래스와 mock DynamoDB를 사용하는 디버거 시험에서 `reserve`와 `begin`이 같은 후속 결정 `result-1`의 허가를 다시 읽는 경로를 확인했다. 이 근거는 중복 호출 경로 확인이며 실제 DB 대기 시간을 직접 측정한 것은 아니다.
+
+STEP 예약에서 검증한 값을 한 번의 소비 처리 안에서 `Reservation`으로 전달하도록 변경했다. Redis 선점 뒤 ORIGIN·후속 허가를 GetItem으로 다시 조회하지 않고, 발송 시작 트랜잭션의 기존 ConditionCheck로 현재 상태와 검증한 값을 대조한다. 최초 발송의 HTTP 호출 전 DynamoDB API 호출은 조회 2회+트랜잭션 2회에서 조회 1회+트랜잭션 2회로, 후속 발송은 조회 4회+트랜잭션 2회에서 조회 2회+트랜잭션 2회로 줄었다. 조건 충돌·재전달 복구에는 추가 조회가 필요할 수 있다. HTTP 이후 관찰 기록은 이 수치에 포함하지 않는다.
+
+Redis 선점·STEP의 PENDING/SENDING/OBSERVED 전이, HTTP 200 관찰 저장과 실패 Kafka 인계는 유지한다. 이 객체를 장기 캐시하거나 재시작 후 복구 자료로 사용하지 않으며, 재전달은 저장소에서 다시 검증한다. `notBefore`는 발송 시작 시각에도 검사해 시계가 뒤로 이동했을 때 조기 발송하지 않는다. 통신사별 Pod·토픽·소비 그룹과 공통 Sender JAR 구조도 유지한다.
+
+공통 31개·Sender 32개, 총 63개 테스트가 통과했다. 이 중 실제 DynamoDB 시험 9개는 전용 ORIGIN/STEP 시험 테이블에서 최초·후속 발송의 조회 횟수와 두 트랜잭션을 확인하고, 예약 이후 완료·원문 변경·후속 결정 변경·허가 변경·원본 삭제가 먼저 일어나면 SENDING 전이를 차단하는지 검증했다. 중복 PENDING 예약의 시작은 한 번만 성공하고 OBSERVED 결과는 재전달에서 재사용했다. 시험 테이블은 종료 시 제거했다.
+
+세 Sender 재기동 직후 첫 부하 명령은 KT·LGU의 Redis 연결 초기화 200ms 시간 초과로 health 사전 점검에서 중단됐으며 메시지는 보내지 않았다. 재시작·타임아웃 변경 없이 전체 AP health가 UP으로 회복된 뒤 측정을 시작했다. 사전 점검 로그는 `startup-preflight.log`로 별도 보존했다.
+
+변경 전 `cc9084dd`와 변경 후 `7aae591e`를 20 TPS·60초·정상 80%/1차 실패 10%/TCP 성공 10%·대조 대기 300초로 측정했다. 두 실행 모두 접수·이력·고객 통지·원본 정리 1,200건, 과금 대상 960건, 업체 HTTP 요청 1,200회가 일치했고 접수 오류·도구 미발송이 없었다. 새 lag 0 표본과 전체 AP health도 확인했다. JAR 차이는 세 통신사가 공유하는 HTTP Sender 한 개였다.
+
+| 관측 항목 | 변경 전 | 변경 후 |
+|---|---:|---:|
+| 접수 → 첫 업체 HTTP 수신 p95 | 25.558초 | 2.418초 |
+| 업체 HTTP 수신 → 최종 판단 p95 | 36.355초 | 25.666초 |
+| 최종 판단 → SQL 이력 p95 | 22.512초 | 21.949초 |
+| SQL 이력 → DynamoDB 정리 p95 | 31.698초 | 25.478초 |
+| 접수 → 전체 완료 p95 | 89.609초 | 67.733초 |
+| SKT Sender 최대 lag | 354건 | 42건 |
+
+접수→업체 HTTP에는 PRE-SEND와 Sender의 소비 대기도 포함된다. 구간 p95는 각 메시지의 시각 차이에서 계산했으며 합산할 수 없다. 전후 각 1회인 로컬 측정이고 공유 저장소·JVM·기동 상태 변동의 영향을 포함하므로 운영 성능 개선율이나 최대 TPS로 환산하지 않는다. 최초 발송 전의 API 호출 감소는 실제 DynamoDB 시험으로 별도 검증했다. 결과 판단·outbox 페이지 처리·완료 정리의 대기는 계속 남아 있다.
+
+저장소 장애 시험 `7d06cefb`의 4개 케이스도 통과했다. Redis 선점 키 삭제·명령 재전달·완료 후 재전달에도 업체 호출은 한 번이었고, Redis 중단 중에는 HTTP 호출 없이 Kafka offset을 보존했다. DynamoDB 중단 중 받은 웹훅과 재전달은 Kafka에 남았다가 복구 후 처리됐으며, 완료 정리 중 장애에서는 SQL 이력·과금 대상과 ORIGIN을 보존한 뒤 정리를 재시도했다. 최종 이력·과금 대상·고객 결과·원본 정리가 각각 4건, 업체 호출 4회, lag 0이었고 이후 70초간 추가 발송도 없었다.
+
+정책 시험 `a72c3592`의 13개 케이스가 통과했다. HTTP 응답·웹훅의 통신사 불일치 전환, TPS 초과의 1분 대기, 최초 이후 재시도 3회 소진, 5초 HTTP 무응답, 소진 후 TCP 전환과 과금 제외를 검증했다. 모든 최종 이력·고객 결과·정리가 일치했고, 완료 후 70초 동안 추가 발송이 없었다.
+
+Sender 강제 종료 시험 `6ca47ecd`의 2개 케이스도 통과했다. HTTP 200 수신 후 DynamoDB 관찰 기록 직전에 프로세스를 종료해 Kafka 명령이 미커밋되고 STEP이 SENDING으로 남는 구간을 재현했다. 웹훅이 있으면 추가 HTTP 호출 없이 완료됐고, 없으면 복구한 타임아웃 관찰 이후 62.83초에 한 번 재시도했다. 최종 이력·과금 대상·고객 결과·원본 정리가 각각 2건, 업체 호출 총 3회, lag 0이었으며 이후 70초간 추가 발송도 없었다. Sender 설정을 복원하고 시험 프록시를 제거했다.
+
+최종 모니터링 검증도 통과했다. 실행 AP 11개의 health가 모두 UP이고 Prometheus 수집 대상 17개와 Grafana 대시보드 7개를 확인했다.
+
+로그·배포 JAR·비교 자료는 `.monitoring/sender-authorization/`에 보존한다.
+
 ## 화면과 데이터 경로
 
 Grafana는 [통합 관제](http://localhost:13000/d/messaging-overview), [서비스](http://localhost:13000/d/messaging-services), [통신사](http://localhost:13000/d/messaging-providers), [고객](http://localhost:13000/d/messaging-customers), [오류](http://localhost:13000/d/messaging-errors), [인프라](http://localhost:13000/d/messaging-infra), [메시지 추적](http://localhost:13000/d/messaging-trace) 화면을 제공한다. Prometheus는 [19099](http://localhost:19099), 테스트 API는 `127.0.0.1:38080`이다. `trace` 화면에서는 `clientMsgId`로 로그를 찾는다.

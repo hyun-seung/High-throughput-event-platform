@@ -33,11 +33,12 @@ public class CarrierSendGate {
         if (command.carrier() != carrier) {
             throw new IllegalArgumentException("HTTP command addressed to another carrier pod");
         }
-        var state = attempts.reserve(command, clock.instant());
+        var reservation = attempts.reserve(command, clock.instant());
+        var state = reservation.state();
         if (state == CarrierHttpAttemptStore.State.INELIGIBLE) return Decision.INELIGIBLE;
         if (state == CarrierHttpAttemptStore.State.OBSERVED) return Decision.OBSERVED;
         if (state == CarrierHttpAttemptStore.State.SENDING) return Decision.IN_PROGRESS;
         if (!redis.claimHttp(command, claimTtl)) return Decision.CLAIM_BUSY;
-        return attempts.begin(command, clock.instant()) ? Decision.SEND : Decision.CLAIM_BUSY;
+        return attempts.begin(reservation, clock.instant()) ? Decision.SEND : Decision.CLAIM_BUSY;
     }
 }

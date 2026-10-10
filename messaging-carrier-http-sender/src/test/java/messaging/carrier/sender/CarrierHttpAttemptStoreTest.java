@@ -46,7 +46,7 @@ class CarrierHttpAttemptStoreTest {
         when(db.getItem(any(software.amazon.awssdk.services.dynamodb.model.GetItemRequest.class)))
                 .thenReturn(GetItemResponse.builder().item(origin).build());
 
-        assertEquals(CarrierHttpAttemptStore.State.PENDING, store.reserve(command, NOW));
+        assertEquals(CarrierHttpAttemptStore.State.PENDING, store.reserve(command, NOW).state());
         verify(db).transactWriteItems(any(java.util.function.Consumer.class));
 
         var forged = new HttpSendCommand(command.attemptId(), command.carrier(), 1, command.deadlineAt(),
@@ -59,7 +59,7 @@ class CarrierHttpAttemptStoreTest {
     void noOriginCannotReserveAnAttempt() {
         when(db.getItem(any(software.amazon.awssdk.services.dynamodb.model.GetItemRequest.class)))
                 .thenReturn(GetItemResponse.builder().item(Map.of()).build());
-        assertEquals(CarrierHttpAttemptStore.State.INELIGIBLE, store.reserve(command, NOW));
+        assertEquals(CarrierHttpAttemptStore.State.INELIGIBLE, store.reserve(command, NOW).state());
         verify(db, never()).transactWriteItems(any(java.util.function.Consumer.class));
     }
 
@@ -73,8 +73,8 @@ class CarrierHttpAttemptStoreTest {
                 .thenReturn(GetItemResponse.builder().item(closed).build());
 
         assertEquals(CarrierHttpAttemptStore.State.INELIGIBLE,
-                store.reserve(command, NOW.plusSeconds(3600)));
-        assertFalse(store.begin(command, NOW.plusSeconds(3600)));
+                store.reserve(command, NOW.plusSeconds(3600)).state());
+        assertFalse(store.begin(store.reserve(command, NOW.plusSeconds(3600)), NOW.plusSeconds(3600)));
         verify(db, never()).transactWriteItems(any(Consumer.class));
     }
 
@@ -99,9 +99,11 @@ class CarrierHttpAttemptStoreTest {
                             messaging.common.dynamodb.DynamoDbTableNames.ORIGIN) ? origin : authorization).build();
                 });
 
-        assertThrows(IllegalStateException.class, () -> store.reserve(command, NOW));
-        assertEquals(CarrierHttpAttemptStore.State.PENDING, store.reserve(command, NOW.plusSeconds(60)));
-        assertTrue(store.begin(command, NOW.plusSeconds(60)));
+        assertThrows(IllegalStateException.class, () -> store.reserve(command, NOW).state());
+        var reservation = store.reserve(command, NOW.plusSeconds(60));
+        assertEquals(CarrierHttpAttemptStore.State.PENDING, reservation.state());
+        assertThrows(IllegalStateException.class, () -> store.begin(reservation, NOW));
+        assertTrue(store.begin(reservation, NOW.plusSeconds(60)));
 
         var captures = org.mockito.ArgumentCaptor.forClass(Consumer.class);
         verify(db, times(2)).transactWriteItems(captures.capture());
@@ -118,7 +120,7 @@ class CarrierHttpAttemptStoreTest {
         }
 
         origin.put("result_decision_id", AttributeValue.fromS("newer-result"));
-        assertEquals(CarrierHttpAttemptStore.State.INELIGIBLE, store.reserve(command, NOW.plusSeconds(60)));
+        assertEquals(CarrierHttpAttemptStore.State.INELIGIBLE, store.reserve(command, NOW.plusSeconds(60)).state());
     }
 
     @Test
@@ -131,7 +133,7 @@ class CarrierHttpAttemptStoreTest {
         when(db.getItem(any(software.amazon.awssdk.services.dynamodb.model.GetItemRequest.class)))
                 .thenReturn(GetItemResponse.builder().item(origin).build(),
                         GetItemResponse.builder().item(Map.of()).build());
-        assertThrows(IllegalStateException.class, () -> store.reserve(command, NOW));
+        assertThrows(IllegalStateException.class, () -> store.reserve(command, NOW).state());
         verify(db, never()).transactWriteItems(any(Consumer.class));
     }
 

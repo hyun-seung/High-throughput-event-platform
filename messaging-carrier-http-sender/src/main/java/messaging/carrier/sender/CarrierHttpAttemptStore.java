@@ -40,13 +40,13 @@ public class CarrierHttpAttemptStore {
         this.mapper = Objects.requireNonNull(mapper);
     }
 
-    public State reserve(HttpSendCommand command, Instant now) {
+    Reservation reserve(HttpSendCommand command, Instant now) {
         Objects.requireNonNull(command);
         Objects.requireNonNull(now);
         var origin = read(ORIGIN, MessageOriginCodec.key(command.request().clientMsgId()));
-        if (!eligible(origin)) return State.INELIGIBLE;
+        if (!eligible(origin)) return new Reservation(State.INELIGIBLE, command, null);
         Authorization authorization = authorize(command, origin, now);
-        if (!authorization.current()) return State.INELIGIBLE;
+        if (!authorization.current()) return new Reservation(State.INELIGIBLE, command, null);
 
         var item = new HashMap<>(key(command));
         item.put("schema_version", AttributeValue.fromN("4"));
@@ -62,24 +62,30 @@ public class CarrierHttpAttemptStore {
             writes.add(TransactWriteItem.builder().put(Put.builder().tableName(STEP).item(item)
                     .conditionExpression("attribute_not_exists(pk)").build()).build());
             db.transactWriteItems(builder -> builder.transactItems(writes));
-            return State.PENDING;
+            return new Reservation(State.PENDING, command, authorization);
         } catch (TransactionCanceledException collision) {
             if (!conditional(collision)) throw collision;
             var current = read(ORIGIN, MessageOriginCodec.key(command.request().clientMsgId()));
-            if (!eligible(current) || !authorize(command, current, now).current()) return State.INELIGIBLE;
+            if (!eligible(current)) return new Reservation(State.INELIGIBLE, command, null);
+            Authorization latest = authorize(command, current, now);
+            if (!latest.current()) return new Reservation(State.INELIGIBLE, command, null);
             var existing = read(STEP, key(command));
-            if (existing.isEmpty()) return State.INELIGIBLE;
-            return verifiedState(command, existing);
+            if (existing.isEmpty()) return new Reservation(State.INELIGIBLE, command, null);
+            return new Reservation(verifiedState(command, existing), command, latest);
         }
     }
 
-    public boolean begin(HttpSendCommand command, Instant now) {
-        Objects.requireNonNull(command);
+    boolean begin(Reservation reservation, Instant now) {
+        Objects.requireNonNull(reservation);
         Objects.requireNonNull(now);
-        var origin = read(ORIGIN, MessageOriginCodec.key(command.request().clientMsgId()));
-        if (!eligible(origin)) return false;
-        Authorization authorization = authorize(command, origin, now);
-        if (!authorization.current()) return false;
+        if (reservation.state() != State.PENDING) return false;
+        HttpSendCommand command = reservation.command();
+        Authorization authorization = reservation.authorization();
+        if (authorization.notBefore() != null && now.isBefore(authorization.notBefore())) {
+            throw new IllegalStateException("Follow-up HTTP command is not due yet");
+        }
+        // Reuse this claim's verified values, but atomically check them against current ORIGIN/STEP.
+        // A later completion, decision change or authorization change still prevents SENDING.
         try {
             var writes = checks(command, authorization);
             writes.add(TransactWriteItem.builder().update(Update.builder().tableName(STEP).key(key(command))
@@ -191,7 +197,7 @@ public class CarrierHttpAttemptStore {
     private Authorization authorize(HttpSendCommand command, Map<String, AttributeValue> origin, Instant now) {
         PreSendDispatch dispatch = mapper.readValue(origin.get("pre_send_dispatch").s(), PreSendDispatch.class);
         if (command.equals(dispatch.command())) {
-            return new Authorization(null, null, !origin.containsKey(FollowupHttpCommand.CURRENT_DECISION));
+            return new Authorization(null, null, !origin.containsKey(FollowupHttpCommand.CURRENT_DECISION), null);
         }
         if (dispatch.command() == null) {
             throw new IllegalStateException("HTTP command follows a rejected pre-send decision");
@@ -206,12 +212,12 @@ public class CarrierHttpAttemptStore {
             throw new IllegalStateException("HTTP command does not match frozen authorization");
         }
         if (!followup.decisionId().equals(origin.getOrDefault(FollowupHttpCommand.CURRENT_DECISION, s("")).s())) {
-            return new Authorization(null, null, false);
+            return new Authorization(null, null, false, null);
         }
         if (now.isBefore(followup.notBefore())) {
             throw new IllegalStateException("Follow-up HTTP command is not due yet");
         }
-        return new Authorization(followup.decisionId(), item.get("authorization").s(), true);
+        return new Authorization(followup.decisionId(), item.get("authorization").s(), true, followup.notBefore());
     }
 
     private List<TransactWriteItem> checks(HttpSendCommand command, Authorization authorization) {
@@ -249,7 +255,18 @@ public class CarrierHttpAttemptStore {
                 .expressionAttributeValues(values).build()).build();
     }
 
-    private record Authorization(String decisionId, String encoded, boolean current) { }
+    record Authorization(String decisionId, String encoded, boolean current, Instant notBefore) { }
+
+    /** Per-claim values only; never cached across deliveries or used without transactional checks. */
+    record Reservation(State state, HttpSendCommand command, Authorization authorization) {
+        Reservation {
+            Objects.requireNonNull(state);
+            Objects.requireNonNull(command);
+            if (state == State.PENDING && (authorization == null || !authorization.current())) {
+                throw new IllegalArgumentException("Pending reservation requires verified authorization");
+            }
+        }
+    }
 
     private Map<String, AttributeValue> read(String table, Map<String, AttributeValue> key) {
         return db.getItem(GetItemRequest.builder().tableName(table).key(key).consistentRead(true).build()).item();

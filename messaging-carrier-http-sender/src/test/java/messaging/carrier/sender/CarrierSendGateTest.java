@@ -40,19 +40,19 @@ class CarrierSendGateTest {
 
     @Test
     void onlyTheRedisWinnerCanTransitionToSending() {
-        when(attempts.reserve(command, NOW)).thenReturn(CarrierHttpAttemptStore.State.PENDING);
+        when(attempts.reserve(command, NOW)).thenReturn(reservation(command, CarrierHttpAttemptStore.State.PENDING));
         when(redisTemplate.opsForValue()).thenReturn(values);
         when(values.setIfAbsent(anyString(), eq("1"), eq(Duration.ofMinutes(10)))).thenReturn(false, true);
-        when(attempts.begin(command, NOW)).thenReturn(true);
+        when(attempts.begin(reservation(command, CarrierHttpAttemptStore.State.PENDING), NOW)).thenReturn(true);
 
         assertEquals(CarrierSendGate.Decision.CLAIM_BUSY, gate.claim(command));
         assertEquals(CarrierSendGate.Decision.SEND, gate.claim(command));
-        verify(attempts, times(1)).begin(command, NOW);
+        verify(attempts, times(1)).begin(reservation(command, CarrierHttpAttemptStore.State.PENDING), NOW);
     }
 
     @Test
     void aPreviouslyStartedCallCannotBeSentAgainAfterRedisLoss() {
-        when(attempts.reserve(command, NOW)).thenReturn(CarrierHttpAttemptStore.State.SENDING);
+        when(attempts.reserve(command, NOW)).thenReturn(reservation(command, CarrierHttpAttemptStore.State.SENDING));
         assertEquals(CarrierSendGate.Decision.IN_PROGRESS, gate.claim(command));
         verifyNoInteractions(redisTemplate);
     }
@@ -60,7 +60,7 @@ class CarrierSendGateTest {
     @Test
     void expiryThatAlreadyClosedTheMessageIsDecidedByTheAttemptStore() {
         var expired = new HttpSendCommand(command.attemptId(), command.carrier(), 1, NOW, command.request());
-        when(attempts.reserve(expired, NOW)).thenReturn(CarrierHttpAttemptStore.State.INELIGIBLE);
+        when(attempts.reserve(expired, NOW)).thenReturn(reservation(expired, CarrierHttpAttemptStore.State.INELIGIBLE));
         assertEquals(CarrierSendGate.Decision.INELIGIBLE, gate.claim(expired));
         verify(attempts).reserve(expired, NOW);
         verifyNoInteractions(redisTemplate);
@@ -69,7 +69,7 @@ class CarrierSendGateTest {
     @Test
     void anObservedFailureRemainsPublishableAfterTheSendDeadline() {
         var expired = new HttpSendCommand(command.attemptId(), command.carrier(), 1, NOW, command.request());
-        when(attempts.reserve(expired, NOW)).thenReturn(CarrierHttpAttemptStore.State.OBSERVED);
+        when(attempts.reserve(expired, NOW)).thenReturn(reservation(expired, CarrierHttpAttemptStore.State.OBSERVED));
         assertEquals(CarrierSendGate.Decision.OBSERVED, gate.claim(expired));
         verifyNoInteractions(redisTemplate);
     }
@@ -77,12 +77,17 @@ class CarrierSendGateTest {
     @Test
     void retryPastTheOriginalDeadlineMaySendWhileTheMessageIsActive() {
         var retry = new HttpSendCommand(command.attemptId(), command.carrier(), 2, NOW, command.request());
-        when(attempts.reserve(retry, NOW)).thenReturn(CarrierHttpAttemptStore.State.PENDING);
+        when(attempts.reserve(retry, NOW)).thenReturn(reservation(retry, CarrierHttpAttemptStore.State.PENDING));
         when(redisTemplate.opsForValue()).thenReturn(values);
         when(values.setIfAbsent(anyString(), eq("1"), eq(Duration.ofMinutes(10)))).thenReturn(true);
-        when(attempts.begin(retry, NOW)).thenReturn(true);
+        when(attempts.begin(reservation(retry, CarrierHttpAttemptStore.State.PENDING), NOW)).thenReturn(true);
 
         assertEquals(CarrierSendGate.Decision.SEND, gate.claim(retry));
-        verify(attempts).begin(retry, NOW);
+        verify(attempts).begin(reservation(retry, CarrierHttpAttemptStore.State.PENDING), NOW);
     }
+    private static CarrierHttpAttemptStore.Reservation reservation(HttpSendCommand command, CarrierHttpAttemptStore.State state) {
+        return new CarrierHttpAttemptStore.Reservation(state, command, state == CarrierHttpAttemptStore.State.PENDING
+                ? new CarrierHttpAttemptStore.Authorization(null, null, true, null) : null);
+    }
+
 }
