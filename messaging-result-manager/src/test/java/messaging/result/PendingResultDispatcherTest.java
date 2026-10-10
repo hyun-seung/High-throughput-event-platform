@@ -17,9 +17,12 @@ import java.time.ZoneOffset;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.*;
 
 class PendingResultDispatcherTest {
+    private final io.micrometer.core.instrument.simple.SimpleMeterRegistry metrics =
+            new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
     private static final Instant NOW = Instant.parse("2026-10-07T00:01:00Z");
     private final MessageResultInboxStore inbox = mock(MessageResultInboxStore.class);
     private final WebhookPrimaryDecisionService decisions = mock(WebhookPrimaryDecisionService.class);
@@ -29,10 +32,30 @@ class PendingResultDispatcherTest {
     private final JsonMapper mapper = JsonMapper.builder().build();
     private final PendingResultDispatcher dispatcher = new PendingResultDispatcher(db,
             inbox, decisions, http, terminal, mock(SecondaryResultService.class),
-            mapper, Clock.fixed(NOW, ZoneOffset.UTC), 100);
+            mapper, Clock.fixed(NOW, ZoneOffset.UTC), 100, metrics);
     private final MessageResultInboxStore.Item item = new MessageResultInboxStore.Item("a".repeat(32),
             "result-1", "WEBHOOK", "{}", NOW);
     private final Map<String, AttributeValue> key = item.key();
+
+    @Test
+    void measuresOnlyInboxWorkOnTheSharedIndexAndContinuesAfterItemFailure() {
+        var candidate = new java.util.HashMap<>(key);
+        candidate.put(MessageResultInboxIndex.DUE, AttributeValue.fromN(Long.toString(NOW.minusSeconds(7).toEpochMilli())));
+        var unrelated = Map.of("pk", key.get("pk"), "sk", AttributeValue.fromS("PRIMARY_DECISION#other"));
+        when(db.query(any(QueryRequest.class))).thenReturn(QueryResponse.builder().items(candidate, unrelated).build(),
+                QueryResponse.builder().build());
+        when(inbox.loadPending(key, NOW)).thenThrow(new IllegalStateException("test failure"));
+
+        dispatcher.poll();
+
+        verify(inbox).loadPending(key, NOW);
+        verify(db, times(MessageResultInboxIndex.SHARDS)).query(any(QueryRequest.class));
+        assertEquals(1, metrics.get("messaging.scheduled.work.duration").tag("phase", "item").timer().count());
+        assertEquals(1, metrics.get("messaging.scheduled.work.duration").tag("phase", "poll").timer().count());
+        assertEquals(7, metrics.get("messaging.scheduled.work.due.age").timer().totalTime(java.util.concurrent.TimeUnit.SECONDS));
+        assertEquals(2, metrics.get("messaging.scheduled.work.page.items").tag("kind", "candidate").summary().totalAmount());
+        assertEquals(1, metrics.get("messaging.scheduled.work.page.items").tag("kind", "eligible").summary().totalAmount());
+    }
 
     @Test
     void firstPageQueriesOmitExclusiveStartKey() {

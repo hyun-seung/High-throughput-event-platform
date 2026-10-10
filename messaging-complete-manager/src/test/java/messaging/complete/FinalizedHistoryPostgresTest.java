@@ -176,7 +176,7 @@ class FinalizedHistoryPostgresTest {
         var db = mock(DynamoDbClient.class);
         when(db.getItem(any(GetItemRequest.class))).thenThrow(new IllegalStateException("offline"));
 
-        new FinalizedDynamoCleanup(jdbc, db, Clock.systemUTC(), 10, 4, Duration.ofDays(7)).poll();
+        new FinalizedDynamoCleanup(jdbc, db, Clock.systemUTC(), 10, 4, Duration.ofDays(7), new io.micrometer.core.instrument.simple.SimpleMeterRegistry()).poll();
 
         assertEquals("PENDING", jdbc.queryForObject(
                 "SELECT cleanup_status FROM tbl_msg_hist WHERE client_msg_id = ?", String.class,

@@ -1,5 +1,9 @@
 package messaging.result;
 
+import io.micrometer.core.instrument.MeterRegistry;
+import messaging.common.metrics.ScheduledWorkMetrics;
+import static messaging.common.metrics.ScheduledWorkMetrics.Phase.*;
+
 import messaging.common.messages.MessageResultInboxIndex;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -8,6 +12,7 @@ import org.springframework.stereotype.Component;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.services.dynamodb.model.QueryRequest;
+import software.amazon.awssdk.services.dynamodb.model.QueryResponse;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.time.Clock;
@@ -32,6 +37,7 @@ public class PendingResultDispatcher {
     private final JsonMapper mapper;
     private final Clock clock;
     private final int pageSize;
+    private final ScheduledWorkMetrics metrics;
     private final Map<Integer, Map<String, AttributeValue>> cursors = new HashMap<>();
 
     public PendingResultDispatcher(DynamoDbClient db, MessageResultInboxStore inbox,
@@ -40,7 +46,7 @@ public class PendingResultDispatcher {
                                     PrimaryStageDecisionStore terminal, SecondaryResultService secondary,
                                     JsonMapper mapper, Clock clock,
                                     @org.springframework.beans.factory.annotation.Value(
-                                            "${messaging.result.webhook.page-size:100}") int pageSize) {
+                                            "${messaging.result.webhook.page-size:100}") int pageSize, MeterRegistry registry) {
         this.db = Objects.requireNonNull(db);
         this.inbox = Objects.requireNonNull(inbox);
         this.decisions = Objects.requireNonNull(decisions);
@@ -51,25 +57,37 @@ public class PendingResultDispatcher {
         this.clock = Objects.requireNonNull(clock);
         if (pageSize < 1 || pageSize > 1000) throw new IllegalArgumentException("Invalid webhook page size");
         this.pageSize = pageSize;
+        this.metrics = new ScheduledWorkMetrics(registry, ScheduledWorkMetrics.Worker.RESULT_INBOX);
     }
 
     @Scheduled(initialDelayString = "${messaging.result.webhook.initial-delay-ms:5000}",
             fixedDelayString = "${messaging.result.webhook.poll-ms:5000}")
     public synchronized void poll() {
-        Instant now = clock.instant();
-        for (int shard = 0; shard < MessageResultInboxIndex.SHARDS; shard++) pollShard(shard, now);
+        try (var timing = metrics.start(POLL)) {
+            Instant now = clock.instant();
+            for (int shard = 0; shard < MessageResultInboxIndex.SHARDS; shard++) pollShard(shard, now);
+        }
     }
 
     private void pollShard(int shard, Instant now) {
-        var page = db.query(QueryRequest.builder().tableName(STEP).indexName(MessageResultInboxIndex.NAME)
+        QueryResponse page;
+        try (var timing = metrics.start(QUERY)) {
+            page = db.query(QueryRequest.builder().tableName(STEP).indexName(MessageResultInboxIndex.NAME)
                 .keyConditionExpression("#bucket = :bucket AND #due <= :now")
                 .expressionAttributeNames(Map.of("#bucket", MessageResultInboxIndex.BUCKET,
                         "#due", MessageResultInboxIndex.DUE))
                 .expressionAttributeValues(Map.of(":bucket", s("message-result-v1-" + shard),
                         ":now", AttributeValue.fromN(Long.toString(now.toEpochMilli()))))
                 .exclusiveStartKey(cursors.get(shard)).limit(pageSize).build());
+        }
+        metrics.page(page.items().size(),
+                (int) page.items().stream().filter(PendingResultDispatcher::eligible).count());
         for (var candidate : page.items()) {
-            try {
+            if (!eligible(candidate)) continue;
+            try (var timing = metrics.start(ITEM)) {
+                if (candidate.containsKey(MessageResultInboxIndex.DUE)) {
+                    metrics.due(Long.parseLong(candidate.get(MessageResultInboxIndex.DUE).n()), clock.millis());
+                }
                 dispatch(Map.of("pk", candidate.get("pk"), "sk", candidate.get("sk")), now);
             } catch (Exception failure) {
                 log.error("Pending first-send result remains due: pk={}, sk={}", candidate.get("pk"), candidate.get("sk"), failure);
@@ -117,6 +135,10 @@ public class PendingResultDispatcher {
             if (outcome == SecondaryResultService.Outcome.WAITING) inbox.defer(item, now.plus(Duration.ofSeconds(5)));
             else inbox.processed(item);
         }
+    }
+
+    private static boolean eligible(Map<String, AttributeValue> candidate) {
+        return candidate.get("sk").s().startsWith("RESULT_INBOX#");
     }
 
     private static AttributeValue s(String value) { return AttributeValue.fromS(value); }

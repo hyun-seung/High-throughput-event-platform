@@ -185,6 +185,38 @@ def verify() -> None:
             request_json(f"http://127.0.0.1:13000/api/dashboards/uid/messaging-{name}")
         except Exception as failure:
             errors.append(f"Grafana dashboard {name}: {failure}")
+    scheduled_work = {}
+    scheduled_panels = []
+    try:
+        counts = request_json("http://127.0.0.1:19099/api/v1/query?" + urlencode({
+            "query": "messaging_scheduled_work_duration_seconds_count"}))
+        scheduled_work = {item["metric"]["worker"] + "/" + item["metric"]["phase"]: float(item["value"][1])
+                          for item in counts["data"]["result"]}
+        expected = {
+            "result_inbox": ("poll", "query", "item"),
+            "result_outbox": ("poll", "query", "item", "handoff"),
+            "complete_cleanup": ("poll", "query", "item", "load", "step_query", "ttl", "delete")}
+        for worker, phases in expected.items():
+            for phase in phases:
+                if worker + "/" + phase not in scheduled_work:
+                    errors.append(f"Scheduled work metric absent: {worker}/{phase}")
+            if scheduled_work.get(worker + "/poll", 0) <= 0:
+                errors.append(f"Scheduled worker has not completed a poll: {worker}")
+        board = request_json("http://127.0.0.1:13000/api/dashboards/uid/messaging-services")
+        for panel in board["dashboard"]["panels"]:
+            expressions = [target["expr"] for target in panel.get("targets", [])
+                           if "messaging_scheduled_work_" in target.get("expr", "")]
+            if not expressions:
+                continue
+            for expression in expressions:
+                result = request_json("http://127.0.0.1:19099/api/v1/query?" + urlencode({"query": expression}))
+                if result.get("status") != "success":
+                    errors.append(f"Scheduled work panel query failed: {panel['title']}")
+            scheduled_panels.append(panel["title"])
+        if len(scheduled_panels) != 6:
+            errors.append(f"Expected six scheduled work panels, found {len(scheduled_panels)}")
+    except Exception as failure:
+        errors.append(f"Scheduled work monitoring: {failure}")
     log_evidence = {}
     for service in ("api", "publication-recovery"):
         log_found = False
@@ -215,7 +247,8 @@ def verify() -> None:
     except Exception as failure:
         errors.append(f"Application health check unavailable: {failure}")
     report = {"targets": observed, "applicationHealth": health, "dashboards": boards,
-              "logEvidence": log_evidence, "errors": errors, "pass": not errors}
+              "logEvidence": log_evidence, "scheduledWork": scheduled_work,
+              "scheduledWorkPanels": scheduled_panels, "errors": errors, "pass": not errors}
     destination = ROOT / ".monitoring/verification.json"
     destination.parent.mkdir(exist_ok=True)
     destination.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")

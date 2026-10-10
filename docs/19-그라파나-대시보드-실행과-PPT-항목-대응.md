@@ -249,6 +249,46 @@ Sender 강제 종료 시험 `6ca47ecd`의 2개 케이스도 통과했다. HTTP 2
 
 로그·배포 JAR·비교 자료는 `.monitoring/sender-authorization/`에 보존한다.
 
+### 결과 판단·완료 정리 구간별 관측 — 2026-10-10
+
+Grafana [서비스 화면](http://localhost:13000/d/messaging-services)에 예약 작업 패널 6개를 추가했다. 기존 `messaging-common`의 metrics 패키지에서 고정된 작업명·단계로 측정하고 결과 Manager와 완료 Manager가 사용한다. AP·모듈·업무 패키지를 추가하지 않았다. 처리 순서·페이지 수·5초 조회 간격·중복 방지·재시도 정책은 바꾸지 않았다.
+
+| 지표 | 의미 |
+|---|---|
+| `messaging_scheduled_work_duration_seconds` | `worker=result_inbox/result_outbox/complete_cleanup`, `phase=poll/query/item`의 실행 시간. outbox는 `handoff`, cleanup은 `load/step_query/ttl/delete`도 구분 |
+| `messaging_scheduled_work_idle_seconds` | 직전 poll 종료부터 다음 시작까지. fixedDelay와 스케줄러 대기를 포함하고 실행 시간은 제외 |
+| `messaging_scheduled_work_due_age_seconds` | 결과 GSI 후보의 예정 시각부터 처리 시작까지. 재조회 전 후보 기준이며 재시도·오래된 GSI 표본이 포함될 수 있음 |
+| `messaging_scheduled_work_page_items` | 페이지의 전체 후보(`candidate`)와 해당 작업 담당 키 후보(`eligible`). 빈 페이지도 포함 |
+
+`query`는 결과 GSI 또는 완료 정리 SQL의 페이지 조회, `item`은 조회 후보 한 건에 대한 호출 전체다. 무시·재대기·실패도 호출 수와 시간에 포함하므로 성공 메시지 건수로 해석하지 않는다. `handoff`는 Kafka 발행 확인 대기다. 완료 정리의 `load`는 ORIGIN/outbox 읽기, `step_query`는 STEP 조회 전체, `ttl`은 각 STEP·ORIGIN의 TTL 기록 전체, `delete`는 STEP 배치 삭제와 ORIGIN 삭제를 뜻한다. `item`에는 이 단계들 외 조건부 정리 허가와 SQL 완료·재대기 기록도 포함된다.
+
+poll 안에 item, item 안에 세부 단계가 중첩되므로 서로 합산하지 않는다. 시간 지표는 10ms~300초의 고정 histogram 경계를 쓰고 Grafana p95는 그 구간 내 추정값이다. 메시지별 실제 완료 p95는 `performance` 결과로 별도 확인한다. 고객 ID·메시지 ID·예외 문자열은 지표 label에 넣지 않는다.
+
+완료 정리의 mock DynamoDB 테스트를 디버거에서 실행해 STEP 2개를 TTL 기록한 뒤 삭제하는 경로를 확인했다. 이 근거는 호출 경로 확인이며 실제 DB 지연 측정이 아니다. 공통·결과·완료 모듈의 118개 테스트가 통과했고, 이번 변경과 무관한 PostgreSQL/Kafka 환경 연동 테스트 17개는 기본 빌드에서 비활성화됐다. 새 시험은 정상·예외 종료 시 시간 기록, 실행과 휴지 시간 분리, 혼합 GSI 후보 구분, 페이지 처리 유지와 Kafka 인계를 검증했다.
+
+혼합 부하 `2f5bd21a`(20 TPS·60초, 정상 80%/1차 실패 10%/TCP 성공 10%)는 접수·이력·고객 통지·원본 정리 1,200건, 과금 대상 960건이 일치했다. 접수 오류·도구 미발송·유효하지 않은 관측 표본이 없었고 부하 후 전체 AP health·lag 검증이 통과했다. 접수→전체 완료 p95는 94.256초였다. 이전 실행의 67.733초보다 길었으나 이번에는 결과·완료 AP를 재기동한 뒤 한 번 측정했으며, 이 작업은 관측 추가이므로 성능 개선이나 계측 오버헤드의 인과관계를 이 비교로 판단하지 않는다.
+
+부하 전후 Prometheus 누적값의 차이로 다음을 확인했다. 실행 앞뒤의 빈 poll도 포함하므로 poll 평균을 부하 중 최대 처리량으로 환산하지 않는다. 단일 AP별 구간 누적 시간이며 서로 다른 AP의 시간을 합산하지 않는다.
+
+| 관측 | 횟수 | 평균 | 누적 |
+|---|---:|---:|---:|
+| 결과 inbox 후보 처리 | 1,320 | 60.69ms | 80.10초 |
+| 결과 inbox 페이지 조회 | 352 | 4.04ms | 1.42초 |
+| 결과 outbox 후보 처리 | 1,320 | 49.26ms | 65.02초 |
+| 결과 outbox 페이지 조회 | 400 | 6.72ms | 2.69초 |
+| outbox Kafka 인계 | 2,520 | 7.03ms | 17.72초 |
+| 완료 정리 한 건 처리 | 1,200 | 81.28ms | 97.53초 |
+| 완료 ORIGIN/outbox 읽기 | 1,200 | 7.02ms | 8.42초 |
+| 완료 STEP 조회 | 1,200 | 3.98ms | 4.78초 |
+| 완료 TTL 기록 | 1,200 | 33.10ms | 39.72초 |
+| 완료 STEP·ORIGIN 삭제 | 1,200 | 29.14ms | 34.96초 |
+
+세 작업의 실행 사이 대기는 평균 5.00~5.01초였다. 결과 후보 예정 시각 초과 평균은 inbox 21.41초, outbox 12.12초였다. inbox는 조회 후보 1,590개 중 담당 후보 1,320개, outbox는 2,946개 중 1,320개였다. TCP 전환 120건은 1차 결과와 2차 결과를 각각 처리하므로 1,320건이 최종 메시지 1,200건보다 많다. Kafka 인계 2,520회는 최종 이력·고객 웹훅 각각 1,200회와 TCP 명령 120회다.
+
+이번 표본에서는 완료 정리의 TTL 기록·삭제가 건별 처리 누적 시간의 약 76.6%를 차지했다. 다음은 이 순서와 실패 복구를 보존하면서 저장소 왕복을 줄이거나 메시지별 정리 동시성을 제한적으로 높일 수 있는지 검토한다. 공유 GSI의 불필요한 후보 조회도 확인됐지만 조회 자체의 누적 시간은 건별 처리보다 작으므로 첫 개선 대상으로 단정하지 않는다. 원본 표본과 계산 결과는 `before-metrics.json`, `after-metrics.json`, `phase-summary.json`에 남겼다.
+
+`bash scripts/monitoring.sh verify`는 AP health·기존 수집 상태에 더해 예약 작업 14개 단계 지표, 실제 poll 실행, Grafana 신규 패널 6개의 PromQL을 점검한다. 트래픽이 없으면 건별 시간 패널은 표본이 없어 비어 있을 수 있다. 실행 자료는 `.monitoring/scheduled-work/`에 보존한다.
+
 ## 화면과 데이터 경로
 
 Grafana는 [통합 관제](http://localhost:13000/d/messaging-overview), [서비스](http://localhost:13000/d/messaging-services), [통신사](http://localhost:13000/d/messaging-providers), [고객](http://localhost:13000/d/messaging-customers), [오류](http://localhost:13000/d/messaging-errors), [인프라](http://localhost:13000/d/messaging-infra), [메시지 추적](http://localhost:13000/d/messaging-trace) 화면을 제공한다. Prometheus는 [19099](http://localhost:19099), 테스트 API는 `127.0.0.1:38080`이다. `trace` 화면에서는 `clientMsgId`로 로그를 찾는다.

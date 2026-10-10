@@ -30,13 +30,15 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 class FinalizedDynamoCleanupTest {
+    private final io.micrometer.core.instrument.simple.SimpleMeterRegistry metrics =
+            new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
     private static final String ID = "a".repeat(32);
     private static final String DECISION = "decision-1";
     private static final Instant NOW = Instant.parse("2026-10-08T00:00:00Z");
     private final DynamoDbClient db = mock(DynamoDbClient.class);
     private final JdbcTemplate jdbc = mock(JdbcTemplate.class);
     private final FinalizedDynamoCleanup cleanup = new FinalizedDynamoCleanup(
-            jdbc, db, Clock.fixed(NOW, ZoneOffset.UTC), 25, 4, Duration.ofDays(7));
+            jdbc, db, Clock.fixed(NOW, ZoneOffset.UTC), 25, 4, Duration.ofDays(7), metrics);
     private final FinalizedDynamoCleanup.Pending item =
             new FinalizedDynamoCleanup.Pending(ID, DECISION, "PRIMARY");
 
@@ -207,6 +209,9 @@ class FinalizedDynamoCleanupTest {
         worker.poll();
 
         verify(worker, times(51)).cleanup(any());
+        assertEquals(1, metrics.get("messaging.scheduled.work.duration").tag("phase", "poll").timer().count());
+        assertEquals(3, metrics.get("messaging.scheduled.work.duration").tag("phase", "query").timer().count());
+        assertEquals(51, metrics.get("messaging.scheduled.work.duration").tag("phase", "item").timer().count());
         verify(jdbc, times(3)).query(anyString(), any(RowMapper.class), eq(25));
         verify(jdbc, times(51)).update(contains("cleanup_status = 'DONE'"), anyString());
     }
@@ -246,7 +251,7 @@ class FinalizedDynamoCleanupTest {
     void rejectsUnboundedOrDisabledPageLimits() {
         for (int limit : new int[] {0, 21}) {
             assertThrows(IllegalArgumentException.class, () -> new FinalizedDynamoCleanup(
-                    jdbc, db, Clock.fixed(NOW, ZoneOffset.UTC), 25, limit, Duration.ofDays(7)));
+                    jdbc, db, Clock.fixed(NOW, ZoneOffset.UTC), 25, limit, Duration.ofDays(7), metrics));
         }
     }
 

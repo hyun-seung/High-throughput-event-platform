@@ -1,5 +1,9 @@
 package messaging.complete;
 
+import io.micrometer.core.instrument.MeterRegistry;
+import messaging.common.metrics.ScheduledWorkMetrics;
+import static messaging.common.metrics.ScheduledWorkMetrics.Phase.*;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -22,6 +26,7 @@ import software.amazon.awssdk.services.dynamodb.model.WriteRequest;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
@@ -40,17 +45,18 @@ public class FinalizedDynamoCleanup {
     private final int pageSize;
     private final int maxPagesPerPoll;
     private final Duration retention;
+    private final ScheduledWorkMetrics metrics;
 
     @Autowired
     public FinalizedDynamoCleanup(JdbcTemplate jdbc, DynamoDbClient db,
                                   @Value("${messaging.complete.cleanup.page-size:100}") int pageSize,
                                   @Value("${messaging.complete.cleanup.max-pages-per-poll:4}") int maxPagesPerPoll,
-                                  @Value("${messaging.complete.cleanup.retention:7d}") Duration retention) {
-        this(jdbc, db, Clock.systemUTC(), pageSize, maxPagesPerPoll, retention);
+                                  @Value("${messaging.complete.cleanup.retention:7d}") Duration retention, MeterRegistry registry) {
+        this(jdbc, db, Clock.systemUTC(), pageSize, maxPagesPerPoll, retention, registry);
     }
 
     FinalizedDynamoCleanup(JdbcTemplate jdbc, DynamoDbClient db, Clock clock,
-                           int pageSize, int maxPagesPerPoll, Duration retention) {
+                           int pageSize, int maxPagesPerPoll, Duration retention, MeterRegistry registry) {
         this.jdbc = Objects.requireNonNull(jdbc);
         this.db = Objects.requireNonNull(db);
         this.clock = Objects.requireNonNull(clock);
@@ -60,25 +66,32 @@ public class FinalizedDynamoCleanup {
         this.pageSize = pageSize;
         this.maxPagesPerPoll = maxPagesPerPoll;
         this.retention = retention;
+        this.metrics = new ScheduledWorkMetrics(registry, ScheduledWorkMetrics.Worker.COMPLETE_CLEANUP);
     }
 
     @Scheduled(initialDelayString = "${messaging.complete.cleanup.initial-delay-ms:5000}",
             fixedDelayString = "${messaging.complete.cleanup.poll-ms:5000}")
     public void poll() {
-        // Drain a bounded number of full pages before sleeping, without adding concurrent writers.
-        for (int page = 0; page < maxPagesPerPoll; page++) {
-            if (cleanupPage() < pageSize) return;
+        try (var timing = metrics.start(POLL)) {
+            // Drain a bounded number of full pages before sleeping, without adding concurrent writers.
+            for (int page = 0; page < maxPagesPerPoll; page++) {
+                if (cleanupPage() < pageSize) return;
+            }
         }
     }
 
     private int cleanupPage() {
-        var pending = jdbc.query("""
-                SELECT client_msg_id, decision_id, final_stage FROM tbl_msg_hist
-                WHERE cleanup_status = 'PENDING' AND cleanup_next_at <= now()
-                ORDER BY cleanup_next_at, client_msg_id LIMIT ?
-                """, (rs, row) -> new Pending(rs.getString(1), rs.getString(2), rs.getString(3)), pageSize);
+        List<Pending> pending;
+        try (var timing = metrics.start(QUERY)) {
+            pending = jdbc.query("""
+                    SELECT client_msg_id, decision_id, final_stage FROM tbl_msg_hist
+                    WHERE cleanup_status = 'PENDING' AND cleanup_next_at <= now()
+                    ORDER BY cleanup_next_at, client_msg_id LIMIT ?
+                    """, (rs, row) -> new Pending(rs.getString(1), rs.getString(2), rs.getString(3)), pageSize);
+        }
+        metrics.page(pending.size(), pending.size());
         for (var item : pending) {
-            try {
+            try (var timing = metrics.start(ITEM)) {
                 if (cleanup(item)) {
                     jdbc.update("""
                             UPDATE tbl_msg_hist SET cleanup_status = 'DONE', cleaned_at = now(),
@@ -98,12 +111,16 @@ public class FinalizedDynamoCleanup {
     boolean cleanup(Pending item) {
         String id = item.clientMsgId();
         var originKey = key(id, "META");
-        var origin = db.getItem(GetItemRequest.builder().tableName(ORIGIN).key(originKey)
-                .consistentRead(true).build()).item();
-        String outboxSk = ("SECONDARY".equals(item.stage())
-                ? "SECONDARY_DECISION#" : "PRIMARY_DECISION#") + item.decisionId();
-        var outbox = db.getItem(GetItemRequest.builder().tableName(STEP).key(key(id, outboxSk))
-                .consistentRead(true).build()).item();
+        Map<String, AttributeValue> origin;
+        Map<String, AttributeValue> outbox;
+        try (var timing = metrics.start(LOAD)) {
+            origin = db.getItem(GetItemRequest.builder().tableName(ORIGIN).key(originKey)
+                    .consistentRead(true).build()).item();
+            String outboxSk = ("SECONDARY".equals(item.stage())
+                    ? "SECONDARY_DECISION#" : "PRIMARY_DECISION#") + item.decisionId();
+            outbox = db.getItem(GetItemRequest.builder().tableName(STEP).key(key(id, outboxSk))
+                    .consistentRead(true).build()).item();
+        }
         if (!outbox.isEmpty() && !"PUBLISHED".equals(string(outbox, "status"))) return false;
         if (!origin.isEmpty()) {
             String decisionField = "SECONDARY".equals(item.stage())
@@ -126,32 +143,38 @@ public class FinalizedDynamoCleanup {
         }
 
         var steps = new ArrayList<Map<String, AttributeValue>>();
-        Map<String, AttributeValue> cursor = null;
-        do {
-            var page = db.query(QueryRequest.builder().tableName(STEP).consistentRead(true)
-                    .keyConditionExpression("pk = :pk")
-                    .expressionAttributeValues(Map.of(":pk", s("DELIVERY#" + id)))
-                    .exclusiveStartKey(cursor).limit(pageSize).build());
-            for (var row : page.items()) steps.add(key(id, row.get("sk").s()));
-            cursor = page.lastEvaluatedKey();
-        } while (!cursor.isEmpty());
+        try (var timing = metrics.start(STEP_QUERY)) {
+            Map<String, AttributeValue> cursor = null;
+            do {
+                var page = db.query(QueryRequest.builder().tableName(STEP).consistentRead(true)
+                        .keyConditionExpression("pk = :pk")
+                        .expressionAttributeValues(Map.of(":pk", s("DELIVERY#" + id)))
+                        .exclusiveStartKey(cursor).limit(pageSize).build());
+                for (var row : page.items()) steps.add(key(id, row.get("sk").s()));
+                cursor = page.lastEvaluatedKey();
+            } while (!cursor.isEmpty());
+        }
 
         long expiresAt = clock.instant().plus(retention).getEpochSecond();
-        for (var step : steps) markTtl(STEP, step, expiresAt);
-        if (!origin.isEmpty()) markTtl(ORIGIN, originKey, expiresAt);
+        try (var timing = metrics.start(ScheduledWorkMetrics.Phase.TTL)) {
+            for (var step : steps) markTtl(STEP, step, expiresAt);
+            if (!origin.isEmpty()) markTtl(ORIGIN, originKey, expiresAt);
+        }
         // Keep ORIGIN until every STEP delete is confirmed. Partial batches retain TTL protection
         // and return to the existing SQL retry schedule instead of blocking this worker in a retry loop.
-        for (int start = 0; start < steps.size(); start += 25) {
-            var deletes = steps.subList(start, Math.min(start + 25, steps.size())).stream()
-                    .map(step -> WriteRequest.builder()
-                            .deleteRequest(DeleteRequest.builder().key(step).build()).build())
-                    .toList();
-            var result = db.batchWriteItem(BatchWriteItemRequest.builder()
-                    .requestItems(Map.of(STEP, deletes)).build());
-            if (result.unprocessedItems().values().stream().anyMatch(items -> !items.isEmpty())) return false;
+        try (var timing = metrics.start(DELETE)) {
+            for (int start = 0; start < steps.size(); start += 25) {
+                var deletes = steps.subList(start, Math.min(start + 25, steps.size())).stream()
+                        .map(step -> WriteRequest.builder()
+                                .deleteRequest(DeleteRequest.builder().key(step).build()).build())
+                        .toList();
+                var result = db.batchWriteItem(BatchWriteItemRequest.builder()
+                        .requestItems(Map.of(STEP, deletes)).build());
+                if (result.unprocessedItems().values().stream().anyMatch(items -> !items.isEmpty())) return false;
+            }
+            if (!origin.isEmpty()) db.deleteItem(DeleteItemRequest.builder().tableName(ORIGIN).key(originKey).build());
+            return true;
         }
-        if (!origin.isEmpty()) db.deleteItem(DeleteItemRequest.builder().tableName(ORIGIN).key(originKey).build());
-        return true;
     }
 
     private void markTtl(String table, Map<String, AttributeValue> key, long expiresAt) {

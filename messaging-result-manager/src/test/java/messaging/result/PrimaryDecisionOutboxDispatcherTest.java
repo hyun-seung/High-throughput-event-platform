@@ -31,6 +31,8 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 class PrimaryDecisionOutboxDispatcherTest {
+    private final io.micrometer.core.instrument.simple.SimpleMeterRegistry metrics =
+            new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
     private static final Instant NOW = Instant.parse("2026-10-07T00:01:00Z");
     private static final String ID = "a".repeat(32);
     private final JsonMapper mapper = JsonMapper.builder().build();
@@ -38,7 +40,7 @@ class PrimaryDecisionOutboxDispatcherTest {
     @SuppressWarnings("unchecked")
     private final KafkaTemplate<String, Object> kafka = mock(KafkaTemplate.class);
     private final PrimaryDecisionOutboxDispatcher dispatcher = new PrimaryDecisionOutboxDispatcher(db, mapper,
-            kafka, Clock.fixed(NOW, ZoneOffset.UTC), 100);
+            kafka, Clock.fixed(NOW, ZoneOffset.UTC), 100, metrics);
 
     @Test
     void successPublishesFinalizedAndCustomerWebhookWithSeparateDurableCheckpoints() throws Exception {
@@ -53,6 +55,7 @@ class PrimaryDecisionOutboxDispatcherTest {
 
         dispatcher.dispatch(key(item), NOW.toEpochMilli());
 
+        assertEquals(2, metrics.get("messaging.scheduled.work.duration").tag("phase", "handoff").timer().count());
         verify(kafka).send(MessageTopics.MSG_RESULT_FINALIZED, ID,
                 new FinalizedMessageResult(decision, submission));
         verify(kafka).send(MessageTopics.WEBHOOK_SEND, ID,

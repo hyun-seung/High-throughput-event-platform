@@ -140,6 +140,192 @@
         "overrides": []
       },
       "options": {}
+    },
+    {
+      "id": 6,
+      "title": "예약 작업 1회 실행 시간 p95",
+      "description": "전체 샤드 또는 완료 정리 페이지의 한 번 실행 시간. 건별 처리 시간을 포함하므로 다른 단계와 합산하지 않습니다.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "platform-prometheus"
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, worker) (rate(messaging_scheduled_work_duration_seconds_bucket{phase=\"poll\"}[5m])))",
+          "refId": "A",
+          "legendFormat": "{{worker}} {{phase}} {{kind}}"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 7,
+      "title": "예약 작업 실행 사이 대기 평균",
+      "description": "직전 실행 종료부터 다음 시작까지의 시간. 설정한 fixedDelay와 스케줄러 대기를 포함하고 작업 실행 시간은 제외합니다.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "platform-prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum by (worker) (rate(messaging_scheduled_work_idle_seconds_sum[5m])) / sum by (worker) (rate(messaging_scheduled_work_idle_seconds_count[5m]))",
+          "refId": "A",
+          "legendFormat": "{{worker}} {{phase}} {{kind}}"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 8,
+      "title": "조회·건별 처리·Kafka 인계 평균",
+      "description": "query: 한 페이지 조회, item: 후보 한 건 처리, handoff: Kafka send 완료 대기. 실패·무시·재대기 처리도 포함하며 처리 성공 건수나 서로 더할 수 있는 구간이 아닙니다.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "platform-prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum by (worker, phase) (rate(messaging_scheduled_work_duration_seconds_sum{phase=~\"query|item|handoff\"}[5m])) / sum by (worker, phase) (rate(messaging_scheduled_work_duration_seconds_count{phase=~\"query|item|handoff\"}[5m]))",
+          "refId": "A",
+          "legendFormat": "{{worker}} {{phase}} {{kind}}"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 32,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 9,
+      "title": "완료 정리 내부 단계 평균",
+      "description": "load: ORIGIN/outbox 읽기, step_query: STEP 페이지 조회 전체, ttl: STEP·ORIGIN TTL 기록 전체, delete: STEP 배치 삭제·ORIGIN 삭제. 재시도·실패 호출도 포함합니다.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "platform-prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum by (phase) (rate(messaging_scheduled_work_duration_seconds_sum{worker=\"complete_cleanup\",phase=~\"load|step_query|ttl|delete\"}[5m])) / sum by (phase) (rate(messaging_scheduled_work_duration_seconds_count{worker=\"complete_cleanup\",phase=~\"load|step_query|ttl|delete\"}[5m]))",
+          "refId": "A",
+          "legendFormat": "{{worker}} {{phase}} {{kind}}"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 32,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 10,
+      "title": "결과 후보 예정 시각 초과 p95",
+      "description": "GSI 후보의 due 시각부터 해당 후보 처리 시작까지. 최종 상태를 다시 읽기 전 관측이며 재시도마다 다시 집계될 수 있습니다. 메시지 전체 완료 지연과 다릅니다.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "platform-prometheus"
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, worker) (rate(messaging_scheduled_work_due_age_seconds_bucket{worker=~\"result_.*\"}[5m])))",
+          "refId": "A",
+          "legendFormat": "{{worker}} {{phase}} {{kind}}"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 40,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 11,
+      "title": "페이지당 조회 후보와 담당 후보 평균",
+      "description": "candidate는 조회된 전체 후보, eligible은 해당 작업이 담당하는 키 접두사의 후보입니다. inbox/outbox는 같은 GSI를 읽으므로 두 수치가 다를 수 있습니다. 완료 정리는 두 수치가 같습니다.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "platform-prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum by (worker, kind) (rate(messaging_scheduled_work_page_items_sum[5m])) / sum by (worker, kind) (rate(messaging_scheduled_work_page_items_count[5m]))",
+          "refId": "A",
+          "legendFormat": "{{worker}} {{phase}} {{kind}}"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 40,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {}
     }
   ],
   "links": [

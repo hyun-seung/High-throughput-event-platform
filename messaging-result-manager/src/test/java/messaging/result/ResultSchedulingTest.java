@@ -85,13 +85,13 @@ class ResultSchedulingTest {
             return new PendingResultDispatcher(db, mock(MessageResultInboxStore.class),
                     mock(WebhookPrimaryDecisionService.class), mock(HttpFailureFollowupService.class),
                     mock(PrimaryStageDecisionStore.class), mock(SecondaryResultService.class),
-                    JsonMapper.builder().build(), Clock.systemUTC(), 100);
+                    JsonMapper.builder().build(), Clock.systemUTC(), 100, new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
         }
         @Bean PrimaryDecisionOutboxDispatcher outbox(Probe probe) {
             var db = mock(DynamoDbClient.class);
             when(db.query(any(QueryRequest.class))).thenAnswer(call -> probe.query(false));
             return new PrimaryDecisionOutboxDispatcher(db, JsonMapper.builder().build(),
-                    mock(KafkaTemplate.class), Clock.systemUTC(), 100);
+                    mock(KafkaTemplate.class), Clock.systemUTC(), 100, new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
         }
     }
 }
