@@ -22,10 +22,6 @@ public class JwtTokenVerifier {
         return jwtParser.parseSignedClaims(token).getPayload();
     }
 
-    public Long getUserId(String token) {
-        return Long.valueOf(parseClaims(token).getSubject());
-    }
-
     private SecretKey createSecretKey(String secret) {
         if (StringUtils.isBlank(secret)) {
             throw new IllegalArgumentException("JWT secret must not be blank.");
