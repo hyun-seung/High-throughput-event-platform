@@ -32,7 +32,7 @@ LAG_SERIES = {"messaging-pre-send-manager/message.received.v1", "messaging-resul
               "messaging-tcp-sender/message.tcp.requested.v1",
               *(f"messaging-{carrier}-http-sender/message.{carrier}.http.send.v1" for carrier in ("skt", "kt", "lgu"))}
 # Include the metric name in union matching: CPU/up and probe-up/probe-time share other labels.
-METRICS = " or on(__name__,job,instance,group,topic,partition,area,id,worker,phase) ".join((
+METRICS = " or on(__name__,job,instance,group,topic,partition,area,id,worker,phase,operation,result) ".join((
     'platform_kafka_committed_lag{group=~"messaging-.*"}', 'platform_kafka_log_end_offset', 'platform_kafka_probe_up',
     'platform_kafka_probe_last_success_timestamp_seconds', f'process_cpu_usage{{job=~"{JOBS}"}}',
     f'jvm_memory_used_bytes{{area="heap",job=~"{JOBS}"}}', f'up{{job=~"{JOBS}"}}',
@@ -44,7 +44,8 @@ METRICS = " or on(__name__,job,instance,group,topic,partition,area,id,worker,pha
     'http_server_requests_seconds_count{job="api",status="200",method="POST"}',
     'http_server_requests_seconds_sum{job="api",status="200",method="POST"}',
     'http_server_requests_seconds_count{job="webhook-receive",status="202",method="POST"}',
-    'http_server_requests_seconds_sum{job="webhook-receive",status="202",method="POST"}'))
+    'http_server_requests_seconds_sum{job="webhook-receive",status="202",method="POST"}',
+    f'{{__name__=~"delivery_dynamodb_(duration_seconds_(count|sum)|transport_attempts_total|connection_acquire_seconds_(count|sum|max)|service_call_seconds_(count|sum|max)|pool_(max|leased|available|pending))",job=~"{JOBS}"}}'))
 
 
 def distribution(values):
@@ -61,6 +62,28 @@ def case_for(number, failure_percent, secondary_percent):
         "secondary-success" if slot < failure_percent + secondary_percent else "primary-success")
 
 
+def record_http_failure(value, failure):
+    value["httpStatus"] = failure.code
+    try:
+        with failure:
+            raw = failure.read(4097)
+        if len(raw) > 4096:
+            value["responseErrorParseFailure"] = "body-too-large"
+            return
+        answer = json.loads(raw)
+        error = answer.get("data", {}) if isinstance(answer, dict) else {}
+        if isinstance(error, dict):
+            selected = {}
+            if type(error.get("code")) is int:
+                selected["code"] = error["code"]
+            if isinstance(error.get("message"), str):
+                selected["message"] = error["message"][:256]
+            if selected:
+                value["responseError"] = selected
+    except (OSError, ValueError) as unavailable:
+        value["responseErrorParseFailure"] = type(unavailable).__name__
+
+
 def telemetry():
     with urlopen(PROMETHEUS + urlencode({"query": METRICS}), timeout=5) as response:
         result = json.load(response)
@@ -69,14 +92,20 @@ def telemetry():
     snapshot = {"at": time.time(), "cpuRatio": {}, "heapBytes": {}, "lag": {}, "up": {},
                 "endOffsets": {}, "processStartedAt": {}, "listenerCount": {}, "listenerSeconds": {},
                 "completionBatchRecords": None, "httpCount": {}, "httpSeconds": {},
-                "scheduledCount": {}, "scheduledSeconds": {}}
+                "scheduledCount": {}, "scheduledSeconds": {}, "dynamoDb": []}
     for item in result["data"]["result"]:
         labels = item["metric"]
         value = float(item["value"][1])
-        if not math.isfinite(value):
-            raise ValueError("Non-finite telemetry value")
         name, job = labels["__name__"], labels.get("job")
-        if name == "process_cpu_usage":
+        if name.startswith("delivery_dynamodb_pool_") and math.isnan(value):
+            # No completed SDK observation yet; preserve unknown as JSON null.
+            value = None
+        if value is not None and not math.isfinite(value):
+            raise ValueError("Non-finite telemetry value")
+        if name.startswith("delivery_dynamodb_"):
+            snapshot["dynamoDb"].append({"metric": name, "job": job,
+                "operation": labels.get("operation"), "result": labels.get("result"), "value": value})
+        elif name == "process_cpu_usage":
             snapshot["cpuRatio"][job] = value
         elif name == "jvm_memory_used_bytes":
             snapshot["heapBytes"][job] = snapshot["heapBytes"].get(job, 0) + value
@@ -179,6 +208,8 @@ def summarize(requests, rows, start, seconds):
         "unconfirmedAdmissions": sum(not r.get("accepted") and not 400 <= r.get("httpStatus", 0) < 500 for r in started),
         "admissionErrorRate": (len(started) - len(accepted)) / len(started) if started else None,
         "httpStatuses": dict(Counter(str(r.get("httpStatus", "transport-error")) for r in started)),
+        "apiErrorCodes": dict(Counter(str(r["responseError"]["code"]) for r in started
+                                      if "code" in r.get("responseError", {}))),
         "acceptedCases": dict(Counter(r["case"] for r in accepted)),
         "histories": len(rows), "completed": len(done), "billable": sum(r["billable"] for r in rows),
         "unexpectedHistories": sorted({r["messageId"] for r in rows} - {r["messageId"] for r in accepted}),
@@ -405,7 +436,7 @@ def run(args):
                     if value["accepted"]:
                         value["clientMsgId"] = data["clientMsgId"]
                 except HTTPError as failure:
-                    value["httpStatus"] = failure.code
+                    record_http_failure(value, failure)
                 except Exception as failure:
                     value["error"] = type(failure).__name__
                 finally:

@@ -42,16 +42,16 @@ public final class DynamoDbMetricsInterceptor implements ExecutionInterceptor {
                 .tags("operation", operation(request), "result", result).register(registry));
     }
 
-    private static String operation(String request) {
+    static String operation(String request) {
         return switch (request) {
-            case "QueryRequest" -> "query";
-            case "GetItemRequest" -> "get_item";
-            case "BatchGetItemRequest" -> "batch_get_item";
-            case "PutItemRequest" -> "put_item";
-            case "UpdateItemRequest" -> "update_item";
-            case "TransactWriteItemsRequest" -> "transact_write_items";
-            case "DescribeTableRequest" -> "describe_table";
-            case "CreateTableRequest" -> "create_table";
+            case "QueryRequest", "Query" -> "query";
+            case "GetItemRequest", "GetItem" -> "get_item";
+            case "BatchGetItemRequest", "BatchGetItem" -> "batch_get_item";
+            case "PutItemRequest", "PutItem" -> "put_item";
+            case "UpdateItemRequest", "UpdateItem" -> "update_item";
+            case "TransactWriteItemsRequest", "TransactWriteItems" -> "transact_write_items";
+            case "DescribeTableRequest", "DescribeTable" -> "describe_table";
+            case "CreateTableRequest", "CreateTable" -> "create_table";
             default -> "other";
         };
     }

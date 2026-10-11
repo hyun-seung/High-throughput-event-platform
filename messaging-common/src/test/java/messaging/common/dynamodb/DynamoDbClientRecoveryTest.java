@@ -17,6 +17,8 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.Executors;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.IntFunction;
 import static org.junit.jupiter.api.Assertions.*;
@@ -96,6 +98,48 @@ class DynamoDbClientRecoveryTest {
             assertEquals(1, calls.get());
         }
         assertEquals(1, meters.get("delivery.dynamodb.duration").tag("result", "condition_failed").timer().count());
+    }
+
+    @Test void exhaustedConnectionPoolReportsAcquireTimeBeforeAnySecondRequestReachesTheServer() throws Exception {
+        var entered = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        var properties = shortBudgets();
+        properties.setMaxConnections(1);
+        properties.setAcquireTimeout(Duration.ofMillis(100));
+        properties.setMaxAttempts(1);
+        try (var client = client(properties); var worker = Executors.newSingleThreadExecutor()) {
+            read(client); // Warm the SDK before putting time limits on the blocked request.
+            replies = attempt -> {
+                if (attempt == 2) {
+                    entered.countDown();
+                    try {
+                        if (!release.await(5, TimeUnit.SECONDS)) throw new IllegalStateException("Test did not release response");
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                        throw new IllegalStateException(interrupted);
+                    }
+                }
+                return OK;
+            };
+            var inFlight = worker.submit(() -> read(client));
+            try {
+                assertTrue(entered.await(5, TimeUnit.SECONDS));
+                var failure = assertThrows(software.amazon.awssdk.core.exception.SdkClientException.class,
+                        () -> read(client));
+                assertInstanceOf(org.apache.hc.core5.http.ConnectionRequestTimeoutException.class, failure.getCause());
+                assertEquals(2, calls.get()); // The failed acquisition sent no HTTP request to our server.
+            } finally {
+                release.countDown();
+            }
+            inFlight.get(5, TimeUnit.SECONDS);
+            read(client);
+        }
+        assertEquals(3, calls.get());
+        var acquire = meters.get("delivery.dynamodb.connection.acquire").tag("operation", "get_item").timer();
+        assertEquals(4, acquire.count());
+        assertTrue(acquire.max(TimeUnit.MILLISECONDS) >= 90);
+        assertEquals(1, meters.get("delivery.dynamodb.pool.max").gauge().value());
+        assertEquals(1, meters.get("delivery.dynamodb.duration").tag("result", "failure").timer().count());
     }
 
     DynamoDbProperties shortBudgets() {

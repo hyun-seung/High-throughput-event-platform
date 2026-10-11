@@ -87,6 +87,8 @@ public class MessageReceiveService {
             duplicates.release(claim);
             throw new MessageAdmissionException(HttpStatus.CONFLICT, "Execution ID already exists", definitiveFailure);
         } catch (RuntimeException uncertain) {
+            log.warn("Origin admission save unconfirmed: clientMsgId={}, failureType={}, rootCauseType={}",
+                    event.clientMsgId(), uncertain.getClass().getName(), rootCauseType(uncertain));
             // PutItem may have committed even when its response was lost. Never release the Redis key
             // before a strongly consistent read resolves the same execution.
             Optional<MessageSubmission> stored = Optional.empty();
@@ -125,6 +127,14 @@ public class MessageReceiveService {
     }
 
     private Optional<MessageSubmission> lookup(String clientMsgId) { return origins.find(clientMsgId); }
+
+    private static String rootCauseType(Throwable failure) {
+        Throwable cause = failure;
+        for (int depth = 0; depth < 16 && cause.getCause() != null && cause.getCause() != cause; depth++) {
+            cause = cause.getCause();
+        }
+        return cause.getClass().getName();
+    }
 
     private static boolean sameAdmission(MessageSubmission a, MessageSubmission b) {
         return a.clientMsgId().equals(b.clientMsgId()) && a.clientId() == b.clientId()

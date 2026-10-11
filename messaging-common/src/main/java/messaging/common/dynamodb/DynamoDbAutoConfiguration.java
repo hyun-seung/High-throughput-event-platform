@@ -1,6 +1,7 @@
 package messaging.common.dynamodb;
 
 import messaging.common.metrics.DynamoDbMetricsInterceptor;
+import messaging.common.metrics.DynamoDbTransportMetrics;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.beans.factory.ObjectProvider;
 
@@ -45,7 +46,8 @@ public class DynamoDbAutoConfiguration {
             config.apiCallTimeout(properties.getApiCallTimeout())
                     .apiCallAttemptTimeout(properties.getApiCallAttemptTimeout())
                     .retryStrategy(StandardRetryStrategy.builder().maxAttempts(properties.getMaxAttempts()).build());
-            if (registry != null) config.addExecutionInterceptor(new DynamoDbMetricsInterceptor(registry));
+            if (registry != null) config.addExecutionInterceptor(new DynamoDbMetricsInterceptor(registry))
+                    .addMetricPublisher(new DynamoDbTransportMetrics(registry));
         });
 
         if (properties.getEndpoint() != null && !properties.getEndpoint().isBlank()) {

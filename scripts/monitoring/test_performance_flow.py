@@ -1,13 +1,15 @@
 """Regression checks for performance accounting; no application or network dependencies."""
 
 import hashlib
+import io
 import json
 from pathlib import Path
 import tempfile
 import unittest
+from urllib.error import HTTPError
 from unittest.mock import patch
 
-from performance_flow import AP_TOPICS, analyze_run, case_for, distribution, reconcile, summarize, summarize_ap_observations, summarize_windows
+from performance_flow import AP_TOPICS, analyze_run, case_for, distribution, record_http_failure, reconcile, summarize, summarize_ap_observations, summarize_windows, telemetry
 
 
 def request(number=0, case="primary-success", **changes):
@@ -25,6 +27,51 @@ def history(number=0, **changes):
 
 
 class PerformanceAccountingTest(unittest.TestCase):
+    def test_sdk_observations_preserve_operation_and_unknown_pool_as_json_null(self):
+        rows = [{"metric": {"__name__": name, "job": "api", **labels}, "value": [1, value]}
+                for name, labels, value in [
+                    ("delivery_dynamodb_pool_pending", {}, "NaN"),
+                    ("delivery_dynamodb_connection_acquire_seconds_sum", {"operation": "put"}, "1.25"),
+                    ("delivery_dynamodb_duration_seconds_count", {"operation": "put", "result": "failure"}, "2")]]
+        response = io.BytesIO(json.dumps({"status": "success", "data": {"result": rows}}).encode())
+        with patch("performance_flow.urlopen", return_value=response):
+            snapshot = telemetry()
+        self.assertIsNone(snapshot["dynamoDb"][0]["value"])
+        self.assertEqual(snapshot["dynamoDb"][1]["operation"], "put")
+        self.assertEqual(snapshot["dynamoDb"][1]["value"], 1.25)
+        self.assertEqual(snapshot["dynamoDb"][2]["result"], "failure")
+        json.dumps(snapshot, allow_nan=False)
+
+    def test_only_unobserved_pool_nan_is_allowed(self):
+        for name, value in [("delivery_dynamodb_pool_pending", "Inf"),
+                            ("delivery_dynamodb_connection_acquire_seconds_sum", "NaN")]:
+            response = io.BytesIO(json.dumps({"status": "success", "data": {"result": [
+                {"metric": {"__name__": name, "job": "api"}, "value": [1, value]}]}}).encode())
+            with patch("performance_flow.urlopen", return_value=response):
+                with self.assertRaises(ValueError):
+                    telemetry()
+
+    def test_http_error_records_only_bounded_api_error_fields_and_closes_the_response(self):
+        body = io.BytesIO(json.dumps({"status": 503, "data": {"code": 50004,
+            "message": "Origin admission was not confirmed", "unexpected": "not retained"}}).encode())
+        value = request(accepted=False)
+        record_http_failure(value, HTTPError("http://local/api", 503, "unavailable", {}, body))
+        self.assertTrue(body.closed)
+        self.assertEqual(value["httpStatus"], 503)
+        self.assertEqual(value["responseError"], {"code": 50004, "message": "Origin admission was not confirmed"})
+        self.assertEqual(summarize([value], [], 100, 10)["apiErrorCodes"], {"50004": 1})
+
+    def test_malformed_or_oversized_error_body_keeps_the_http_status(self):
+        for body, reason in [(b"not JSON", "JSONDecodeError"), (b"x" * 10000, "body-too-large")]:
+            with self.subTest(reason=reason):
+                stream = io.BytesIO(body)
+                value = {}
+                record_http_failure(value, HTTPError("http://local/api", 503, "unavailable", {}, stream))
+                self.assertTrue(stream.closed)
+                self.assertEqual(value["httpStatus"], 503)
+                self.assertEqual(value["responseErrorParseFailure"], reason)
+                self.assertNotIn("responseError", value)
+
     def test_nearest_rank_percentiles_and_empty_samples(self):
         self.assertEqual(distribution(range(1, 101)), {"count": 100, "p50": 50, "p95": 95, "p99": 99, "max": 100})
         self.assertIsNone(distribution([])["p99"])
