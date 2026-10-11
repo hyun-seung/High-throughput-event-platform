@@ -46,6 +46,7 @@ public final class DynamoDbMetricsInterceptor implements ExecutionInterceptor {
         return switch (request) {
             case "QueryRequest" -> "query";
             case "GetItemRequest" -> "get_item";
+            case "BatchGetItemRequest" -> "batch_get_item";
             case "PutItemRequest" -> "put_item";
             case "UpdateItemRequest" -> "update_item";
             case "TransactWriteItemsRequest" -> "transact_write_items";
