@@ -8,6 +8,7 @@ import messaging.common.messages.MessageTopics;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.scheduling.annotation.Scheduled;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.services.dynamodb.model.ConditionalCheckFailedException;
@@ -45,6 +46,8 @@ public class FollowupHttpDispatcher {
         this.pageSize = pageSize;
     }
 
+    @Scheduled(initialDelayString = "${messaging.result.followup.initial-delay-ms:5000}",
+            fixedDelayString = "${messaging.result.followup.poll-ms:5000}")
     public synchronized void poll() throws ExecutionException, InterruptedException {
         long now = clock.millis();
         for (int shard = 0; shard < FollowupDispatchIndex.SHARDS; shard++) pollShard(shard, now);
