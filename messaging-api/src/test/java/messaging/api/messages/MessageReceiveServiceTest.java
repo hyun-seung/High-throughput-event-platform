@@ -14,6 +14,7 @@ import java.time.ZoneOffset;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeoutException;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -65,7 +66,7 @@ class MessageReceiveServiceTest {
     }
 
     @Test
-    void duplicateMarkerWithoutConfirmedOriginNeverReturns202() {
+    void duplicateMarkerWithoutConfirmedOriginNeverReturnsSuccess() {
         String id = "00000000-0000-0000-0000-000000000001";
         when(duplicates.claim(eq(42L), eq(request), anyString()))
                 .thenReturn(new MessageDuplicateGuard.Claim(id, "key", "value", false, true));
@@ -138,17 +139,92 @@ class MessageReceiveServiceTest {
     }
 
     @Test
-    void originSavePrecedesDirectKafkaSendAndUnconfirmedAckKeeps202() {
+    void originSavePrecedesDirectKafkaSendAndFailedAckReturns503() {
         String id = "00000000-0000-0000-0000-000000000001";
         when(duplicates.claim(eq(42L), eq(request), anyString()))
                 .thenReturn(new MessageDuplicateGuard.Claim(id, "key", "value", true, true));
         when(publisher.publish(any())).thenReturn(CompletableFuture.failedFuture(new IllegalStateException("broker unavailable")));
 
-        assertEquals(id, service.receive(42L, request).clientMsgId());
+        MessageAdmissionException failure = assertThrows(MessageAdmissionException.class,
+                () -> service.receive(42L, request));
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, failure.status());
 
         var order = inOrder(origins, publisher);
         order.verify(origins).save(any(MessageSubmission.class));
         order.verify(publisher).publish(any(MessageSubmission.class));
+        verify(duplicates, never()).release(any());
+    }
+
+    @Test
+    void publicationTimeoutPreservesOriginDuplicateKeyAndPendingSend() {
+        claimNewExecution();
+        var send = new CompletableFuture<>();
+        doReturn(send).when(publisher).publish(any());
+        var bounded = new MessageReceiveService(usage, duplicates, origins, publisher, Clock.systemUTC(), 10);
+
+        MessageAdmissionException failure = assertThrows(MessageAdmissionException.class,
+                () -> bounded.receive(42L, request));
+
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, failure.status());
+        assertInstanceOf(TimeoutException.class, failure.getCause());
+        assertFalse(send.isDone());
+        verify(origins).save(any());
+        verify(duplicates, never()).release(any());
+    }
+
+    @Test
+    void synchronousPublicationFailureReturns503AndPreservesDuplicateKey() {
+        claimNewExecution();
+        when(publisher.publish(any())).thenThrow(new IllegalStateException("metadata unavailable"));
+
+        MessageAdmissionException failure = assertThrows(MessageAdmissionException.class,
+                () -> service.receive(42L, request));
+
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, failure.status());
+        verify(duplicates, never()).release(any());
+    }
+
+    @Test
+    void duplicateAndConfirmedAmbiguousOriginStillRequireKafkaAck() {
+        String id = "stable-id";
+        when(duplicates.claim(eq(42L), eq(request), anyString()))
+                .thenReturn(new MessageDuplicateGuard.Claim(id, "key", "value", false, true));
+        when(origins.find(id)).thenReturn(Optional.of(event(id)));
+        when(publisher.publish(any())).thenReturn(CompletableFuture.failedFuture(new IllegalStateException("broker unavailable")));
+
+        MessageAdmissionException duplicateFailure = assertThrows(MessageAdmissionException.class,
+                () -> service.receive(42L, request));
+        assertEquals("Kafka publication was not confirmed", duplicateFailure.getMessage());
+
+        when(duplicates.claim(eq(42L), eq(request), anyString()))
+                .thenReturn(new MessageDuplicateGuard.Claim(id, "key", "value", true, true));
+        doThrow(DynamoDbException.builder().message("response lost").build()).when(origins).save(any());
+        MessageAdmissionException ambiguousFailure = assertThrows(MessageAdmissionException.class,
+                () -> service.receive(42L, request));
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, ambiguousFailure.status());
+        assertEquals("Kafka publication was not confirmed", ambiguousFailure.getMessage());
+        verify(duplicates, never()).release(any());
+    }
+
+    @Test
+    void interruptedAckWaitReturns503AndRestoresInterruptFlag() {
+        claimNewExecution();
+        when(publisher.publish(any())).thenReturn(new CompletableFuture<>());
+        try {
+            Thread.currentThread().interrupt();
+            MessageAdmissionException failure = assertThrows(MessageAdmissionException.class,
+                    () -> service.receive(42L, request));
+            assertEquals(HttpStatus.SERVICE_UNAVAILABLE, failure.status());
+            assertTrue(Thread.currentThread().isInterrupted());
+            verify(duplicates, never()).release(any());
+        } finally {
+            Thread.interrupted();
+        }
+    }
+
+    private void claimNewExecution() {
+        when(duplicates.claim(eq(42L), eq(request), anyString()))
+                .thenReturn(new MessageDuplicateGuard.Claim("stable-id", "key", "value", true, true));
     }
 
     @Test

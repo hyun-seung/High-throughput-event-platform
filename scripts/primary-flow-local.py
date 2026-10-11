@@ -123,7 +123,7 @@ def verify_flow(env: dict[str, str], event_file: Path, client_id: int,
     if secondary:
         submission["secondarySendPayload"] = {"text": "fallback local flow"}
     status, response = post_json(api + "/api/v1/messages", submission, token)
-    if status != 202:
+    if status != 200:
         raise AssertionError(f"Message admission returned {status}")
     tps_count = int(redis(["HGET", f"message:usage:{{client:{client_id}}}:10s", "count"], env) or "0")
     if tps_count < 1:
@@ -133,7 +133,7 @@ def verify_flow(env: dict[str, str], event_file: Path, client_id: int,
     if not re.fullmatch(r"[0-9a-f]{32}", client_msg_id):
         raise AssertionError("Invalid clientMsgId from admission")
     if observe:
-        print(f"[인입] HTTP 202, clientId={client_id}, messageId={message_id}, "
+        print(f"[인입] HTTP 200, clientId={client_id}, messageId={message_id}, "
               f"clientMsgId={client_msg_id}, recipient={recipient}", flush=True)
         print(f"[접수 제어] TPS count={tps_count}, 월 quota 사용량={before + 1}", flush=True)
 

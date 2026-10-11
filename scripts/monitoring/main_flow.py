@@ -2,7 +2,9 @@
 """Generate and verify traffic in the isolated main messaging monitoring stack."""
 
 import argparse
+import base64
 import concurrent.futures
+import hashlib
 import json
 import math
 import subprocess
@@ -12,6 +14,7 @@ import time
 import uuid
 from pathlib import Path
 from urllib.parse import urlencode
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 
@@ -33,7 +36,36 @@ def request_json(url: str, payload: object | None = None, token: str | None = No
         headers["Authorization"] = "Bearer " + token
     request = Request(url, data=None if payload is None else json.dumps(payload).encode(), headers=headers)
     with urlopen(request, timeout=20) as response:
-        return json.load(response)
+        answer = json.load(response)
+        if url == API + "/api/v1/messages":
+            assert response.status == 200 and answer.get("status") == 200, answer
+        return answer
+
+
+def submit_unconfirmed(token: str, body: dict) -> tuple[str, float, dict]:
+    """Expect HTTP 503 and recover the test execution ID from its retained duplicate key."""
+    start = time.monotonic()
+    try:
+        request_json(API + "/api/v1/messages", body, token)
+    except HTTPError as failure:
+        with failure:
+            answer = json.load(failure)
+            assert failure.code == 503 and answer.get("status") == 503, answer
+            assert answer["data"]["code"] == 50004, answer
+            assert answer["data"]["message"] == "Kafka publication was not confirmed", answer
+    else:
+        raise AssertionError("Unconfirmed Kafka publication returned success")
+    elapsed = (time.monotonic() - start) * 1000
+    # The local fixture token identifies the customer; no token or fingerprint is logged.
+    encoded = token.split(".")[1]
+    client_id = int(json.loads(base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4)))["sub"])
+    digest = hashlib.sha256(f"{client_id}\0{body['messageId']}\0{body['recipientNumber']}".encode()).hexdigest()
+    marker = compose("exec", "-T", "redis", "redis-cli", "GET",
+                     f"message:duplicate:{{client:{client_id}}}:{digest}")
+    identifier = marker.split(":", 1)[0]
+    if len(identifier) != 32 or any(c not in "0123456789abcdef" for c in identifier):
+        raise AssertionError("Unconfirmed admission did not retain its execution ID")
+    return identifier, elapsed, answer
 
 
 def compose(*args: str, override: Path | None = None, timeout: int = 30) -> str:
@@ -371,8 +403,11 @@ def recovery_test(timeout: int) -> None:
                 token = request_json(API + "/api/v1/auth/token",
                                      {"username": "local-user", "password": "local-password"})["data"]["accessToken"]
                 run_id = uuid.uuid4().hex[:8]
-                client_msg_id, latency, _ = submit(token, run_id, 0, False)
-                report.update({"runId": run_id, "clientMsgId": client_msg_id, "admissionMs": round(latency, 2)})
+                body = {"messageId": f"monitor-{run_id}-00000", "recipientNumber": "01000000000",
+                        "messageCategory": "GENERAL", "payload": {"text": "monitoring main flow"}}
+                client_msg_id, latency, answer = submit_unconfirmed(token, body)
+                report.update({"runId": run_id, "clientMsgId": client_msg_id, "admissionMs": round(latency, 2),
+                               "outageResponse": answer})
                 stored = origin_item(client_msg_id)
                 if stored.get("message_id", {}).get("S") != f"monitor-{run_id}-00000":
                     raise AssertionError("Admission was not durably saved under the original ID")

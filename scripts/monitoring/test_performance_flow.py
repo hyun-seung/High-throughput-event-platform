@@ -13,7 +13,7 @@ from performance_flow import AP_TOPICS, analyze_run, case_for, distribution, rec
 def request(number=0, case="primary-success", **changes):
     value = {"messageId": f"test-{number}", "clientMsgId": f"id-{number}", "case": case,
              "accepted": True, "startedAt": 100, "respondedAt": 101, "httpMs": 1000,
-             "dispatchDelayMs": 5, "httpStatus": 202}
+             "dispatchDelayMs": 5, "httpStatus": 200}
     return value | changes
 
 

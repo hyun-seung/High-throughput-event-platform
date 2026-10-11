@@ -3,6 +3,7 @@ package messaging.api.messages;
 import messaging.common.messages.MessageSubmission;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.services.dynamodb.model.ConditionalCheckFailedException;
@@ -12,6 +13,9 @@ import java.time.Clock;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 @Service
 @Slf4j
@@ -21,20 +25,30 @@ public class MessageReceiveService {
     private final MessageOriginStore origins;
     private final MessageRequestPublisher publisher;
     private final Clock clock;
+    private final long publishTimeoutMs;
 
     @Autowired
     public MessageReceiveService(MessageUsageLimiter usage, MessageDuplicateGuard duplicates, MessageOriginStore origins,
-                               MessageRequestPublisher publisher) {
-        this(usage, duplicates, origins, publisher, Clock.systemUTC());
+                               MessageRequestPublisher publisher,
+                               @Value("${messaging.admission.publish-timeout-ms:10000}") long publishTimeoutMs) {
+        this(usage, duplicates, origins, publisher, Clock.systemUTC(), publishTimeoutMs);
     }
 
     MessageReceiveService(MessageUsageLimiter usage, MessageDuplicateGuard duplicates,
                         MessageOriginStore origins, MessageRequestPublisher publisher, Clock clock) {
+        this(usage, duplicates, origins, publisher, clock, 10000);
+    }
+
+    MessageReceiveService(MessageUsageLimiter usage, MessageDuplicateGuard duplicates,
+                          MessageOriginStore origins, MessageRequestPublisher publisher, Clock clock,
+                          long publishTimeoutMs) {
         this.usage = usage;
         this.duplicates = duplicates;
         this.origins = origins;
         this.publisher = publisher;
         this.clock = clock;
+        if (publishTimeoutMs < 1) throw new IllegalArgumentException("publishTimeoutMs must be positive");
+        this.publishTimeoutMs = publishTimeoutMs;
     }
 
     public MessageReceiveResponse receive(long clientId, MessageReceiveRequest request) {
@@ -75,31 +89,39 @@ public class MessageReceiveService {
         } catch (RuntimeException uncertain) {
             // PutItem may have committed even when its response was lost. Never release the Redis key
             // before a strongly consistent read resolves the same execution.
+            Optional<MessageSubmission> stored = Optional.empty();
             try {
-                Optional<MessageSubmission> stored = lookup(event.clientMsgId());
-                if (stored.isPresent() && sameAdmission(stored.get(), event)) {
-                    return accepted(stored.get());
-                }
+                stored = lookup(event.clientMsgId());
             } catch (RuntimeException stillUncertain) {
                 uncertain.addSuppressed(stillUncertain);
             }
-            throw new MessageAdmissionException(HttpStatus.SERVICE_UNAVAILABLE,
-                    "Origin admission was not confirmed", uncertain);
+            if (stored.isEmpty() || !sameAdmission(stored.get(), event)) {
+                throw new MessageAdmissionException(HttpStatus.SERVICE_UNAVAILABLE,
+                        "Origin admission was not confirmed", uncertain);
+            }
+            event = stored.get();
         }
         return accepted(event);
     }
 
     private MessageReceiveResponse accepted(MessageSubmission event) {
-        // ORIGIN is the durable admission proof. Recovery republishes the same execution when
-        // Kafka send fails, its ack is lost, or this process exits before the send.
+        // Success requires the broker ack. Keep ORIGIN and the duplicate key on every failure:
+        // recovery or a customer retry must reuse this execution even when the ack was lost.
         try {
-            publisher.publish(event).whenComplete((ignored, failure) -> {
-                if (failure != null) log.warn("Initial Kafka publication unconfirmed: clientMsgId={}", event.clientMsgId());
-            });
-        } catch (RuntimeException unconfirmed) {
-            log.warn("Initial Kafka publication could not start: clientMsgId={}", event.clientMsgId());
+            publisher.publish(event).get(publishTimeoutMs, TimeUnit.MILLISECONDS);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw publicationUnconfirmed(event, interrupted);
+        } catch (ExecutionException | TimeoutException | RuntimeException unconfirmed) {
+            throw publicationUnconfirmed(event, unconfirmed);
         }
         return new MessageReceiveResponse(event.clientMsgId(), "RECEIVED");
+    }
+
+    private MessageAdmissionException publicationUnconfirmed(MessageSubmission event, Exception failure) {
+        log.warn("Initial Kafka publication unconfirmed: clientMsgId={}", event.clientMsgId());
+        return new MessageAdmissionException(HttpStatus.SERVICE_UNAVAILABLE,
+                "Kafka publication was not confirmed", failure);
     }
 
     private Optional<MessageSubmission> lookup(String clientMsgId) { return origins.find(clientMsgId); }

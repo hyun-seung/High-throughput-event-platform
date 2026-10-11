@@ -5,7 +5,7 @@ import json
 import time
 import uuid
 
-from main_flow import API, AP_HEALTH_ENDPOINTS, ROOT, application_health, compose, origin_item, request_json
+from main_flow import API, AP_HEALTH_ENDPOINTS, ROOT, application_health, compose, origin_item, request_json, submit_unconfirmed
 from policy_flow import mock_events
 from redis_dns_flow import inspect
 from storage_flow import HTTP_GROUP, HTTP_TOPIC, accepted_item, assert_calls, http_item, resume_service
@@ -63,17 +63,22 @@ def run():
     def rows():
         return histories(report["runId"], "kafka")
 
-    def admit(name, scenario="manual-webhook"):
+    def admit(name, scenario="manual-webhook", unconfirmed=False):
         body = {"messageId": f"kafka-{report['runId']}-{len(report['cases'])}",
                 "recipientNumber": "01099990000", "messageCategory": "GENERAL",
                 "payload": {"text": name, "simulatorScenario": scenario}}
         start = time.monotonic()
-        result = request_json(API + "/api/v1/messages", body, token)["data"]
-        assert result["status"] == "RECEIVED", result
-        identifier = result["clientMsgId"]
+        if unconfirmed:
+            identifier, _, answer = submit_unconfirmed(token, body)
+        else:
+            result = request_json(API + "/api/v1/messages", body, token)["data"]
+            assert result["status"] == "RECEIVED", result
+            identifier = result["clientMsgId"]
         report["cases"][name] = {"clientMsgId": identifier,
                                  "admissionSeconds": round(time.monotonic() - start, 2)}
-        checkpoint(name + "-admitted")
+        if unconfirmed:
+            report["cases"][name]["outageResponse"] = answer
+        checkpoint(name + ("-unconfirmed" if unconfirmed else "-admitted"))
         return identifier
 
     def verify():
@@ -143,7 +148,7 @@ def run():
             assert observation["status"] == "FAILED" and observation["httpStatus"] == 400, observation
             assert field(observed, "publish_state") == "PENDING", observed
             report["cases"]["http-failure-publication"]["outageObservation"] = observation
-            admission_id = admit("admission-publication", "success")
+            admission_id = admit("admission-publication", "success", unconfirmed=True)
             origin = origin_item(admission_id)
             assert "message_publication_due" in origin, origin
             report["cases"]["admission-publication"]["outageRecoveryIndexPresent"] = True

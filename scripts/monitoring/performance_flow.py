@@ -41,8 +41,10 @@ METRICS = " or on(__name__,job,instance,group,topic,partition,area,id) ".join((
     'messaging_complete_sql_batch_size_sum',
     'messaging_scheduled_work_duration_seconds_count{phase="item"}',
     'messaging_scheduled_work_duration_seconds_sum{phase="item"}',
-    'http_server_requests_seconds_count{job=~"api|webhook-receive",status="202",method="POST"}',
-    'http_server_requests_seconds_sum{job=~"api|webhook-receive",status="202",method="POST"}'))
+    'http_server_requests_seconds_count{job="api",status="200",method="POST"}',
+    'http_server_requests_seconds_sum{job="api",status="200",method="POST"}',
+    'http_server_requests_seconds_count{job="webhook-receive",status="202",method="POST"}',
+    'http_server_requests_seconds_sum{job="webhook-receive",status="202",method="POST"}'))
 
 
 def distribution(values):
@@ -399,7 +401,7 @@ def run(args):
                         value["httpStatus"] = response.status
                         answer = json.load(response)
                     data = answer.get("data", {})
-                    value["accepted"] = value["httpStatus"] == 202 and data.get("status") == "RECEIVED" and bool(data.get("clientMsgId"))
+                    value["accepted"] = value["httpStatus"] == 200 and answer.get("status") == 200 and data.get("status") == "RECEIVED" and bool(data.get("clientMsgId"))
                     if value["accepted"]:
                         value["clientMsgId"] = data["clientMsgId"]
                 except HTTPError as failure:
@@ -486,7 +488,7 @@ def arguments():
     parser.add_argument("--seconds", type=int, default=20)
     parser.add_argument("--workers", type=int, default=32)
     parser.add_argument("--timeout", type=int, default=180, help="Drain timeout in seconds")
-    parser.add_argument("--request-timeout", type=float, default=10)
+    parser.add_argument("--request-timeout", type=float, default=20)
     parser.add_argument("--failure-percent", type=int, default=0)
     parser.add_argument("--secondary-percent", type=int, default=0)
     parser.add_argument("--analyze-run", help="Recalculate minute windows from a saved run; sends no traffic")

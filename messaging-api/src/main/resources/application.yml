@@ -68,6 +68,7 @@ delivery:
 messaging:
   admission:
     enabled: ${MESSAGING_ADMISSION_ENABLED:true}
+    publish-timeout-ms: ${KAFKA_PUBLISH_CONFIRM_TIMEOUT_MS:10000}
 
 management:
   endpoint:
