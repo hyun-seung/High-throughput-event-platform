@@ -20,17 +20,22 @@
     <description>Reliable Messaging Service</description>
 
     <modules>
+        <!-- Shared contracts and opt-in infrastructure configuration. -->
+        <module>messaging-common</module>
+        <!-- Admission and its independently operated publication recovery. -->
         <module>messaging-api</module>
         <module>messaging-publication-recovery-app</module>
+        <!-- CDC reference data has a separate deployment responsibility. -->
         <module>messaging-reference-cache</module>
-        <module>messaging-webhook-receive-api</module>
+        <!-- Main delivery flow; the carrier HTTP sender is one shared JAR. -->
         <module>messaging-pre-send-manager</module>
         <module>messaging-carrier-http-sender</module>
-        <module>messaging-tcp-sender</module>
+        <module>messaging-webhook-receive-api</module>
         <module>messaging-result-manager</module>
+        <module>messaging-tcp-sender</module>
         <module>messaging-complete-manager</module>
         <module>messaging-webhook-sender</module>
-        <module>messaging-common</module>
+        <!-- Local verification tools are not deployed as an AP. -->
         <module>verification-tools</module>
     </modules>
 

@@ -5,6 +5,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.beans.factory.ObjectProvider;
 
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -20,6 +21,8 @@ import software.amazon.awssdk.services.dynamodb.DynamoDbClientBuilder;
 import java.net.URI;
 
 @AutoConfiguration
+@ConditionalOnClass(name = {"software.amazon.awssdk.services.dynamodb.DynamoDbClient",
+        "software.amazon.awssdk.http.apache5.Apache5HttpClient"})
 @ConditionalOnProperty(prefix = "delivery.dynamodb", name = "enabled", havingValue = "true")
 @EnableConfigurationProperties(DynamoDbProperties.class)
 public class DynamoDbAutoConfiguration {

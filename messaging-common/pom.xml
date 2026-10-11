@@ -14,9 +14,11 @@
 
 
     <dependencies>
+        <!-- Infrastructure is opt-in; runtime APs declare the stores they actually use. -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-redis</artifactId>
+            <optional>true</optional>
         </dependency>
         <dependency><groupId>tools.jackson.core</groupId><artifactId>jackson-databind</artifactId></dependency>
         <dependency>
@@ -44,11 +46,13 @@
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>dynamodb</artifactId>
+            <optional>true</optional>
         </dependency>
 
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>apache5-client</artifactId>
+            <optional>true</optional>
         </dependency>
 
         <!-- Lombok -->
