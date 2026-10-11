@@ -7,6 +7,7 @@ from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 import json
 import math
+import re
 import subprocess
 import threading
 import time
@@ -163,13 +164,69 @@ def summarize(requests, rows, start, seconds):
     return result
 
 
+def summarize_windows(requests, rows, samples, start, seconds):
+    """One-minute load windows; latency follows admission cohorts through the drain."""
+    accepted = {r["messageId"]: r for r in requests if r.get("accepted")}
+    completed = {r["messageId"]: r for r in rows if r["messageId"] in accepted
+                 and r["cleanup"] == "DONE" and r["acknowledged"]
+                 and all(r[field] is not None for field in ("recordedAt", "notifiedAt", "cleanedAt"))}
+    completion_times = {identifier: max(r["recordedAt"], r["notifiedAt"], r["cleanedAt"])
+                        for identifier, r in completed.items()}
+    windows = []
+    for offset in range(0, seconds, 60):
+        begin, end = start + offset, start + min(offset + 60, seconds)
+        cohort = {identifier for identifier, r in accepted.items() if begin <= r["respondedAt"] < end}
+        done = cohort & completed.keys()
+        pending = {identifier for identifier, r in accepted.items() if r["respondedAt"] < end}
+        pending -= {identifier for identifier, stamp in completion_times.items() if stamp < end}
+        observed = [s for s in samples if begin <= s["at"] < end]
+        valid = sorted((s for s in observed if s["valid"]), key=lambda s: s["at"])
+        jobs = sorted({job for s in valid for job in s["heapBytes"]})
+        windows.append({"fromSecond": offset, "toSecond": min(offset + 60, seconds),
+            "accepted": len(cohort), "cohortCompleted": len(done),
+            "completedDuringWindow": sum(begin <= stamp < end for stamp in completion_times.values()),
+            "pendingAtWindowEnd": len(pending),
+            "cohortCompletionLatencyMs": distribution([
+                (completion_times[i] - completed[i]["receivedAt"]) * 1000 for i in done]),
+            "cohortCleanupAfterHistoryMs": distribution([
+                (completed[i]["cleanedAt"] - completed[i]["recordedAt"]) * 1000 for i in done]),
+            "telemetrySamples": len(observed), "invalidTelemetrySamples": len(observed) - len(valid),
+            "peakLag": max((sum(s["lag"].values()) for s in valid), default=None),
+            "lastObservedLag": sum(valid[-1]["lag"].values()) if valid else None,
+            "lastTelemetryAt": valid[-1]["at"] if valid else None,
+            "heapBytesByAp": {job: {"min": min(s["heapBytes"][job] for s in valid),
+                                      "max": max(s["heapBytes"][job] for s in valid),
+                                      "last": valid[-1]["heapBytes"][job]} for job in jobs}})
+    return windows
+
+
+def analyze_run(run_id):
+    # Recalculate older runs without replacing their original report/source hashes.
+    directory = ROOT / ".monitoring/performance" / run_id
+    report = json.loads((directory / "report.json").read_text())
+    if report.get("stage") not in ("measured", "failed") or "finishedAt" not in report:
+        raise ValueError("Wait for the saved run to finish before analyzing it")
+    requests = [json.loads(line) for line in (directory / "requests.jsonl").read_text().splitlines()]
+    rows = json.loads((directory / "results.json").read_text())
+    samples = [json.loads(line) for line in (directory / "telemetry.jsonl").read_text().splitlines()]
+    result = {"runId": run_id,
+              "sourceHash": hashlib.sha256((ROOT / "scripts/monitoring/performance_flow.py").read_bytes()).hexdigest(),
+              "inputHashes": {name: hashlib.sha256((directory / name).read_bytes()).hexdigest()
+                              for name in ("report.json", "requests.jsonl", "results.json", "telemetry.jsonl")},
+              "loadWindows": summarize_windows(requests, rows, samples, report["startedAt"],
+                                               report["configuration"]["seconds"])}
+    output = directory / "window-analysis.json"
+    output.write_text(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False))
+    print(output)
+
+
 def run(args):
     run_id = uuid.uuid4().hex[:8]
     directory = ROOT / ".monitoring/performance" / run_id
     directory.mkdir(parents=True)
     report = {"runId": run_id, "pass": False, "stage": "preflight", "configuration": vars(args),
               "artifacts": str(directory), "capacityOrSlaVerdict": "not-evaluated"}
-    requests, samples = [], []
+    requests, samples, rows = [], [], []
     lock, stop = threading.Lock(), threading.Event()
 
     def save():
@@ -307,6 +364,8 @@ def run(args):
         stop.set()
         if monitor:
             monitor.join(timeout=10)
+        if "startedAt" in report:
+            report["loadWindows"] = summarize_windows(requests, rows, samples, report["startedAt"], args.seconds)
         valid = [s for s in samples if s["valid"]]
         report["telemetry"] = {"samples": len(samples), "invalidSamples": len(samples) - len(valid),
             "peakLag": max((sum(s["lag"].values()) for s in valid), default=None),
@@ -331,7 +390,10 @@ def arguments():
     parser.add_argument("--request-timeout", type=float, default=10)
     parser.add_argument("--failure-percent", type=int, default=0)
     parser.add_argument("--secondary-percent", type=int, default=0)
+    parser.add_argument("--analyze-run", help="Recalculate minute windows from a saved run; sends no traffic")
     args = parser.parse_args()
+    if args.analyze_run and not re.fullmatch(r"[0-9a-f]{8}", args.analyze_run):
+        parser.error("analyze-run must be an eight-character lowercase hexadecimal run ID")
     if not (1 <= args.rate <= 1000 and 10 <= args.seconds <= 600 and args.rate * args.seconds <= 100000
             and 1 <= args.workers <= 256 and 30 <= args.timeout <= 1800 and 0 < args.request_timeout <= 30
             and 0 <= args.failure_percent <= 100 and 0 <= args.secondary_percent <= 100
@@ -341,4 +403,8 @@ def arguments():
 
 
 if __name__ == "__main__":
-    run(arguments())
+    options = arguments()
+    if options.analyze_run:
+        analyze_run(options.analyze_run)
+    else:
+        run(options)

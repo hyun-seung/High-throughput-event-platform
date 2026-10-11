@@ -36,6 +36,10 @@ bash scripts/monitoring.sh stop
 bash scripts/monitoring.sh performance --rate 5 --seconds 20
 # 정상 80%·1차 최종 실패 10%·HTTP 실패 후 TCP 성공 10%
 bash scripts/monitoring.sh performance --rate 5 --seconds 20 --failure-percent 10 --secondary-percent 10
+# 10 TPS·10분 혼합 부하와 완료 대기 최대 10분
+bash scripts/monitoring.sh performance --rate 10 --seconds 600 --failure-percent 10 --secondary-percent 10 --timeout 600
+# 저장된 실행의 분 단위 추세 재집계 (메시지를 새로 보내지 않음)
+bash scripts/monitoring.sh performance --analyze-run c2957308
 # 집계 계산 회귀 검사
 python3 -m unittest discover -s scripts/monitoring -p test_performance_flow.py
 ```
@@ -56,6 +60,12 @@ python3 -m unittest discover -s scripts/monitoring -p test_performance_flow.py
 5초마다 Prometheus를 조회하며 실제 scrape·Kafka 관측기 주기는 각각 10초이므로 표본 사이의 순간 피크는 놓칠 수 있다. CPU 비율은 JVM 지표이며 힙은 컨테이너 전체 메모리/RSS가 아니다. `lagZeroObservedAfterLoadSeconds`는 결과 대조·수집 지연이 포함된 **lag 0 확인 시간의 상한 관측값**으로, 실제 적체가 사라진 정확한 시각이 아니다. DB의 기록 시각도 트랜잭션 commit 완료 시각과 완전히 같지는 않다. 서버와 부하 도구의 시계 차이 추정치·불확실성을 함께 남긴다.
 
 보고서는 `.monitoring/performance-latest.json`, 실행별 원본은 `.monitoring/performance/<runId>/`의 `report.json`, `requests.jsonl`, `results.json`, `telemetry.jsonl`, `jars.env`다. 요청 시간·실제 메시지 ID, 1초별 건수, 원래 표본을 보존하므로 집계를 다시 대조할 수 있다. 네트워크 타임아웃·5xx는 미접수 확정이 아니며 `unconfirmedAdmissions`에 포함한다. 이런 실행은 실패로 표시하고 같은 실행 ID의 늦은 이력을 추가 확인해야 한다.
+
+`loadWindows`는 부하 구간을 60초씩 나누고 마지막 짧은 구간도 포함한다. `accepted`는 해당 구간에 202 응답을 받은 건수, `cohortCompleted`는 그 접수 묶음 중 처리 대기 종료까지 완료된 건수다. `cohortCompletionLatencyMs`와 `cohortCleanupAfterHistoryMs`는 접수 묶음을 기준으로 전체 완료와 이력→정리 지연을 계산하므로 다음 분이나 부하 종료 뒤 완료된 메시지도 원래 접수 구간에 포함한다. 미완료 건은 지연 표본에서 제외되므로 반드시 `accepted`·`cohortCompleted`를 함께 대조한다. 구간 경계는 시작 포함·끝 제외이며, 부하 종료 후 도착한 202 응답은 전체 보고서에만 포함한다.
+
+`completedDuringWindow`는 해당 시간 동안 실제 완료된 건수이며 앞 구간에서 접수된 메시지도 포함한다. `pendingAtWindowEnd`는 구간 끝 직전까지 접수됐으나 전체 완료되지 않은 메시지 수다. Kafka lag가 0이어도 결과 예약·고객 통지·정리 작업이 남을 수 있어 둘을 함께 본다. 분별 lag 최대·마지막 관측값, AP별 힙 최소·최대·마지막값, 지표 누락 건수와 마지막 표본 시각도 남긴다. 유효 표본이 없으면 lag를 0으로 간주하지 않는다. 힙 최소값도 GC 이후 생존 객체량과 같지 않으므로 메모리 누수 판정은 별도다.
+
+`--analyze-run`은 기존 원본으로 같은 계산을 재현해 `window-analysis.json`을 저장한다. 원래 보고서는 변경하지 않으며 입력 4개 파일과 분석 소스의 SHA-256을 함께 남긴다. AP 호출이나 새 부하는 발생하지 않는다.
 
 **`pass=true`는 성능 SLA 합격이 아니라 측정·데이터 대조 성공**이다. 예정한 요청이 모두 접수되고 동일한 메시지 ID·예상 결과·과금 대상·고객 통지·정리 상태가 맞아야 한다. ORIGIN 삭제를 직접 확인하고, 필수 지표 누락·부하 도구 미발송·접수 오류가 있으면 성공으로 표시하지 않는다. `capacityOrSlaVerdict`는 아직 `not-evaluated`다. 단계별 처리량 한계와 지속 부하 결과는 별도로 측정한다.
 
