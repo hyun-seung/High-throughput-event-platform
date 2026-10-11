@@ -289,6 +289,20 @@ poll 안에 item, item 안에 세부 단계가 중첩되므로 서로 합산하�
 
 `bash scripts/monitoring.sh verify`는 AP health·기존 수집 상태에 더해 예약 작업 14개 단계 지표, 실제 poll 실행, Grafana 신규 패널 6개의 PromQL을 점검한다. 트래픽이 없으면 건별 시간 패널은 표본이 없어 비어 있을 수 있다. 실행 자료는 `.monitoring/scheduled-work/`에 보존한다.
 
+### 완료 정리의 메시지별 제한 병렬 처리 — 2026-10-11
+
+완료 정리의 건별 순서는 유지하면서 서로 다른 메시지를 기본 2건까지 병렬 처리하도록 변경했다. `MSG_COMPLETE_CLEANUP_CONCURRENCY`는 1~4를 허용하며 1이면 순차 처리다. 로컬 Compose에도 같은 설정을 노출했다. AP·모듈·패키지를 추가하지 않고 기존 MSG-COMPLETE-MANAGER 안에서 처리한다.
+
+한 번의 poll에서 고정 크기 작업 풀을 만들고, 페이지당 메시지 수만큼 작업을 쌓는 대신 동시성 수만큼의 작업만 제출한다. 각 작업은 배정된 메시지를 순서대로 처리한다. 페이지의 모든 작업이 끝나야 다음 페이지를 조회하고, 기존 최대 4페이지·페이지당 100건·poll 사이 5초 제한은 유지한다. 같은 AP 객체의 poll은 중첩되지 않는다. 종료·인터럽트 시 중단 플래그로 다음 메시지를 막고 풀의 실행 중 작업이 끝나야 poll 잠금을 해제한다. 드라이버가 즉시 중단되지 않으면 종료가 기다릴 수 있고, 프로세스가 강제 종료되면 SQL의 PENDING 상태로 복구한다.
+
+메시지 내부의 확인·정리 순서는 그대로다: SQL 완료 이력 확인 이후 ORIGIN/outbox를 읽고, 양쪽 Kafka 인계 완료를 확인하고, TTL을 기록한 뒤 STEP 배치를 삭제한다. STEP 미처리 항목이 없을 때만 ORIGIN을 삭제하고 SQL을 DONE으로 갱신한다. 일부 삭제 실패·저장소 오류는 기존 재시도 일정으로 남으며 다른 메시지의 정리를 막지 않는다. SQL 재시도 상태 자체를 기록하지 못하면 해당 작업은 실패하고 다음 poll에서 PENDING을 다시 읽는다. 발송·과금 판단·고객 웹훅 규칙은 바꾸지 않았다.
+
+DB 호출 수 자체를 줄인 변경은 아니다. AP당 동시에 진행되는 저장소 요청이 늘 수 있어 기본값을 2로 제한했다. 여러 Pod에서는 전체 동시성이 Pod 수에 비례하며, 이 변경은 Pod 간 선점을 새로 구현한 것이 아니다. 병렬 처리 후 `item`의 누적 시간은 `poll`의 실제 경과 시간을 초과할 수 있으므로 처리량이나 CPU 사용 시간으로 해석하지 않는다.
+
+검증은 동시성 상한, 페이지 완료 대기, 메시지별 성공·실패 격리, 인터럽트 보존, 인터럽트를 무시하는 작업의 종료 대기, 다음 poll과의 중첩 방지를 포함한다. 실제 PostgreSQL에서는 병렬 성공·재대기·실패의 cleanup 상태와 이력·과금 대상 보존을 확인했다. 공통 33개·완료 35개, 총 68개 테스트가 통과했고 Kafka 환경이 필요한 1개는 비활성화됐다. 자료는 `.monitoring/cleanup-concurrency/`에 보존한다.
+
+**로컬 배포·부하 비교는 아직 완료하지 않았다.** 변경 전 기준선 시도는 메시지 발송 전 Docker/API 사전 점검에서 멈췄다. Docker 조회 시간 초과, API의 Kafka 이름 조회 실패와 브로커 연결 오류가 확인됐다. Kafka 재시작 후에도 API 응답과 API 재시작·상태 조회가 지연됐다. 관련 없는 rcs 서비스도 실행 중이므로 Docker Desktop 전체 재시작은 별도 확인 중이다. 기존 JAR 배포를 유지하며 이 변경의 성능 개선 수치를 주장하지 않는다.
+
 ## 화면과 데이터 경로
 
 Grafana는 [통합 관제](http://localhost:13000/d/messaging-overview), [서비스](http://localhost:13000/d/messaging-services), [통신사](http://localhost:13000/d/messaging-providers), [고객](http://localhost:13000/d/messaging-customers), [오류](http://localhost:13000/d/messaging-errors), [인프라](http://localhost:13000/d/messaging-infra), [메시지 추적](http://localhost:13000/d/messaging-trace) 화면을 제공한다. Prometheus는 [19099](http://localhost:19099), 테스트 API는 `127.0.0.1:38080`이다. `trace` 화면에서는 `clientMsgId`로 로그를 찾는다.

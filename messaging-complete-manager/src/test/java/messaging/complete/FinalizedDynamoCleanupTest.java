@@ -38,7 +38,7 @@ class FinalizedDynamoCleanupTest {
     private final DynamoDbClient db = mock(DynamoDbClient.class);
     private final JdbcTemplate jdbc = mock(JdbcTemplate.class);
     private final FinalizedDynamoCleanup cleanup = new FinalizedDynamoCleanup(
-            jdbc, db, Clock.fixed(NOW, ZoneOffset.UTC), 25, 4, Duration.ofDays(7), metrics);
+            jdbc, db, Clock.fixed(NOW, ZoneOffset.UTC), 25, 4, Duration.ofDays(7), metrics, 1);
     private final FinalizedDynamoCleanup.Pending item =
             new FinalizedDynamoCleanup.Pending(ID, DECISION, "PRIMARY");
 
@@ -248,10 +248,153 @@ class FinalizedDynamoCleanupTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    void boundsParallelMessagesAndWaitsForThePageBeforeReadingAnother() throws Exception {
+        var worker = spy(new FinalizedDynamoCleanup(jdbc, db, Clock.fixed(NOW, ZoneOffset.UTC),
+                4, 4, Duration.ofDays(7), metrics, 2));
+        var page = IntStream.range(0, 4).mapToObj(i ->
+                new FinalizedDynamoCleanup.Pending("parallel-" + i, DECISION, "PRIMARY")).toList();
+        when(jdbc.query(anyString(), any(RowMapper.class), eq(4))).thenReturn(page, List.of());
+        var entered = new java.util.concurrent.CountDownLatch(2);
+        var release = new java.util.concurrent.CountDownLatch(1);
+        var active = new java.util.concurrent.atomic.AtomicInteger();
+        var maximum = new java.util.concurrent.atomic.AtomicInteger();
+        var seen = java.util.concurrent.ConcurrentHashMap.<String>newKeySet();
+        doAnswer(call -> {
+            FinalizedDynamoCleanup.Pending pending = call.getArgument(0);
+            assertTrue(seen.add(pending.clientMsgId()), "Same message started twice");
+            maximum.accumulateAndGet(active.incrementAndGet(), Math::max);
+            entered.countDown();
+            try {
+                assertTrue(release.await(10, java.util.concurrent.TimeUnit.SECONDS));
+                if (pending.clientMsgId().equals("parallel-0")) return false;
+                if (pending.clientMsgId().equals("parallel-1")) throw new IllegalStateException("unavailable");
+                return true;
+            } finally { active.decrementAndGet(); }
+        }).when(worker).cleanup(any());
+        try (var executor = java.util.concurrent.Executors.newSingleThreadExecutor()) {
+            var poll = executor.submit(worker::poll);
+            try {
+                assertTrue(entered.await(10, java.util.concurrent.TimeUnit.SECONDS));
+                assertEquals(2, active.get());
+                verify(jdbc, times(1)).query(anyString(), any(RowMapper.class), eq(4));
+                assertFalse(poll.isDone());
+            } finally { release.countDown(); }
+            poll.get(10, java.util.concurrent.TimeUnit.SECONDS);
+        }
+        assertEquals(2, maximum.get());
+        assertEquals(4, seen.size());
+        verify(jdbc, times(2)).query(anyString(), any(RowMapper.class), eq(4));
+        verify(jdbc, times(2)).update(contains("cleanup_status = 'DONE'"), anyString());
+        verify(jdbc).update(contains("interval '10 seconds'"), eq("parallel-0"));
+        verify(jdbc).update(contains("cleanup_attempts = cleanup_attempts + 1"), eq("IllegalStateException"), eq("parallel-1"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void interruptedPollStopsNewMessagesAndDrainsItsWorkerThreads() throws Exception {
+        var worker = spy(new FinalizedDynamoCleanup(jdbc, db, Clock.fixed(NOW, ZoneOffset.UTC),
+                4, 4, Duration.ofDays(7), metrics, 2));
+        var page = IntStream.range(0, 4).mapToObj(i ->
+                new FinalizedDynamoCleanup.Pending("interrupted-" + i, DECISION, "PRIMARY")).toList();
+        when(jdbc.query(anyString(), any(RowMapper.class), eq(4))).thenReturn(page);
+        var entered = new java.util.concurrent.CountDownLatch(2);
+        var release = new java.util.concurrent.CountDownLatch(1);
+        var threads = java.util.concurrent.ConcurrentHashMap.<Thread>newKeySet();
+        doAnswer(call -> {
+            threads.add(Thread.currentThread());
+            entered.countDown();
+            try { release.await(); }
+            catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); }
+            return false;
+        }).when(worker).cleanup(any());
+        var failure = new java.util.concurrent.atomic.AtomicReference<Throwable>();
+        var interruptedAtExit = new java.util.concurrent.atomic.AtomicBoolean();
+        var poll = new Thread(() -> {
+            try { worker.poll(); }
+            catch (Throwable error) { failure.set(error); }
+            finally { interruptedAtExit.set(Thread.currentThread().isInterrupted()); }
+        });
+        poll.start();
+        try {
+            assertTrue(entered.await(10, java.util.concurrent.TimeUnit.SECONDS));
+            poll.interrupt();
+            poll.join(10000);
+            assertFalse(poll.isAlive());
+            assertInstanceOf(IllegalStateException.class, failure.get());
+            assertTrue(interruptedAtExit.get());
+            verify(worker, times(2)).cleanup(any());
+            verify(jdbc, times(1)).query(anyString(), any(RowMapper.class), eq(4));
+            verify(jdbc, never()).update(contains("cleanup_status = 'DONE'"), anyString());
+            assertTrue(threads.stream().noneMatch(Thread::isAlive));
+        } finally {
+            release.countDown();
+            poll.interrupt();
+            poll.join(10000);
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void interruptedPollKeepsItsLockUntilAnUninterruptibleWorkerHasFinished() throws Exception {
+        var worker = spy(new FinalizedDynamoCleanup(jdbc, db, Clock.fixed(NOW, ZoneOffset.UTC),
+                4, 4, Duration.ofDays(7), metrics, 2));
+        var page = IntStream.range(0, 4).mapToObj(i ->
+                new FinalizedDynamoCleanup.Pending("driver-" + i, DECISION, "PRIMARY")).toList();
+        when(jdbc.query(anyString(), any(RowMapper.class), eq(4))).thenReturn(page, List.of());
+        var entered = new java.util.concurrent.CountDownLatch(2);
+        var release = new java.util.concurrent.CountDownLatch(1);
+        doAnswer(call -> {
+            entered.countDown();
+            boolean done = false;
+            while (!done) {
+                try { release.await(); done = true; }
+                catch (InterruptedException ignored) { /* Emulate a driver that finishes despite cancellation. */ }
+            }
+            return true;
+        }).when(worker).cleanup(any());
+        var failure = new java.util.concurrent.atomic.AtomicReference<Throwable>();
+        var first = new Thread(() -> {
+            try { worker.poll(); } catch (Throwable error) { failure.set(error); }
+        });
+        var second = new Thread(worker::poll);
+        first.start();
+        try {
+            assertTrue(entered.await(10, java.util.concurrent.TimeUnit.SECONDS));
+            first.interrupt();
+            second.start();
+            long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
+            while (second.getState() != Thread.State.BLOCKED && System.nanoTime() < deadline) {
+                Thread.sleep(5);
+            }
+            assertEquals(Thread.State.BLOCKED, second.getState());
+            assertTrue(first.isAlive());
+            verify(jdbc, times(1)).query(anyString(), any(RowMapper.class), eq(4));
+        } finally {
+            release.countDown();
+            first.join(10000);
+            second.join(10000);
+        }
+        assertFalse(first.isAlive());
+        assertFalse(second.isAlive());
+        assertInstanceOf(IllegalStateException.class, failure.get());
+        verify(worker, times(2)).cleanup(any());
+        verify(jdbc, times(2)).query(anyString(), any(RowMapper.class), eq(4));
+    }
+
+    @Test
+    void rejectsUnboundedCleanupConcurrency() {
+        for (int concurrency : new int[] {0, 5}) {
+            assertThrows(IllegalArgumentException.class, () -> new FinalizedDynamoCleanup(
+                    jdbc, db, Clock.fixed(NOW, ZoneOffset.UTC), 25, 4, Duration.ofDays(7), metrics, concurrency));
+        }
+    }
+
+    @Test
     void rejectsUnboundedOrDisabledPageLimits() {
         for (int limit : new int[] {0, 21}) {
             assertThrows(IllegalArgumentException.class, () -> new FinalizedDynamoCleanup(
-                    jdbc, db, Clock.fixed(NOW, ZoneOffset.UTC), 25, limit, Duration.ofDays(7), metrics));
+                    jdbc, db, Clock.fixed(NOW, ZoneOffset.UTC), 25, limit, Duration.ofDays(7), metrics, 1));
         }
     }
 

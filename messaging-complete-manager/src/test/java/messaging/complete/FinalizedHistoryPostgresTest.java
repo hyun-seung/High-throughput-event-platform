@@ -170,13 +170,44 @@ class FinalizedHistoryPostgresTest {
     }
 
     @Test
+    void parallelCleanupKeepsSuccessAndRetryCheckpointsIndependent() {
+        var done = result("a".repeat(32), PrimaryStageDecision.Kind.SUCCESS);
+        var deferred = result("b".repeat(32), PrimaryStageDecision.Kind.SUCCESS);
+        var failed = result("c".repeat(32), PrimaryStageDecision.Kind.SUCCESS);
+        history.store(done);
+        history.store(deferred);
+        history.store(failed);
+        var cleanup = spy(new FinalizedDynamoCleanup(jdbc, mock(DynamoDbClient.class), Clock.systemUTC(),
+                10, 4, Duration.ofDays(7), metrics, 2));
+        doAnswer(call -> {
+            FinalizedDynamoCleanup.Pending pending = call.getArgument(0);
+            if (pending.clientMsgId().equals(failed.submission().clientMsgId())) throw new IllegalStateException("offline");
+            return pending.clientMsgId().equals(done.submission().clientMsgId());
+        }).when(cleanup).cleanup(any());
+
+        cleanup.poll();
+
+        assertEquals("DONE", jdbc.queryForObject("SELECT cleanup_status FROM tbl_msg_hist WHERE client_msg_id = ?",
+                String.class, done.submission().clientMsgId()));
+        assertEquals(2, jdbc.queryForObject("SELECT count(*) FROM tbl_msg_hist WHERE cleanup_status = 'PENDING' AND cleanup_next_at > now()", Integer.class));
+        assertEquals(0, jdbc.queryForObject("SELECT cleanup_attempts FROM tbl_msg_hist WHERE client_msg_id = ?",
+                Integer.class, deferred.submission().clientMsgId()));
+        assertEquals(1, jdbc.queryForObject("SELECT cleanup_attempts FROM tbl_msg_hist WHERE client_msg_id = ?",
+                Integer.class, failed.submission().clientMsgId()));
+        assertEquals("IllegalStateException", jdbc.queryForObject("SELECT cleanup_last_error FROM tbl_msg_hist WHERE client_msg_id = ?",
+                String.class, failed.submission().clientMsgId()));
+        assertEquals(3, jdbc.queryForObject("SELECT count(*) FROM tbl_msg_hist", Integer.class));
+        assertEquals(3, jdbc.queryForObject("SELECT count(*) FROM tbl_cdr_hist", Integer.class));
+    }
+
+    @Test
     void dynamoFailureKeepsSqlCleanupPendingForRetry() {
         var finalized = result("e".repeat(32), PrimaryStageDecision.Kind.SUCCESS);
         history.store(finalized);
         var db = mock(DynamoDbClient.class);
         when(db.getItem(any(GetItemRequest.class))).thenThrow(new IllegalStateException("offline"));
 
-        new FinalizedDynamoCleanup(jdbc, db, Clock.systemUTC(), 10, 4, Duration.ofDays(7), new io.micrometer.core.instrument.simple.SimpleMeterRegistry()).poll();
+        new FinalizedDynamoCleanup(jdbc, db, Clock.systemUTC(), 10, 4, Duration.ofDays(7), metrics, 2).poll();
 
         assertEquals("PENDING", jdbc.queryForObject(
                 "SELECT cleanup_status FROM tbl_msg_hist WHERE client_msg_id = ?", String.class,

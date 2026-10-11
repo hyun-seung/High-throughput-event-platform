@@ -29,6 +29,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static messaging.common.dynamodb.DynamoDbTableNames.ORIGIN;
 import static messaging.common.dynamodb.DynamoDbTableNames.STEP;
@@ -45,42 +50,48 @@ public class FinalizedDynamoCleanup {
     private final int pageSize;
     private final int maxPagesPerPoll;
     private final Duration retention;
+    private final int concurrency;
     private final ScheduledWorkMetrics metrics;
 
     @Autowired
     public FinalizedDynamoCleanup(JdbcTemplate jdbc, DynamoDbClient db,
                                   @Value("${messaging.complete.cleanup.page-size:100}") int pageSize,
                                   @Value("${messaging.complete.cleanup.max-pages-per-poll:4}") int maxPagesPerPoll,
-                                  @Value("${messaging.complete.cleanup.retention:7d}") Duration retention, MeterRegistry registry) {
-        this(jdbc, db, Clock.systemUTC(), pageSize, maxPagesPerPoll, retention, registry);
+                                  @Value("${messaging.complete.cleanup.retention:7d}") Duration retention, MeterRegistry registry,
+                                  @Value("${messaging.complete.cleanup.concurrency:2}") int concurrency) {
+        this(jdbc, db, Clock.systemUTC(), pageSize, maxPagesPerPoll, retention, registry, concurrency);
     }
 
     FinalizedDynamoCleanup(JdbcTemplate jdbc, DynamoDbClient db, Clock clock,
-                           int pageSize, int maxPagesPerPoll, Duration retention, MeterRegistry registry) {
+                           int pageSize, int maxPagesPerPoll, Duration retention, MeterRegistry registry, int concurrency) {
         this.jdbc = Objects.requireNonNull(jdbc);
         this.db = Objects.requireNonNull(db);
         this.clock = Objects.requireNonNull(clock);
         if (pageSize < 1 || pageSize > 1000 || maxPagesPerPoll < 1 || maxPagesPerPoll > 20
-                || retention == null || retention.isNegative()
+                || concurrency < 1 || concurrency > 4 || retention == null || retention.isNegative()
                 || retention.isZero()) throw new IllegalArgumentException("Invalid cleanup settings");
         this.pageSize = pageSize;
         this.maxPagesPerPoll = maxPagesPerPoll;
         this.retention = retention;
+        this.concurrency = concurrency;
         this.metrics = new ScheduledWorkMetrics(registry, ScheduledWorkMetrics.Worker.COMPLETE_CLEANUP);
     }
 
     @Scheduled(initialDelayString = "${messaging.complete.cleanup.initial-delay-ms:5000}",
             fixedDelayString = "${messaging.complete.cleanup.poll-ms:5000}")
-    public void poll() {
-        try (var timing = metrics.start(POLL)) {
-            // Drain a bounded number of full pages before sleeping, without adding concurrent writers.
+    public synchronized void poll() {
+        // The scoped pool drains before the poll lock is released, including on interruption.
+        // Only a bounded number of lanes is queued, never one task per pending message.
+        try (var timing = metrics.start(POLL);
+             var workers = Executors.newFixedThreadPool(concurrency,
+                     Thread.ofPlatform().name("message-cleanup-", 0).factory())) {
             for (int page = 0; page < maxPagesPerPoll; page++) {
-                if (cleanupPage() < pageSize) return;
+                if (Thread.currentThread().isInterrupted() || cleanupPage(workers) < pageSize) return;
             }
         }
     }
 
-    private int cleanupPage() {
+    private int cleanupPage(ExecutorService workers) {
         List<Pending> pending;
         try (var timing = metrics.start(QUERY)) {
             pending = jdbc.query("""
@@ -90,22 +101,44 @@ public class FinalizedDynamoCleanup {
                     """, (rs, row) -> new Pending(rs.getString(1), rs.getString(2), rs.getString(3)), pageSize);
         }
         metrics.page(pending.size(), pending.size());
-        for (var item : pending) {
-            try (var timing = metrics.start(ITEM)) {
-                if (cleanup(item)) {
-                    jdbc.update("""
-                            UPDATE tbl_msg_hist SET cleanup_status = 'DONE', cleaned_at = now(),
-                                cleanup_last_error = NULL WHERE client_msg_id = ? AND cleanup_status = 'PENDING'
-                            """, item.clientMsgId());
-                } else {
-                    defer(item.clientMsgId(), null);
+        var stopping = new AtomicBoolean();
+        var lanes = new ArrayList<Callable<Void>>();
+        for (int lane = 0; lane < Math.min(concurrency, pending.size()); lane++) {
+            int first = lane;
+            lanes.add(() -> {
+                for (int index = first; index < pending.size(); index += concurrency) {
+                    if (stopping.get() || Thread.currentThread().isInterrupted()) break;
+                    cleanupOne(pending.get(index));
                 }
-            } catch (Exception failure) {
-                log.warn("Finalized DynamoDB cleanup will retry: clientMsgId={}", item.clientMsgId(), failure);
-                defer(item.clientMsgId(), failure.getClass().getSimpleName());
-            }
+                return null;
+            });
+        }
+        try {
+            for (var lane : workers.invokeAll(lanes)) lane.get();
+        } catch (InterruptedException interrupted) {
+            stopping.set(true);
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("DynamoDB cleanup poll interrupted", interrupted);
+        } catch (ExecutionException failure) {
+            throw new IllegalStateException("DynamoDB cleanup lane failed; SQL pending rows will retry", failure.getCause());
         }
         return pending.size();
+    }
+
+    private void cleanupOne(Pending item) {
+        try (var timing = metrics.start(ITEM)) {
+            if (cleanup(item)) {
+                jdbc.update("""
+                        UPDATE tbl_msg_hist SET cleanup_status = 'DONE', cleaned_at = now(),
+                            cleanup_last_error = NULL WHERE client_msg_id = ? AND cleanup_status = 'PENDING'
+                        """, item.clientMsgId());
+            } else {
+                defer(item.clientMsgId(), null);
+            }
+        } catch (Exception failure) {
+            log.warn("Finalized DynamoDB cleanup will retry: clientMsgId={}", item.clientMsgId(), failure);
+            defer(item.clientMsgId(), failure.getClass().getSimpleName());
+        }
     }
 
     boolean cleanup(Pending item) {
