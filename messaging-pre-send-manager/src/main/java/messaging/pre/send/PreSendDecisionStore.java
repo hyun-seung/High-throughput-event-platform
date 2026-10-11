@@ -1,6 +1,7 @@
 package messaging.pre.send;
 
 import messaging.common.messages.MessageOriginCodec;
+import messaging.common.messages.MessagePublicationIndex;
 import messaging.common.messages.MessageSubmission;
 import messaging.common.messages.PreSendFailure;
 import messaging.common.messages.PreSendDispatch;
@@ -19,10 +20,10 @@ import java.util.Objects;
 import java.util.Optional;
 
 import static messaging.common.dynamodb.DynamoDbTableNames.ORIGIN;
+import static messaging.common.messages.MessageOriginCodec.PRE_SEND_DISPATCH;
 
 /** Freezes the command or rejection before Kafka publication. */
 public class PreSendDecisionStore {
-    static final String DISPATCH = "pre_send_dispatch";
     static final String CARRIER = "initial_http_carrier";
     static final String MAPPED = "initial_http_carrier_mapped";
     private final DynamoDbClient db;
@@ -41,7 +42,7 @@ public class PreSendDecisionStore {
     public Optional<PreSendDispatch> prepareOrLoad(MessageSubmission admission) {
         Map<String, AttributeValue> current = read(admission);
         if (!eligible(current)) return Optional.empty();
-        if (current.containsKey(DISPATCH)) return Optional.of(decode(current));
+        if (current.containsKey(PRE_SEND_DISPATCH)) return Optional.of(decode(current));
 
         PreSendPreparation.Decision decision = preparation.prepare(admission, storedCarrier(current));
         PreSendDispatch dispatch;
@@ -54,7 +55,8 @@ public class PreSendDecisionStore {
             dispatch = new PreSendDispatch(null,
                     PreSendFailure.of(admission.clientMsgId(), reason, clock.instant()));
         }
-        var names = new HashMap<>(Map.of("#status", "status", "#dispatch", DISPATCH));
+        var names = new HashMap<>(Map.of("#status", "status", "#dispatch", PRE_SEND_DISPATCH,
+                "#publicationBucket", MessagePublicationIndex.BUCKET, "#publicationDue", MessagePublicationIndex.DUE));
         var values = new HashMap<>(Map.of(
                 ":execution", AttributeValue.fromS(admission.clientMsgId()),
                 ":received", AttributeValue.fromS(MessageOriginCodec.STATUS_RECEIVED),
@@ -72,6 +74,9 @@ public class PreSendDecisionStore {
                     + "OR (#carrier = :carrier AND #mapped = :mapped))";
             update += ", #carrier = :carrier, #mapped = :mapped";
         }
+        // A durable pre-send decision proves the admission reached this consumer. Its Kafka
+        // output is recovered by offset replay, so initial publication recovery must stop here.
+        update += " REMOVE #publicationBucket, #publicationDue";
         try {
             db.updateItem(UpdateItemRequest.builder().tableName(ORIGIN)
                     .key(MessageOriginCodec.key(admission.clientMsgId()))
@@ -81,7 +86,7 @@ public class PreSendDecisionStore {
         } catch (ConditionalCheckFailedException changed) {
             current = read(admission);
             if (!eligible(current)) return Optional.empty();
-            if (current.containsKey(DISPATCH)) return Optional.of(decode(current));
+            if (current.containsKey(PRE_SEND_DISPATCH)) return Optional.of(decode(current));
             throw new IllegalStateException("Pre-send decision condition failed without a stored outcome", changed);
         }
     }
@@ -112,6 +117,6 @@ public class PreSendDecisionStore {
     }
 
     private PreSendDispatch decode(Map<String, AttributeValue> item) {
-        return mapper.readValue(item.get(DISPATCH).s(), PreSendDispatch.class);
+        return mapper.readValue(item.get(PRE_SEND_DISPATCH).s(), PreSendDispatch.class);
     }
 }

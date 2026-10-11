@@ -6,6 +6,8 @@ import messaging.common.messages.MessageSubmission;
 import messaging.common.messages.MessageTopics;
 import messaging.common.messages.MessageCategory;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.kafka.core.KafkaTemplate;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
@@ -74,6 +76,47 @@ class OriginPublicationRecoveryTest {
 
         verifyNoInteractions(kafka);
         verify(db).updateItem(any(UpdateItemRequest.class));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"command", "failure"})
+    void frozenPreSendOutcomeRemovesLegacyRecoveryEntryWithoutWaitingForAStep(String outcome) {
+        var origin = new HashMap<>(MessageOriginCodec.encode(event, mapper));
+        origin.put(MessageOriginCodec.PRE_SEND_DISPATCH, AttributeValue.fromS("{\"" + outcome + "\":{}}"));
+        when(db.getItem(any(GetItemRequest.class))).thenReturn(GetItemResponse.builder().item(origin).build());
+
+        recovery.recover(MessageOriginCodec.key(event.clientMsgId()));
+
+        verifyNoInteractions(kafka);
+        verify(db, never()).query(any(QueryRequest.class));
+        verify(db).updateItem(any(UpdateItemRequest.class));
+    }
+
+    @Test
+    void staleIndexCandidateCannotReplayAfterPreSendRemovedTheIndex() {
+        var origin = new HashMap<>(MessageOriginCodec.encode(event, mapper));
+        origin.remove(MessagePublicationIndex.BUCKET);
+        origin.remove(MessagePublicationIndex.DUE);
+        when(db.getItem(any(GetItemRequest.class))).thenReturn(GetItemResponse.builder().item(origin).build());
+
+        recovery.recover(MessageOriginCodec.key(event.clientMsgId()));
+
+        verifyNoInteractions(kafka);
+        verify(db, never()).query(any(QueryRequest.class));
+        verify(db, never()).updateItem(any(UpdateItemRequest.class));
+    }
+
+    @Test
+    void strongReadOfAFutureDueEntryCannotReplay() {
+        var origin = new HashMap<>(MessageOriginCodec.encode(event, mapper));
+        origin.put(MessagePublicationIndex.DUE, AttributeValue.fromN(Long.toString(event.receivedAt().plusSeconds(180).toEpochMilli())));
+        when(db.getItem(any(GetItemRequest.class))).thenReturn(GetItemResponse.builder().item(origin).build());
+
+        recovery.recover(MessageOriginCodec.key(event.clientMsgId()));
+
+        verifyNoInteractions(kafka);
+        verify(db, never()).query(any(QueryRequest.class));
+        verify(db, never()).updateItem(any(UpdateItemRequest.class));
     }
 
     @Test

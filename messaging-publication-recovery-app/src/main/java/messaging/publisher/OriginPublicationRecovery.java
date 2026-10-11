@@ -84,7 +84,13 @@ public class OriginPublicationRecovery {
                 .key(MessageOriginCodec.key(clientMsgId)).consistentRead(true).build()).item();
         if (current.isEmpty()) return;
         if (!current.containsKey(MessageOriginCodec.MESSAGE_ID)) return;
+        // GSI queries are eventually consistent. A removed or not-yet-due entry must not
+        // replay an admission after the strong read has resolved its current state.
+        if (!current.containsKey(MessagePublicationIndex.BUCKET)
+                || !current.containsKey(MessagePublicationIndex.DUE)
+                || Long.parseLong(current.get(MessagePublicationIndex.DUE).n()) > clock.millis()) return;
         if (current.containsKey("completion_event_id")
+                || current.containsKey(MessageOriginCodec.PRE_SEND_DISPATCH)
                 || !MessageOriginCodec.STATUS_RECEIVED.equals(current.getOrDefault("status", AttributeValue.fromS("")).s())
                 || hasStep(clientMsgId)) {
             clearRecoveryIndex(clientMsgId);

@@ -1,8 +1,13 @@
 package messaging.pre.send;
 
 import messaging.common.messages.*;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.support.SendResult;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
@@ -117,7 +122,9 @@ class PreSendDecisionDynamoTest {
             return local.updateItem(call.<UpdateItemRequest>getArgument(0).toBuilder().tableName(table).build());
         });
         assertThrows(IllegalStateException.class, () -> store.prepareOrLoad(admission));
-        assertFalse(read().containsKey(PreSendDecisionStore.DISPATCH));
+        assertFalse(read().containsKey(MessageOriginCodec.PRE_SEND_DISPATCH));
+        assertTrue(read().containsKey(MessagePublicationIndex.BUCKET));
+        assertTrue(read().containsKey(MessagePublicationIndex.DUE));
         var retry = store.prepareOrLoad(admission).orElseThrow();
         assertEquals(HttpCarrier.LGU, retry.command().carrier());
         assertStored(retry);
@@ -132,8 +139,10 @@ class PreSendDecisionDynamoTest {
             return local.updateItem(call.<UpdateItemRequest>getArgument(0).toBuilder().tableName(table).build());
         });
         assertTrue(store.prepareOrLoad(admission).isEmpty());
-        assertFalse(read().containsKey(PreSendDecisionStore.DISPATCH));
+        assertFalse(read().containsKey(MessageOriginCodec.PRE_SEND_DISPATCH));
         assertFalse(read().containsKey(PreSendDecisionStore.CARRIER));
+        assertTrue(read().containsKey(MessagePublicationIndex.BUCKET));
+        assertTrue(read().containsKey(MessagePublicationIndex.DUE));
     }
 
     @Test
@@ -141,8 +150,40 @@ class PreSendDecisionDynamoTest {
         when(references.findContract(42L)).thenReturn(Optional.empty());
         var result = store.prepareOrLoad(admission).orElseThrow();
         assertEquals(PreSendFailure.Reason.CONTRACT_MISSING, result.failure().reason());
-        assertEquals(result, mapper.readValue(read().get(PreSendDecisionStore.DISPATCH).s(), PreSendDispatch.class));
+        assertEquals(result, mapper.readValue(read().get(MessageOriginCodec.PRE_SEND_DISPATCH).s(), PreSendDispatch.class));
         assertFalse(read().containsKey(PreSendDecisionStore.CARRIER));
+        assertFalse(read().containsKey(MessagePublicationIndex.BUCKET));
+        assertFalse(read().containsKey(MessagePublicationIndex.DUE));
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void downstreamKafkaFailureReplaysTheFrozenOutcomeAfterRecoveryIndexRemoval(boolean contractEnabled) throws Exception {
+        when(references.findContract(42L)).thenReturn(Optional.of(new ClientMessageContract(42L, contractEnabled)));
+        @SuppressWarnings("unchecked")
+        KafkaTemplate<String, Object> kafka = mock(KafkaTemplate.class);
+        var failed = CompletableFuture.<SendResult<String, Object>>failedFuture(new IllegalStateException("Kafka unavailable"));
+        when(kafka.send(anyString(), eq(admission.clientMsgId()), any()))
+                .thenReturn(failed, CompletableFuture.completedFuture(null));
+        var consumer = new PreSendReceivedConsumer(store, kafka);
+        var record = new ConsumerRecord<>(MessageTopics.RECEIVED, 0, 1L, admission.clientMsgId(), admission);
+
+        assertThrows(ExecutionException.class, () -> consumer.receive(record));
+        var frozen = read();
+        var dispatch = mapper.readValue(frozen.get(MessageOriginCodec.PRE_SEND_DISPATCH).s(), PreSendDispatch.class);
+        assertFalse(frozen.containsKey(MessagePublicationIndex.BUCKET));
+        assertFalse(frozen.containsKey(MessagePublicationIndex.DUE));
+        clearInvocations(references);
+        when(references.findContract(42L)).thenReturn(Optional.empty());
+        when(references.firstCarrier(any())).thenReturn(new CarrierResolution(HttpCarrier.LGU, false));
+
+        consumer.receive(record);
+
+        verifyNoInteractions(references);
+        verify(isolated).updateItem(any(UpdateItemRequest.class));
+        String topic = dispatch.command() != null ? MessageTopics.KT_HTTP_SEND : MessageTopics.MSG_RESULT;
+        Object value = dispatch.command() != null ? dispatch.command() : dispatch.failure();
+        verify(kafka, times(2)).send(topic, admission.clientMsgId(), value);
     }
 
     private void freezeLegacyCarrier() {
@@ -155,8 +196,10 @@ class PreSendDecisionDynamoTest {
     }
     private void assertStored(PreSendDispatch expected) {
         var item = read();
-        assertEquals(expected, mapper.readValue(item.get(PreSendDecisionStore.DISPATCH).s(), PreSendDispatch.class));
+        assertEquals(expected, mapper.readValue(item.get(MessageOriginCodec.PRE_SEND_DISPATCH).s(), PreSendDispatch.class));
         assertEquals(expected.command().carrier().name(), item.get(PreSendDecisionStore.CARRIER).s());
         assertNotNull(item.get(PreSendDecisionStore.MAPPED).bool());
+        assertFalse(item.containsKey(MessagePublicationIndex.BUCKET));
+        assertFalse(item.containsKey(MessagePublicationIndex.DUE));
     }
 }

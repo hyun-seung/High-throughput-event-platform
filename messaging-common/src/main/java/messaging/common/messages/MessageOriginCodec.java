@@ -12,6 +12,7 @@ public final class MessageOriginCodec {
     public static final String STATUS_RECEIVED = "RECEIVED";
     public static final String MESSAGE_ID = "message_id";
     public static final String RECIPIENT_NUMBER = "recipient_number";
+    public static final String PRE_SEND_DISPATCH = "pre_send_dispatch";
     public static final String FINAL_KAFKA_ACK_DECISION_ID = "final_kafka_ack_decision_id";
 
     private MessageOriginCodec() { }

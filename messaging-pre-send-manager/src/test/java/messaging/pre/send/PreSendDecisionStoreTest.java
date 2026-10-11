@@ -45,13 +45,16 @@ class PreSendDecisionStoreTest {
         assertEquals(result, mapper.readValue(request.expressionAttributeValues().get(":dispatch").s(), PreSendDispatch.class));
         assertTrue(request.conditionExpression().contains("attribute_not_exists(completion_event_id)"));
         assertTrue(request.conditionExpression().contains("attribute_not_exists(#dispatch)"));
+        assertEquals(MessagePublicationIndex.BUCKET, request.expressionAttributeNames().get("#publicationBucket"));
+        assertEquals(MessagePublicationIndex.DUE, request.expressionAttributeNames().get("#publicationDue"));
+        assertTrue(request.updateExpression().endsWith("REMOVE #publicationBucket, #publicationDue"));
     }
 
     @Test
     void replayDoesNotReevaluateReferencesOrWrite() {
         var item = originItem();
         var expected = dispatch(HttpCarrier.KT);
-        item.put(PreSendDecisionStore.DISPATCH, AttributeValue.fromS(mapper.writeValueAsString(expected)));
+        item.put(MessageOriginCodec.PRE_SEND_DISPATCH, AttributeValue.fromS(mapper.writeValueAsString(expected)));
         origin(item);
 
         assertEquals(Optional.of(expected), store.prepareOrLoad(admission));
@@ -80,6 +83,7 @@ class PreSendDecisionStoreTest {
         var update = ArgumentCaptor.forClass(UpdateItemRequest.class);
         verify(db).updateItem(update.capture());
         assertFalse(update.getValue().expressionAttributeValues().containsKey(":carrier"));
+        assertTrue(update.getValue().updateExpression().endsWith("REMOVE #publicationBucket, #publicationDue"));
         verify(references, never()).firstCarrier(any());
     }
 
@@ -87,7 +91,7 @@ class PreSendDecisionStoreTest {
     void concurrentDecisionReturnsTheStoredWinner() {
         var winner = originItem();
         var expected = dispatch(HttpCarrier.LGU);
-        winner.put(PreSendDecisionStore.DISPATCH, AttributeValue.fromS(mapper.writeValueAsString(expected)));
+        winner.put(MessageOriginCodec.PRE_SEND_DISPATCH, AttributeValue.fromS(mapper.writeValueAsString(expected)));
         when(db.getItem(any(GetItemRequest.class))).thenReturn(response(originItem()), response(winner));
         validContract();
         when(references.firstCarrier(any())).thenReturn(new CarrierResolution(HttpCarrier.SKT, false));
