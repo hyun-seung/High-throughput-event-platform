@@ -36,8 +36,8 @@ bash scripts/monitoring.sh stop
 bash scripts/monitoring.sh performance --rate 5 --seconds 20
 # 정상 80%·1차 최종 실패 10%·HTTP 실패 후 TCP 성공 10%
 bash scripts/monitoring.sh performance --rate 5 --seconds 20 --failure-percent 10 --secondary-percent 10
-# 10 TPS·10분 혼합 부하와 완료 대기 최대 10분
-bash scripts/monitoring.sh performance --rate 10 --seconds 600 --failure-percent 10 --secondary-percent 10 --timeout 600
+# 목표 TPS를 높이는 짧은 혼합 부하 (각 실행의 잔여 처리가 끝난 후 다음 실행)
+bash scripts/monitoring.sh performance --rate 50 --seconds 30 --failure-percent 10 --secondary-percent 10 --timeout 600
 # 저장된 실행의 분 단위 추세 재집계 (메시지를 새로 보내지 않음)
 bash scripts/monitoring.sh performance --analyze-run c2957308
 # 집계 계산 회귀 검사
@@ -66,6 +66,12 @@ python3 -m unittest discover -s scripts/monitoring -p test_performance_flow.py
 `completedDuringWindow`는 해당 시간 동안 실제 완료된 건수이며 앞 구간에서 접수된 메시지도 포함한다. `pendingAtWindowEnd`는 구간 끝 직전까지 접수됐으나 전체 완료되지 않은 메시지 수다. Kafka lag가 0이어도 결과 예약·고객 통지·정리 작업이 남을 수 있어 둘을 함께 본다. 분별 lag 최대·마지막 관측값, AP별 힙 최소·최대·마지막값, 지표 누락 건수와 마지막 표본 시각도 남긴다. 유효 표본이 없으면 lag를 0으로 간주하지 않는다. 힙 최소값도 GC 이후 생존 객체량과 같지 않으므로 메모리 누수 판정은 별도다.
 
 `--analyze-run`은 기존 원본으로 같은 계산을 재현해 `window-analysis.json`을 저장한다. 원래 보고서는 변경하지 않으며 입력 4개 파일과 분석 소스의 SHA-256을 함께 남긴다. AP 호출이나 새 부하는 발생하지 않는다.
+
+`apObservations`에는 AP별 Kafka commit 진척의 평균·관측 최대 레코드/초와 최대 lag·CPU·힙, 실제 Kafka listener의 성공 처리 누적 시간/횟수 차이로 계산한 평균 ms를 남긴다. Kafka end offset에서 해당 소비 그룹 lag를 빼고 **관측기의 실제 갱신 시각** 차이로 처리량을 계산하며 같은 표본의 반복 수집은 제외한다. offset 역행이나 AP 재시작도 표시한다. 약 10초 관측 구간의 최대값이므로 순간 TPS나 독립 최대 수용량은 아니다. 접수·웹훅 수신 API에는 202 요청 평균 시간과 관측 구간 평균 요청/초를 기록한다. 고객 웹훅의 Kafka 소비 시간은 SQL 수신함 저장까지이며 실제 고객 HTTP 시간은 별도 지표다.
+
+완료 AP의 listener는 배치 단위이므로 배치 평균 시간·성공 배치당 평균 레코드 수·건당 환산 시간을 구분한다. 결과 AP의 inbox 판단·outbox 발행과 완료 AP의 DynamoDB 정리는 `scheduledWork.meanItemMs`로 별도 표시한다. 예약 작업 수는 재시도까지 포함할 수 있는 처리 시도 횟수이며, 서로 중첩되는 시간이나 전체 완료 지연을 단순 합산하지 않는다. TPS 역수를 실제 처리 시간으로 쓰지 않는다. `apRuntime`에는 실행 컨테이너·JVM 메모리·CPU 인식 설정·동시성·CPU/메모리 제한·시작 시각을 남긴다.
+
+목표는 서비스 전체 접수·최종 완료 **10,000 TPS**다. 목표 도달 전에는 30~60초의 짧은 부하를 단계적으로 올려 적체가 생기는 AP와 저장소 왕복을 확인하고, 변경 전후 같은 조건으로 재측정한다. 이후 시간을 늘려 지속 안정성을 확인한다. 현재 생성기는 입력 상한 1,000 TPS인 단일 Python 프로세스로, 10,000 TPS 측정에는 생성기 자체 처리량 검증과 병렬/분산 부하 도구가 필요하다. 운영 수용량에는 AP 한 대의 독립 부하와 공유 저장소·Kafka의 용량, AP 증설에 따른 효율을 함께 확인해야 한다.
 
 **`pass=true`는 성능 SLA 합격이 아니라 측정·데이터 대조 성공**이다. 예정한 요청이 모두 접수되고 동일한 메시지 ID·예상 결과·과금 대상·고객 통지·정리 상태가 맞아야 한다. ORIGIN 삭제를 직접 확인하고, 필수 지표 누락·부하 도구 미발송·접수 오류가 있으면 성공으로 표시하지 않는다. `capacityOrSlaVerdict`는 아직 `not-evaluated`다. 단계별 처리량 한계와 지속 부하 결과는 별도로 측정한다.
 
@@ -336,6 +342,43 @@ DB 호출 수 자체를 줄인 변경은 아니다. AP당 동시에 진행되는
 변경 후 `storage-test` 실행 `b7cbbb64`도 통과했다. Redis 발송 키 유실·명령 재전달, Redis 응답 중단, HTTP 관찰 저장 후 DynamoDB 중단, 완료 정리 DynamoDB 연결 실패 4개 사례를 확인했다. 정리 장애 중 SQL 이력·과금 대상·ORIGIN과 PENDING 재시도 상태를 보존했고, 복구 후 이력·과금 대상·고객 결과·원본 삭제 각 4건과 소비 lag 0을 확인했다. 추가 70초 관측에서도 중복 발송은 없었다. 이 시험은 Redis 전체 유실이나 업체 호출 직후 관찰 저장 전 장애까지 다루지는 않는다.
 
 최종 점검에서 Desktop 재시작 후 정지돼 있던 Redis·PostgreSQL exporter도 복구했다. 이후 `verify`는 AP 11개 health, Prometheus 수집 대상 17개, Grafana 화면 7개와 예약 작업 패널·로그를 모두 통과했다. 기존 rcs 컨테이너 6개도 실행 중이다. 최종 자료는 `.monitoring/cleanup-concurrency/storage-result.json`, `verification-result.json`, `final-state.json`, `rcs-state.json`에 보존한다.
+
+### 10,000 TPS 목표의 단기 부하와 AP별 관측 — 2026-10-11
+
+낮은 TPS의 장시간 시험보다 단기 처리량 확대를 우선하도록 순서를 변경했다. 진행 중이던 10 TPS 시험 `00392196`은 요청에 따라 4,305건에서 중단했고, 이미 접수된 4,305건의 이력·고객 결과·원본 정리와 과금 대상 3,440건을 대조했다. 계획한 10분 완료 시험으로 기록하지 않는다. 원래 보고서와 `interrupted-reconciliation.json`을 보존했다.
+
+현재 로컬은 Docker VM 10 CPU·약 7.75 GiB를 AP·저장소·모니터링·기존 rcs가 공유한다. 메인 AP는 각각 컨테이너 1개이며 JVM은 `ActiveProcessorCount=2`, `Xms64m`, `Xmx320m`이다. 컨테이너별 CPU·메모리 하드 제한은 없어 **독립 전용 2코어 장비 시험이 아니다.** Kafka는 브로커 1개·업무 토픽별 파티션 3개이며 DynamoDB Local·PostgreSQL·Redis와 업체 mock을 사용한다.
+
+50 TPS·30초, 정상 80%·1차 실패 10%·TCP 성공 10%, 모두 SKT 최초 발송 조건에서 PRE-SEND와 HTTP Sender 소비 동시성만 1→3으로 변경했다. JAR·인스턴스 수·업무 정책은 유지했다. 로컬 설정은 `MESSAGING_PRE_SEND_CONCURRENCY`·`MSG_HTTP_SENDER_CONCURRENCY`로 조절하며 기본값은 1이다. 결과·완료 등 다른 Kafka 소비는 1, 완료 정리 동시성은 2다.
+
+| 관측 | 동시성 1 `3ee2df33` | 동시성 3 첫 실행 `60baabe6` | 동시성 3 재측정 `8c4c5c79` |
+|---|---:|---:|---:|
+| 접수·이력·고객 결과·원본 삭제 | 각 1,500건 | 각 1,500건 | 각 1,500건 |
+| 과금 대상 | 1,200건 | 1,200건 | 1,200건 |
+| 접수 p95 | 94.1ms | 148.8ms | 118.3ms |
+| 전체 완료 p95 | 100.5초 | 143.8초 | 111.4초 |
+| PRE-SEND 최대 lag | 550건 | 64건 | 34건 |
+| SKT Sender 최대 lag | 481건 | 954건 | 773건 |
+| 결과 Manager 최대 lag | 4건 | 301건 | 259건 |
+
+세 실행은 모두 접수 오류·생성기 미발송 없이 데이터 대조를 통과했다. 첫 동시성 3 시험 전 AP health가 회복되지 않은 사전 점검 `f22f6f92`는 메시지를 보내지 않고 중단했다. 실제 health 회복 후 다시 측정했고, 재기동 직후 영향을 구분하기 위해 같은 조건을 한 번 더 실행했다. PRE-SEND의 적체는 줄었지만 전체 완료 지연은 두 번 모두 기준선보다 높아 동시성을 1로 복원했다. 이 설정 변경은 성능 개선으로 채택하지 않았다. 공유 저장소·Kafka와 JVM 상태의 영향을 분리한 단독 AP 최대 용량 시험은 아직 아니다.
+
+다음 표는 동시성 1·50 TPS 기준선의 **한 인스턴스 관측값**이다. Kafka 처리량은 관측기 갱신 간격 약 10초의 최대 commit 진척이며, 평균 시간은 시험 전후 listener 누적 시간/성공 횟수 차이다. 레코드/초와 평균 ms의 측정 구간·분모가 다르고, 배치·병렬 처리·대기 시간도 있으므로 서로의 역수가 아니다.
+
+| AP | 관측 최대 Kafka 레코드/초 | 평균 처리 시간 | 측정 범위·미확인 부분 |
+|---|---:|---:|---|
+| PRE-SEND-MANAGER | 34.42 | 30.87ms/레코드 | 준비·발송 명령 Kafka 인계 |
+| MSG-SKT-SENDER | 29.96 | 45.12ms/레코드 | 명령 소비·HTTP 호출·결과 기록 |
+| MSG-KT-SENDER | — | — | 이 부하에서 업무 유입 없음, 미측정 |
+| MSG-LGU-SENDER | — | — | 이 부하에서 업무 유입 없음, 미측정 |
+| MSG-RESULT-MANAGER | 29.55 | 24.72ms/레코드 | inbox 저장·즉시 처리 구간. 웹훅 레코드에는 최대 100건이 들어갈 수 있음 |
+| MSG-COMPLETE-MANAGER | 25.94 | 3.17ms/배치, 건당 환산 3.07ms | 평균 1.03건/배치, SQL 저장까지. DynamoDB 정리 별도 |
+| MSG-WEBHOOK-SENDER | 25.94 | 8.36ms/레코드 | 고객 웹훅 명령의 SQL 수신함 저장까지. 실제 고객 HTTP 별도 |
+| MSG-TCP-SENDER | 2.58 | 106.08ms/레코드 | TCP 명령 소비·즉시 응답·결과 인계. 전체 메시지의 10%만 유입 |
+
+접수 API는 부하 구간 실제 50.00 요청/초, 서버 평균 24.38ms/202 요청이었다. WEBHOOK-RECEIVE-API는 평균 9.05ms/202 요청이며 이번 mock은 결과를 단건으로 보낸다. 이력 저장과 분리된 작업의 건별 평균은 결과 inbox 판단 41.32ms, 결과 outbox 인계 44.85ms, 완료 DynamoDB 정리 107.55ms였다. 이들 시간은 각각 다른 업무 경계이며 전체 완료 지연으로 합산하지 않는다. 발행 복구 AP는 정상 경로에서 복구 부하가 없어 수용량 미측정이고 CDC AP도 이번 범위 밖이다. **모든 AP의 독립 최대 수용 TPS는 아직 미확정**이다.
+
+실행별 원본은 `.monitoring/performance/<runId>/`에 있다. `apObservations`에는 처리량·ms·재시작 여부·적체·자원을, `apRuntime`에는 실제 설정을 남긴다. 먼저 시작한 실행의 추가 시간 분석은 같은 시각의 Prometheus 원본을 담은 `ap-timing-analysis.json`으로 보존했다. 다음 최적화는 결과 판단·발행·정리의 저장소 왕복과 대기를 구분한 뒤 한 경계씩 변경해 단기 부하로 재검증한다. AP별 독립 부하, 부하 생성기 확장, 실제 운영 저장소 조건 검증도 이어서 필요하다.
 
 ## 화면과 데이터 경로
 

@@ -22,15 +22,27 @@ from webhook_flow import key, read_items
 
 PROMETHEUS = "http://127.0.0.1:19099/api/v1/query?"
 JOBS = "|".join(AP_HEALTH_ENDPOINTS)
+AP_TOPICS = {"pre-send": "message.received.v1", "skt-sender": "message.skt.http.send.v1",
+             "kt-sender": "message.kt.http.send.v1", "lgu-sender": "message.lgu.http.send.v1",
+             "result-manager": "MSG_RESULT", "complete-manager": "MSG-RESULT-FINALIZED",
+             "webhook-sender": "WEBHOOK-SEND", "tcp-sender": "message.tcp.requested.v1"}
+AP_HTTP = {"api": "/api/v1/messages", "webhook-receive": "/api/v1/message-webhooks/{carrier}"}
 LAG_SERIES = {"messaging-pre-send-manager/message.received.v1", "messaging-result-manager/MSG_RESULT",
               "messaging-complete-manager/MSG-RESULT-FINALIZED", "messaging-webhook-sender/WEBHOOK-SEND",
               "messaging-tcp-sender/message.tcp.requested.v1",
               *(f"messaging-{carrier}-http-sender/message.{carrier}.http.send.v1" for carrier in ("skt", "kt", "lgu"))}
 # Include the metric name in union matching: CPU/up and probe-up/probe-time share other labels.
 METRICS = " or on(__name__,job,instance,group,topic,partition,area,id) ".join((
-    'platform_kafka_committed_lag{group=~"messaging-.*"}', 'platform_kafka_probe_up',
+    'platform_kafka_committed_lag{group=~"messaging-.*"}', 'platform_kafka_log_end_offset', 'platform_kafka_probe_up',
     'platform_kafka_probe_last_success_timestamp_seconds', f'process_cpu_usage{{job=~"{JOBS}"}}',
-    f'jvm_memory_used_bytes{{area="heap",job=~"{JOBS}"}}', f'up{{job=~"{JOBS}"}}'))
+    f'jvm_memory_used_bytes{{area="heap",job=~"{JOBS}"}}', f'up{{job=~"{JOBS}"}}',
+    f'process_start_time_seconds{{job=~"{JOBS}"}}',
+    'spring_kafka_listener_seconds_count{result="success"}', 'spring_kafka_listener_seconds_sum{result="success"}',
+    'messaging_complete_sql_batch_size_sum',
+    'messaging_scheduled_work_duration_seconds_count{phase="item"}',
+    'messaging_scheduled_work_duration_seconds_sum{phase="item"}',
+    'http_server_requests_seconds_count{job=~"api|webhook-receive",status="202",method="POST"}',
+    'http_server_requests_seconds_sum{job=~"api|webhook-receive",status="202",method="POST"}'))
 
 
 def distribution(values):
@@ -52,7 +64,10 @@ def telemetry():
         result = json.load(response)
     if result.get("status") != "success":
         raise RuntimeError("Prometheus query failed")
-    snapshot = {"at": time.time(), "cpuRatio": {}, "heapBytes": {}, "lag": {}, "up": {}}
+    snapshot = {"at": time.time(), "cpuRatio": {}, "heapBytes": {}, "lag": {}, "up": {},
+                "endOffsets": {}, "processStartedAt": {}, "listenerCount": {}, "listenerSeconds": {},
+                "completionBatchRecords": None, "httpCount": {}, "httpSeconds": {},
+                "scheduledCount": {}, "scheduledSeconds": {}}
     for item in result["data"]["result"]:
         labels = item["metric"]
         value = float(item["value"][1])
@@ -68,6 +83,23 @@ def telemetry():
             snapshot["lag"][label] = snapshot["lag"].get(label, 0) + value
         elif name == "up":
             snapshot["up"][job] = value
+        elif name == "platform_kafka_log_end_offset":
+            topic = labels["topic"]
+            snapshot["endOffsets"][topic] = snapshot["endOffsets"].get(topic, 0) + value
+        elif name == "process_start_time_seconds":
+            snapshot["processStartedAt"][job] = value
+        elif name == "spring_kafka_listener_seconds_count":
+            snapshot["listenerCount"][job] = snapshot["listenerCount"].get(job, 0) + value
+        elif name == "spring_kafka_listener_seconds_sum":
+            snapshot["listenerSeconds"][job] = snapshot["listenerSeconds"].get(job, 0) + value
+        elif name == "messaging_complete_sql_batch_size_sum":
+            snapshot["completionBatchRecords"] = value
+        elif name.startswith("http_server_requests_seconds_") and labels.get("uri") == AP_HTTP.get(job):
+            field = "httpCount" if name.endswith("_count") else "httpSeconds"
+            snapshot[field][job] = snapshot[field].get(job, 0) + value
+        elif name.startswith("messaging_scheduled_work_duration_seconds_"):
+            field = "scheduledCount" if name.endswith("_count") else "scheduledSeconds"
+            snapshot[field][labels["worker"]] = value
         elif name == "platform_kafka_probe_up":
             snapshot["probeUp"] = value
         elif name == "platform_kafka_probe_last_success_timestamp_seconds":
@@ -200,6 +232,65 @@ def summarize_windows(requests, rows, samples, start, seconds):
     return windows
 
 
+def summarize_ap_observations(samples):
+    """Commit progress is records/s, not an isolated AP capacity or message rate."""
+    valid = sorted((s for s in samples if s["valid"]), key=lambda s: s["at"])
+    result = {}
+    for job, topic in AP_TOPICS.items():
+        observations = []
+        for sample in valid:
+            matches = [value for label, value in sample["lag"].items() if label.endswith("/" + topic)]
+            if len(matches) != 1 or topic not in sample.get("endOffsets", {}):
+                continue
+            observation = {"at": sample["probeAt"], "lag": matches[0],
+                           "committed": sample["endOffsets"][topic] - matches[0]}
+            if not observations or observation["at"] > observations[-1]["at"]:
+                observations.append(observation)
+        rates = [(b["committed"] - a["committed"]) / (b["at"] - a["at"])
+                 for a, b in zip(observations, observations[1:]) if b["committed"] >= a["committed"]]
+        resets = any(b["committed"] < a["committed"] for a, b in zip(observations, observations[1:]))
+        starts = {s.get("processStartedAt", {}).get(job) for s in valid}
+        result[job] = {"topic": topic, "unit": "committed Kafka records/second", "capacityVerdict": "not-measured",
+            "observations": len(observations), "offsetRegression": resets,
+            "processRestartObserved": len(starts - {None}) > 1,
+            "meanObservedCommitRps": ((observations[-1]["committed"] - observations[0]["committed"])
+                / (observations[-1]["at"] - observations[0]["at"])) if len(observations) > 1 and not resets else None,
+            "peakObservedCommitRps": max(rates, default=None) if not resets else None,
+            "peakLag": max((s["lag"] for s in observations), default=None),
+            "peakCpuRatio": max((s["cpuRatio"][job] for s in valid), default=None),
+            "peakHeapBytes": max((s["heapBytes"][job] for s in valid), default=None)}
+        timed = [s for s in valid if job in s.get("listenerCount", {}) and job in s.get("listenerSeconds", {})]
+        count = timed[-1]["listenerCount"][job] - timed[0]["listenerCount"][job] if len(timed) > 1 else 0
+        duration = timed[-1]["listenerSeconds"][job] - timed[0]["listenerSeconds"][job] if len(timed) > 1 else 0
+        mean_ms = duration * 1000 / count if count > 0 and duration >= 0 and not result[job]["processRestartObserved"] else None
+        result[job]["listenerInvocations"] = count
+        result[job]["listenerTimingUnit"] = "batch" if job == "complete-manager" else "Kafka record"
+        result[job]["meanListenerInvocationMs"] = mean_ms
+        if job == "complete-manager":
+            records = (timed[-1]["completionBatchRecords"] - timed[0]["completionBatchRecords"]
+                       if len(timed) > 1 and all(s.get("completionBatchRecords") is not None for s in (timed[0], timed[-1])) else 0)
+            result[job]["meanRecordsPerBatch"] = records / count if count > 0 and records > 0 and mean_ms is not None else None
+            result[job]["amortizedListenerMsPerRecord"] = duration * 1000 / records if records > 0 and mean_ms is not None else None
+    for job, uri in AP_HTTP.items():
+        timed = [s for s in valid if job in s.get("httpCount", {}) and job in s.get("httpSeconds", {})]
+        count = timed[-1]["httpCount"][job] - timed[0]["httpCount"][job] if len(timed) > 1 else 0
+        duration = timed[-1]["httpSeconds"][job] - timed[0]["httpSeconds"][job] if len(timed) > 1 else 0
+        starts = {s.get("processStartedAt", {}).get(job) for s in valid} - {None}
+        result[job] = {"uri": uri, "unit": "accepted HTTP requests/second", "capacityVerdict": "not-measured",
+            "processRestartObserved": len(starts) > 1, "acceptedRequests": count,
+            "meanObservedRequestRps": count / (timed[-1]["at"] - timed[0]["at"]) if len(timed) > 1 and count >= 0 and len(starts) <= 1 else None,
+            "meanRequestMs": duration * 1000 / count if count > 0 and duration >= 0 and len(starts) <= 1 else None}
+    for job, worker in (("result-manager", "result_inbox"), ("result-manager", "result_outbox"),
+                        ("complete-manager", "complete_cleanup")):
+        timed = [s for s in valid if worker in s.get("scheduledCount", {}) and worker in s.get("scheduledSeconds", {})]
+        count = timed[-1]["scheduledCount"][worker] - timed[0]["scheduledCount"][worker] if len(timed) > 1 else 0
+        duration = timed[-1]["scheduledSeconds"][worker] - timed[0]["scheduledSeconds"][worker] if len(timed) > 1 else 0
+        result[job].setdefault("scheduledWork", {})[worker] = {
+            "itemAttempts": count, "meanItemMs": duration * 1000 / count
+            if count > 0 and duration >= 0 and not result[job]["processRestartObserved"] else None}
+    return result
+
+
 def analyze_run(run_id):
     # Recalculate older runs without replacing their original report/source hashes.
     directory = ROOT / ".monitoring/performance" / run_id
@@ -261,6 +352,13 @@ def run(args):
             "scripts/monitoring/webhook_flow.py", "scripts/primary-flow-mock.py", "monitoring/compose.yml")}
         report["dockerResources"] = json.loads(subprocess.check_output(["docker", "info", "--format",
             '{"cpus":{{.NCPU}},"memoryBytes":{{.MemTotal}},"runningContainers":{{.ContainersRunning}}}'], text=True, timeout=15))
+        containers = json.loads(subprocess.check_output(["docker", "inspect", *[
+            "platform-messaging-monitoring-" + job + "-1" for job in AP_HEALTH_ENDPOINTS]], text=True, timeout=15))
+        report["apRuntime"] = {job: {"container": container["Name"],
+            "cpuQuotaNanos": container["HostConfig"]["NanoCpus"], "memoryLimitBytes": container["HostConfig"]["Memory"],
+            "jvmOptions": [arg for arg in container["Config"]["Cmd"] if arg.startswith(("-Xms", "-Xmx", "-XX:ActiveProcessorCount="))],
+            "concurrency": [value for value in container["Config"]["Env"] if "CONCURRENCY=" in value],
+            "startedAt": container["State"]["StartedAt"]} for job, container in zip(AP_HEALTH_ENDPOINTS, containers)}
         clock_start = time.time()
         db_time = float(sql("SELECT extract(epoch from clock_timestamp())"))
         clock_end = time.time()
@@ -371,6 +469,7 @@ def run(args):
             "peakLag": max((sum(s["lag"].values()) for s in valid), default=None),
             "peakCpuRatioByAp": {job: max((s["cpuRatio"][job] for s in valid), default=None) for job in AP_HEALTH_ENDPOINTS},
             "peakHeapBytesByAp": {job: max((s["heapBytes"][job] for s in valid), default=None) for job in AP_HEALTH_ENDPOINTS}}
+        report["apObservations"] = summarize_ap_observations([report["baseline"], *samples] if "baseline" in report else samples)
         if report["stage"] == "measured" and (len(valid) < 3 or len(valid) != len(samples)):
             report["problems"].append("telemetry-incomplete")
         report["finishedAt"] = time.time()

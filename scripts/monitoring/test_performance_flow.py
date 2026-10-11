@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from performance_flow import analyze_run, case_for, distribution, reconcile, summarize, summarize_windows
+from performance_flow import AP_TOPICS, analyze_run, case_for, distribution, reconcile, summarize, summarize_ap_observations, summarize_windows
 
 
 def request(number=0, case="primary-success", **changes):
@@ -166,6 +166,54 @@ class PerformanceAccountingTest(unittest.TestCase):
                     self.assertEqual(analysis["inputHashes"][name], hashlib.sha256(data).hexdigest())
                 self.assertEqual(analysis["sourceHash"], hashlib.sha256(source.read_bytes()).hexdigest())
                 self.assertEqual(analysis["loadWindows"][0]["cohortCompleted"], 1)
+
+    def test_ap_commit_progress_uses_probe_time_and_deduplicates_cached_samples(self):
+        def sample(at, probe, end, lag, started=1):
+            return {"at": at, "probeAt": probe, "valid": True,
+                    "lag": {"group/" + topic: lag for topic in AP_TOPICS.values()},
+                    "endOffsets": {topic: end for topic in AP_TOPICS.values()},
+                    "cpuRatio": {job: .2 for job in AP_TOPICS},
+                    "heapBytes": {job: 100 for job in AP_TOPICS},
+                    "processStartedAt": {job: started for job in AP_TOPICS}}
+        observations = summarize_ap_observations([sample(100, 90, 100, 20), sample(105, 90, 100, 20),
+                                                 sample(110, 100, 160, 10)])
+        row = observations["pre-send"]
+        self.assertEqual(row["observations"], 2)
+        self.assertEqual(row["meanObservedCommitRps"], 7)
+        self.assertEqual(row["peakObservedCommitRps"], 7)
+        self.assertEqual(row["capacityVerdict"], "not-measured")
+        self.assertFalse(row["processRestartObserved"])
+        reset = summarize_ap_observations([sample(100, 90, 100, 20), sample(110, 100, 10, 0, started=2)])
+        self.assertTrue(reset["pre-send"]["offsetRegression"])
+        self.assertTrue(reset["pre-send"]["processRestartObserved"])
+        self.assertIsNone(reset["pre-send"]["peakObservedCommitRps"])
+
+    def test_ap_progress_without_offset_evidence_is_not_fabricated(self):
+        row = summarize_ap_observations([])["pre-send"]
+        self.assertEqual(row["observations"], 0)
+        self.assertIsNone(row["meanObservedCommitRps"])
+
+    def test_listener_time_uses_duration_not_inverse_throughput_and_labels_batch_cost(self):
+        def sample(at, count, seconds, batch_count, batch_seconds, records):
+            return {"at": at, "valid": True, "lag": {},
+                    "cpuRatio": {job: .1 for job in AP_TOPICS}, "heapBytes": {job: 100 for job in AP_TOPICS},
+                    "processStartedAt": {job: 1 for job in AP_TOPICS},
+                    "listenerCount": {"pre-send": count, "complete-manager": batch_count},
+                    "listenerSeconds": {"pre-send": seconds, "complete-manager": batch_seconds},
+                    "completionBatchRecords": records,
+                    "httpCount": {"api": at}, "httpSeconds": {"api": at * .01},
+                    "scheduledCount": {"result_inbox": at}, "scheduledSeconds": {"result_inbox": at * .05}}
+        result = summarize_ap_observations([sample(100, 10, 1, 2, .02, 20),
+                                            sample(110, 20, 1.25, 4, .08, 60)])
+        self.assertEqual(result["pre-send"]["meanListenerInvocationMs"], 25)
+        self.assertEqual(result["pre-send"]["listenerTimingUnit"], "Kafka record")
+        self.assertAlmostEqual(result["complete-manager"]["meanListenerInvocationMs"], 30)
+        self.assertEqual(result["complete-manager"]["listenerTimingUnit"], "batch")
+        self.assertEqual(result["complete-manager"]["meanRecordsPerBatch"], 20)
+        self.assertAlmostEqual(result["complete-manager"]["amortizedListenerMsPerRecord"], 1.5)
+        self.assertEqual(result["api"]["meanObservedRequestRps"], 1)
+        self.assertAlmostEqual(result["api"]["meanRequestMs"], 10)
+        self.assertAlmostEqual(result["result-manager"]["scheduledWork"]["result_inbox"]["meanItemMs"], 50)
 
 
 if __name__ == "__main__":
