@@ -57,10 +57,6 @@ public class FinalizedHistoryStore {
                 .register(metrics);
     }
 
-    public void store(FinalizedMessageResult finalized) {
-        storeBatch(List.of(finalized));
-    }
-
     /** The whole poll commits or rolls back; replay never changes an existing final result. */
     public void storeBatch(List<FinalizedMessageResult> finalized) {
         Objects.requireNonNull(finalized);

@@ -95,10 +95,10 @@ class FinalizedHistoryPostgresTest {
         var success = result("a".repeat(32), PrimaryStageDecision.Kind.SUCCESS);
         var failure = result("b".repeat(32), PrimaryStageDecision.Kind.FAILURE);
 
-        history.store(success);
-        history.store(success);
-        history.store(failure);
-        history.store(failure);
+        history.storeBatch(List.of(success));
+        history.storeBatch(List.of(success));
+        history.storeBatch(List.of(failure));
+        history.storeBatch(List.of(failure));
 
         assertEquals(2, jdbc.queryForObject("SELECT count(*) FROM tbl_msg_hist", Integer.class));
         assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM tbl_cdr_hist", Integer.class));
@@ -119,8 +119,8 @@ class FinalizedHistoryPostgresTest {
                     decision.errorCode(), decision.reason(), HttpCarrier.KT, 4, false,
                     decision.decidedAt()), original.submission());
 
-            history.store(finalized);
-            history.store(finalized);
+            history.storeBatch(List.of(finalized));
+            history.storeBatch(List.of(finalized));
 
             assertEquals("KT", jdbc.queryForObject(
                     "SELECT carrier FROM tbl_msg_hist WHERE client_msg_id = ?", String.class,
@@ -139,7 +139,7 @@ class FinalizedHistoryPostgresTest {
                 decision.decisionId(), decision.clientMsgId(), decision.kind(), "PRE_SEND",
                 40004, "contract unavailable", null, null, false, decision.decidedAt()), original.submission());
 
-        history.store(finalized);
+        history.storeBatch(List.of(finalized));
 
         assertNull(jdbc.queryForObject("SELECT carrier FROM tbl_msg_hist", String.class));
         assertNull(jdbc.queryForObject("SELECT invocation FROM tbl_msg_hist", Integer.class));
@@ -159,8 +159,8 @@ class FinalizedHistoryPostgresTest {
                 MessageCategory.GENERAL, Map.of("text", "hello"), Map.of("text", "secondary"), now.minusSeconds(30));
         var finalized = new FinalizedMessageResult(primary, secondary, submission);
 
-        history.store(finalized);
-        history.store(finalized);
+        history.storeBatch(List.of(finalized));
+        history.storeBatch(List.of(finalized));
 
         assertEquals("SECONDARY", jdbc.queryForObject("SELECT final_stage FROM tbl_msg_hist WHERE client_msg_id = ?", String.class, id));
         assertEquals("SUCCESS", jdbc.queryForObject("SELECT outcome FROM tbl_msg_hist WHERE client_msg_id = ?", String.class, id));
@@ -174,9 +174,9 @@ class FinalizedHistoryPostgresTest {
         var done = result("a".repeat(32), PrimaryStageDecision.Kind.SUCCESS);
         var deferred = result("b".repeat(32), PrimaryStageDecision.Kind.SUCCESS);
         var failed = result("c".repeat(32), PrimaryStageDecision.Kind.SUCCESS);
-        history.store(done);
-        history.store(deferred);
-        history.store(failed);
+        history.storeBatch(List.of(done));
+        history.storeBatch(List.of(deferred));
+        history.storeBatch(List.of(failed));
         var cleanup = spy(new FinalizedDynamoCleanup(jdbc, mock(DynamoDbClient.class), Clock.systemUTC(),
                 10, 4, Duration.ofDays(7), metrics, 2));
         doAnswer(call -> {
@@ -203,7 +203,7 @@ class FinalizedHistoryPostgresTest {
     @Test
     void dynamoFailureKeepsSqlCleanupPendingForRetry() {
         var finalized = result("e".repeat(32), PrimaryStageDecision.Kind.SUCCESS);
-        history.store(finalized);
+        history.storeBatch(List.of(finalized));
         var db = mock(DynamoDbClient.class);
         when(db.getItem(any(GetItemRequest.class))).thenThrow(new IllegalStateException("offline"));
 
@@ -220,13 +220,13 @@ class FinalizedHistoryPostgresTest {
     @Test
     void conflictingFinalResultCannotChangeCommittedHistoryOrBilling() {
         var original = result("a".repeat(32), PrimaryStageDecision.Kind.SUCCESS);
-        history.store(original);
+        history.storeBatch(List.of(original));
         var conflicting = new FinalizedMessageResult(new PrimaryStageDecision(
                 "other-decision", original.decision().clientMsgId(), PrimaryStageDecision.Kind.FAILURE,
                 "WEBHOOK", 66001, null, HttpCarrier.SKT, 1, false,
                 original.decision().decidedAt()), original.submission());
 
-        assertThrows(IllegalStateException.class, () -> history.store(conflicting));
+        assertThrows(IllegalStateException.class, () -> history.storeBatch(List.of(conflicting)));
 
         assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM tbl_msg_hist", Integer.class));
         assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM tbl_cdr_hist", Integer.class));
@@ -240,7 +240,7 @@ class FinalizedHistoryPostgresTest {
         var finalized = result("c".repeat(32), PrimaryStageDecision.Kind.SUCCESS);
         try (var threads = Executors.newFixedThreadPool(8)) {
             var deliveries = new ArrayList<Future<?>>();
-            for (int i = 0; i < 24; i++) deliveries.add(threads.submit(() -> history.store(finalized)));
+            for (int i = 0; i < 24; i++) deliveries.add(threads.submit(() -> history.storeBatch(List.of(finalized))));
             for (var delivery : deliveries) delivery.get(20, TimeUnit.SECONDS);
         }
 
@@ -279,7 +279,7 @@ class FinalizedHistoryPostgresTest {
 
     @Test
     void conflictingRecordRollsBackOtherNewMessagesInTheBatch() {
-        history.store(result("existing", PrimaryStageDecision.Kind.SUCCESS));
+        history.storeBatch(List.of(result("existing", PrimaryStageDecision.Kind.SUCCESS)));
         assertThrows(IllegalStateException.class, () -> history.storeBatch(List.of(
                 result("new", PrimaryStageDecision.Kind.SUCCESS),
                 result("existing", PrimaryStageDecision.Kind.FAILURE))));
@@ -313,7 +313,7 @@ class FinalizedHistoryPostgresTest {
     @Test
     void conflictingCdrPreventsCommittingNewRecords() {
         var existing = result("existing", PrimaryStageDecision.Kind.SUCCESS);
-        history.store(existing);
+        history.storeBatch(List.of(existing));
         jdbc.update("UPDATE tbl_cdr_hist SET decision_id='unexpected' WHERE client_msg_id='existing'");
         assertThrows(IllegalStateException.class, () -> history.storeBatch(List.of(existing,
                 result("new", PrimaryStageDecision.Kind.SUCCESS))));
@@ -447,7 +447,7 @@ class FinalizedHistoryPostgresTest {
         // Warm both SQL shapes; report samples, never turn host-dependent timings into a flaky assertion.
         var warm = new ArrayList<FinalizedMessageResult>();
         for (int i = 0; i < 100; i++) warm.add(result("warm-" + i, PrimaryStageDecision.Kind.SUCCESS));
-        warm.forEach(history::store);
+        warm.forEach(item -> history.storeBatch(List.of(item)));
         history.storeBatch(warm);
         for (int round = 0; round < 3; round++) {
             var single = new ArrayList<FinalizedMessageResult>();
@@ -458,11 +458,11 @@ class FinalizedHistoryPostgresTest {
             }
             long singleNanos, batchNanos;
             if (round % 2 == 0) {
-                long start = System.nanoTime(); single.forEach(history::store); singleNanos = System.nanoTime() - start;
+                long start = System.nanoTime(); single.forEach(item -> history.storeBatch(List.of(item))); singleNanos = System.nanoTime() - start;
                 start = System.nanoTime(); history.storeBatch(batch); batchNanos = System.nanoTime() - start;
             } else {
                 long start = System.nanoTime(); history.storeBatch(batch); batchNanos = System.nanoTime() - start;
-                start = System.nanoTime(); single.forEach(history::store); singleNanos = System.nanoTime() - start;
+                start = System.nanoTime(); single.forEach(item -> history.storeBatch(List.of(item))); singleNanos = System.nanoTime() - start;
             }
             System.out.printf("COMPLETION_SQL_SAMPLE round=%d rows=100 singleMs=%.3f batchMs=%.3f%n",
                     round, singleNanos / 1e6, batchNanos / 1e6);
