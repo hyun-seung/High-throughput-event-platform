@@ -6,6 +6,7 @@ import messaging.common.messages.HttpCarrier;
 import messaging.common.messages.HttpSendCommand;
 import messaging.common.messages.MessageOriginCodec;
 import messaging.common.messages.PreSendDispatch;
+import messaging.common.messages.PrimaryHttpFailureCodes;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.services.dynamodb.model.GetItemRequest;
@@ -72,7 +73,8 @@ public class HttpFailureFollowupService {
         PrimaryHttpFailureDecision.Action action = result.status() == CarrierHttpResult.Status.TIMEOUT
                 ? PrimaryHttpFailureDecision.decideNoResponse(result.carrier(), result.invocation(), now)
                 : PrimaryHttpFailureDecision.decide(result.normalizedErrorCode(), result.carrier(),
-                result.invocation(), attempted(result.clientMsgId()), now);
+                result.invocation(), result.normalizedErrorCode() == PrimaryHttpFailureCodes.NOT_OUR_CARRIER
+                ? attempted(result.clientMsgId()) : Set.of(), now);
         if (action instanceof PrimaryHttpFailureDecision.FailPrimary failure) {
             return new PrimaryFailurePending(failure.errorCode(), previousDecision, current);
         }

@@ -58,6 +58,8 @@ class HttpFailureFollowupServiceTest {
         assertEquals(NOW, stored.notBefore());
         assertEquals(first.request(), stored.command().request());
         assertEquals(failure.resultId(), stored.decisionId());
+        verify(db).query(argThat((QueryRequest request) -> request.consistentRead()
+                && "HTTP#".equals(request.expressionAttributeValues().get(":prefix").s())));
     }
 
     @Test
@@ -75,6 +77,7 @@ class HttpFailureFollowupServiceTest {
         assertEquals(HttpCarrier.SKT, stored.command().carrier());
         assertEquals(2, stored.command().invocation());
         assertEquals(NOW.plusSeconds(60), stored.notBefore());
+        verify(db, never()).query(any(QueryRequest.class));
     }
 
     @Test
@@ -231,6 +234,7 @@ class HttpFailureFollowupServiceTest {
 
         assertEquals(66003, pending.errorCode());
         verifyNoInteractions(commands);
+        verify(db, never()).query(any(QueryRequest.class));
     }
 
     @Test

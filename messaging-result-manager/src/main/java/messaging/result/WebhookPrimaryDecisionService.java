@@ -6,6 +6,7 @@ import messaging.common.messages.HttpCarrier;
 import messaging.common.messages.HttpSendCommand;
 import messaging.common.messages.MessageOriginCodec;
 import messaging.common.messages.PreSendDispatch;
+import messaging.common.messages.PrimaryHttpFailureCodes;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.services.dynamodb.model.GetItemRequest;
@@ -60,7 +61,10 @@ public class WebhookPrimaryDecisionService {
         if (initial.command() == null) return new Ignored();
         String previousDecision = origin.containsKey(FollowupHttpCommand.CURRENT_DECISION)
                 ? origin.get(FollowupHttpCommand.CURRENT_DECISION).s() : null;
-        if (item.resultId().equals(previousDecision) || alreadyAuthorized(item.clientMsgId(), item.resultId())) {
+        // FollowupHttpCommandStore atomically creates history AND the current decision.
+        // With no current decision, there cannot be an older authorized follow-up to find.
+        if (item.resultId().equals(previousDecision)
+                || (previousDecision != null && alreadyAuthorized(item.clientMsgId(), item.resultId()))) {
             return new Ignored();
         }
         HttpSendCommand current = previousDecision == null ? initial.command()
@@ -80,8 +84,10 @@ public class WebhookPrimaryDecisionService {
         if (http.status() == CarrierHttpResult.Status.FAILED) return new Ignored();
 
         if ("success".equals(webhook.result().status())) return new SuccessPending(previousDecision, current);
-        var action = PrimaryHttpFailureDecision.decide(webhook.result().error().code(),
-                current.carrier(), current.invocation(), attempted(item.clientMsgId()), clock.instant());
+        int errorCode = webhook.result().error().code();
+        var action = PrimaryHttpFailureDecision.decide(errorCode, current.carrier(), current.invocation(),
+                errorCode == PrimaryHttpFailureCodes.NOT_OUR_CARRIER ? attempted(item.clientMsgId()) : Set.of(),
+                clock.instant());
         if (action instanceof PrimaryHttpFailureDecision.FailPrimary failed) {
             return new PrimaryFailurePending(failed.errorCode(), previousDecision, current);
         }

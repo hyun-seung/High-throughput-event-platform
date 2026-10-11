@@ -58,6 +58,7 @@ class WebhookPrimaryDecisionServiceTest {
         assertEquals(2, outcome.value().command().invocation());
         assertEquals(NOW.plusSeconds(60), outcome.value().notBefore());
         assertEquals(ID, outcome.value().command().request().clientMsgId());
+        verify(db, never()).query(any(QueryRequest.class));
     }
 
     @Test
@@ -74,6 +75,8 @@ class WebhookPrimaryDecisionServiceTest {
         assertEquals(HttpCarrier.KT, outcome.value().command().carrier());
         assertEquals(1, outcome.value().command().invocation());
         assertEquals(NOW, outcome.value().notBefore());
+        verify(db).query(argThat((QueryRequest request) -> request.consistentRead()
+                && "HTTP#".equals(request.expressionAttributeValues().get(":prefix").s())));
     }
 
     @Test
@@ -82,6 +85,7 @@ class WebhookPrimaryDecisionServiceTest {
         assertInstanceOf(WebhookPrimaryDecisionService.AwaitingHttp.class,
                 service.process(webhook(HttpCarrier.SKT, "success", null)));
         verifyNoInteractions(commands);
+        verify(db, never()).query(any(QueryRequest.class));
     }
 
     @Test
@@ -90,6 +94,7 @@ class WebhookPrimaryDecisionServiceTest {
         assertInstanceOf(WebhookPrimaryDecisionService.SuccessPending.class,
                 service.process(webhook(HttpCarrier.SKT, "success", null)));
         verifyNoInteractions(commands);
+        verify(db, never()).query(any(QueryRequest.class));
     }
 
     @Test
@@ -113,6 +118,7 @@ class WebhookPrimaryDecisionServiceTest {
 
         assertInstanceOf(WebhookPrimaryDecisionService.Ignored.class, service.process(item));
         verifyNoInteractions(commands);
+        verify(db, never()).query(any(QueryRequest.class));
     }
 
     @Test
@@ -130,6 +136,8 @@ class WebhookPrimaryDecisionServiceTest {
 
         assertInstanceOf(WebhookPrimaryDecisionService.Ignored.class, service.process(item));
         verifyNoInteractions(commands);
+        verify(db).query(argThat((QueryRequest request) -> request.consistentRead()
+                && "HTTP_COMMAND#".equals(request.expressionAttributeValues().get(":prefix").s())));
     }
 
     @Test
@@ -141,6 +149,52 @@ class WebhookPrimaryDecisionServiceTest {
         var pending = assertInstanceOf(WebhookPrimaryDecisionService.PrimaryFailurePending.class,
                 service.process(webhook(HttpCarrier.SKT, "fail", 66003)));
         assertEquals(66003, pending.errorCode());
+        verifyNoInteractions(commands);
+        verify(db, never()).query(any(QueryRequest.class));
+    }
+
+    @Test
+    void earlierAuthorizedWebhookIsFoundOnLaterHistoryPages() {
+        var item = webhook(HttpCarrier.SKT, "fail", 66002);
+        var retry = new HttpSendCommand(command.attemptId(), command.carrier(), 3,
+                command.deadlineAt(), command.request());
+        var origin = origin();
+        origin.put(FollowupHttpCommand.CURRENT_DECISION, AttributeValue.fromS("later-result"));
+        origin.put(FollowupHttpCommand.CURRENT_COMMAND, AttributeValue.fromS(mapper.writeValueAsString(retry)));
+        reads(origin, Map.of());
+        var cursor = Map.of("pk", AttributeValue.fromS("DELIVERY#" + ID),
+                "sk", AttributeValue.fromS("HTTP_COMMAND#page-1"));
+        when(db.query(any(QueryRequest.class)))
+                .thenReturn(QueryResponse.builder().items(Map.of("decision_id", AttributeValue.fromS("another")))
+                        .lastEvaluatedKey(cursor).build())
+                .thenReturn(QueryResponse.builder().items(Map.of("decision_id", AttributeValue.fromS(item.resultId()))).build());
+
+        assertInstanceOf(WebhookPrimaryDecisionService.Ignored.class, service.process(item));
+
+        verify(db).query(argThat((QueryRequest request) -> cursor.equals(request.exclusiveStartKey())
+                && request.consistentRead()
+                && "HTTP_COMMAND#".equals(request.expressionAttributeValues().get(":prefix").s())));
+        verify(db, times(1)).getItem(any(GetItemRequest.class));
+        verifyNoInteractions(commands);
+    }
+
+    @Test
+    void aCurrentRetrySuccessStillChecksAuthorizationHistoryBeforeClosingTheStage() {
+        var retry = new HttpSendCommand(command.attemptId(), command.carrier(), 2,
+                command.deadlineAt(), command.request());
+        var origin = origin();
+        origin.put(FollowupHttpCommand.CURRENT_DECISION, AttributeValue.fromS("earlier-result"));
+        origin.put(FollowupHttpCommand.CURRENT_COMMAND, AttributeValue.fromS(mapper.writeValueAsString(retry)));
+        reads(origin, observed(retry, CarrierHttpResult.Status.ACCEPTED));
+
+        var outcome = assertInstanceOf(WebhookPrimaryDecisionService.SuccessPending.class,
+                service.process(webhook(HttpCarrier.SKT, "success", null)));
+
+        assertEquals("earlier-result", outcome.previousDecisionId());
+        assertEquals(retry, outcome.command());
+        verify(db).query(argThat((QueryRequest request) -> request.consistentRead()
+                && "HTTP_COMMAND#".equals(request.expressionAttributeValues().get(":prefix").s())));
+        verify(db, times(2)).getItem(any(GetItemRequest.class));
         verifyNoInteractions(commands);
     }
 
@@ -160,12 +214,16 @@ class WebhookPrimaryDecisionServiceTest {
     }
 
     private Map<String, AttributeValue> observed(CarrierHttpResult.Status status) {
-        var value = new HashMap<>(command.stepKey());
+        return observed(command, status);
+    }
+
+    private Map<String, AttributeValue> observed(HttpSendCommand current, CarrierHttpResult.Status status) {
+        var value = new HashMap<>(current.stepKey());
         value.put("status", AttributeValue.fromS("OBSERVED"));
-        value.put("carrier", AttributeValue.fromS(command.carrier().name()));
-        value.put("command", AttributeValue.fromS(mapper.writeValueAsString(command)));
-        var result = new CarrierHttpResult(CarrierHttpResult.id(command), ID, command.attemptId(),
-                command.carrier(), command.invocation(), "HTTP_RESPONSE", status,
+        value.put("carrier", AttributeValue.fromS(current.carrier().name()));
+        value.put("command", AttributeValue.fromS(mapper.writeValueAsString(current)));
+        var result = new CarrierHttpResult(CarrierHttpResult.id(current), ID, current.attemptId(),
+                current.carrier(), current.invocation(), "HTTP_RESPONSE", status,
                 status == CarrierHttpResult.Status.ACCEPTED ? 200 : 400, null, null,
                 status == CarrierHttpResult.Status.ACCEPTED ? null : 66003, null, NOW);
         value.put("http_observation", AttributeValue.fromS(mapper.writeValueAsString(result)));

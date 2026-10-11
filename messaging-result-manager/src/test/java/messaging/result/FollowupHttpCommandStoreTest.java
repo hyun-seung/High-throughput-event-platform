@@ -44,6 +44,7 @@ class FollowupHttpCommandStoreTest {
         ((Consumer<TransactWriteItemsRequest.Builder>) capture.getValue()).accept(builder);
         var writes = builder.build().transactItems();
         assertEquals(2, writes.size());
+        assertTrue(writes.get(0).update().updateExpression().contains("#decision = :next"));
         assertTrue(writes.get(0).update().conditionExpression().contains("attribute_not_exists(#decision)"));
         assertEquals("result-1", writes.get(0).update().expressionAttributeValues().get(":next").s());
         assertEquals(JsonMapper.builder().build().writeValueAsString(followup.command()),
