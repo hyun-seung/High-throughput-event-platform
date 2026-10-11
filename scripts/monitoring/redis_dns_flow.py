@@ -63,25 +63,28 @@ def run():
     assert len(networks) == 1, "Expected one isolated monitoring network"
     network, endpoint = next(iter(networks.items()))
     original_ip = endpoint["IPAddress"]
+    original_requested_ip = (endpoint.get("IPAMConfig") or {}).get("IPv4Address")
     topology = json.loads(docker("network", "inspect", network))[0]
     used = {entry["IPv4Address"].split("/")[0] for entry in topology["Containers"].values()}
     used.update(entry.get("Gateway", "") for entry in topology["IPAM"]["Config"])
     subnet = next(ipaddress.ip_network(entry["Subnet"]) for entry in topology["IPAM"]["Config"]
                   if ":" not in entry["Subnet"])
-    # Only allocate within this project's network, preserving the original address for restoration.
+    # Only allocate within this project's network; restore its original allocation mode afterward.
     new_ip = next(str(ip) for ip in reversed(list(subnet.hosts())) if str(ip) not in used)
     report.update({"network": network, "originalIp": original_ip, "changedIp": new_ip})
     apps = {service: compose("ps", "--quiet", service) for service in AP_HEALTH_ENDPOINTS}
     starts = {service: inspect(identifier)["State"]["StartedAt"] for service, identifier in apps.items()}
 
-    def move(address):
+    def move(address=None):
         if network in inspect(container)["NetworkSettings"]["Networks"]:
             docker("network", "disconnect", network, container)
         aliases = [arg for alias in endpoint.get("Aliases", []) for arg in ("--alias", alias)]
-        docker("network", "connect", "--ip", address, *aliases, network, container)
+        requested = ["--ip", address] if address else []
+        docker("network", "connect", *requested, *aliases, network, container)
         # Simulate replacement closing existing sockets, while preserving the same Redis data.
         compose("exec", "-T", "redis", "redis-cli", "CLIENT", "KILL", "TYPE", "normal", "SKIPME", "yes")
-        assert inspect(container)["NetworkSettings"]["Networks"][network]["IPAddress"] == address
+        if address:
+            assert inspect(container)["NetworkSettings"]["Networks"][network]["IPAddress"] == address
 
     checkpoint("checking-application-health")
     wait_health()
@@ -109,10 +112,13 @@ def run():
         raise
     finally:
         checkpoint("restoring-redis-address")
-        move(original_ip)
+        move(original_requested_ip)
         report["restoredAddressRecovery"] = wait_health(expected_connections=expected_connections)
-        report["restoredIp"] = inspect(container)["NetworkSettings"]["Networks"][network]["IPAddress"]
-        checkpoint("original-address-restored")
+        restored = inspect(container)["NetworkSettings"]["Networks"][network]
+        report["restoredIp"] = restored["IPAddress"]
+        report["restoredAllocation"] = "static" if original_requested_ip else "dynamic"
+        assert (restored.get("IPAMConfig") or {}).get("IPv4Address") == original_requested_ip
+        checkpoint("original-network-allocation-restored")
     assert all(inspect(identifier)["State"]["StartedAt"] == starts[service]
                for service, identifier in apps.items()), "An AP restarted during address restoration"
     identifiers = set(report["warmupFlow"]["cases"]) | set(report["mainFlow"]["cases"])
