@@ -14,11 +14,18 @@ public final class RedisSendAttemptGuard {
     }
 
     public boolean claimHttp(HttpSendCommand command, Duration ttl) {
-        return claim(SendAttemptKeys.http(command), ttl);
+        Objects.requireNonNull(command);
+        // A claim identifies a provider call; retries and carrier moves have separate keys.
+        String key = "message:http:attempt:" + command.request().clientMsgId() + ":" + command.carrier().name()
+                + ":" + command.attemptId() + ":" + command.invocation();
+        return claim(key, ttl);
     }
 
     public boolean claimTcp(String clientMsgId, String attemptId, Duration ttl) {
-        return claim(SendAttemptKeys.tcp(clientMsgId, attemptId), ttl);
+        if (clientMsgId == null || clientMsgId.isBlank() || attemptId == null || attemptId.isBlank()) {
+            throw new IllegalArgumentException("TCP clientMsgId and attemptId are required");
+        }
+        return claim("message:tcp:attempt:" + clientMsgId + ":" + attemptId, ttl);
     }
 
     private boolean claim(String key, Duration ttl) {

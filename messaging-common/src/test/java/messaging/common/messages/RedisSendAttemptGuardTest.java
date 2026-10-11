@@ -26,27 +26,38 @@ class RedisSendAttemptGuardTest {
                 first.deadlineAt(), request);
         var moved = new HttpSendCommand("attempt-kt", HttpCarrier.KT, 1,
                 first.deadlineAt(), request);
-        assertNotEquals(SendAttemptKeys.http(first), SendAttemptKeys.http(retry));
-        assertNotEquals(SendAttemptKeys.http(first), SendAttemptKeys.http(moved));
+        String firstKey = "message:http:attempt:" + request.clientMsgId() + ":SKT:attempt-skt:1";
+        String retryKey = "message:http:attempt:" + request.clientMsgId() + ":SKT:attempt-skt:2";
+        String movedKey = "message:http:attempt:" + request.clientMsgId() + ":KT:attempt-kt:1";
 
         when(redis.opsForValue()).thenReturn(values);
-        when(values.setIfAbsent(SendAttemptKeys.http(first), "1", Duration.ofSeconds(30)))
+        when(values.setIfAbsent(firstKey, "1", Duration.ofSeconds(30)))
                 .thenReturn(true, false);
+        when(values.setIfAbsent(retryKey, "1", Duration.ofSeconds(30))).thenReturn(true);
+        when(values.setIfAbsent(movedKey, "1", Duration.ofSeconds(30))).thenReturn(true);
         assertTrue(guard.claimHttp(first, Duration.ofSeconds(30)));
         assertFalse(guard.claimHttp(first, Duration.ofSeconds(30)));
-        verify(values, times(2)).setIfAbsent(SendAttemptKeys.http(first), "1", Duration.ofSeconds(30));
+        assertTrue(guard.claimHttp(retry, Duration.ofSeconds(30)));
+        assertTrue(guard.claimHttp(moved, Duration.ofSeconds(30)));
+        verify(values, times(2)).setIfAbsent(firstKey, "1", Duration.ofSeconds(30));
+        verify(values).setIfAbsent(retryKey, "1", Duration.ofSeconds(30));
+        verify(values).setIfAbsent(movedKey, "1", Duration.ofSeconds(30));
     }
 
     @Test
     void tcpClaimUsesTheSecondaryAttemptAndPropagatesUncertainRedisResult() {
-        String first = SendAttemptKeys.tcp(request.clientMsgId(), "tcp-1");
-        String next = SendAttemptKeys.tcp(request.clientMsgId(), "tcp-2");
-        assertNotEquals(first, next);
+        String first = "message:tcp:attempt:" + request.clientMsgId() + ":tcp-1";
+        String next = "message:tcp:attempt:" + request.clientMsgId() + ":tcp-2";
         when(redis.opsForValue()).thenReturn(values);
         when(values.setIfAbsent(first, "1", Duration.ofMinutes(1))).thenReturn(null);
+        when(values.setIfAbsent(next, "1", Duration.ofMinutes(1))).thenReturn(true, false);
         assertThrows(IllegalStateException.class,
                 () -> guard.claimTcp(request.clientMsgId(), "tcp-1", Duration.ofMinutes(1)));
         assertThrows(IllegalArgumentException.class,
                 () -> guard.claimTcp(request.clientMsgId(), "tcp-1", Duration.ZERO));
+        assertTrue(guard.claimTcp(request.clientMsgId(), "tcp-2", Duration.ofMinutes(1)));
+        assertFalse(guard.claimTcp(request.clientMsgId(), "tcp-2", Duration.ofMinutes(1)));
+        verify(values).setIfAbsent(first, "1", Duration.ofMinutes(1));
+        verify(values, times(2)).setIfAbsent(next, "1", Duration.ofMinutes(1));
     }
 }
