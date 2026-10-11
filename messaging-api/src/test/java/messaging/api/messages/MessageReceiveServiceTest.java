@@ -12,6 +12,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Map;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeoutException;
@@ -75,6 +76,32 @@ class MessageReceiveServiceTest {
         MessageAdmissionException failure = assertThrows(MessageAdmissionException.class,
                 () -> service.receive(42L, request));
         assertEquals(HttpStatus.SERVICE_UNAVAILABLE, failure.status());
+        verifyNoInteractions(publisher);
+        verify(origins, never()).save(any());
+        verify(duplicates, never()).release(any());
+    }
+
+    @Test
+    void duplicateMustMatchEveryOriginBusinessFieldBeforeKafkaPublication() {
+        String id = "legacy-id";
+        when(duplicates.claim(eq(42L), eq(request), anyString()))
+                .thenReturn(new MessageDuplicateGuard.Claim(id, "key", id + ":" + "0".repeat(64), false, true));
+        var original = event(id);
+        for (var conflicting : List.of(
+                new MessageSubmission("other-id", 42L, original.messageId(), original.recipientNumber(), original.messageCategory(), original.payload(), original.secondarySendPayload(), original.receivedAt()),
+                new MessageSubmission(id, 43L, original.messageId(), original.recipientNumber(), original.messageCategory(), original.payload(), original.secondarySendPayload(), original.receivedAt()),
+                new MessageSubmission(id, 42L, "other-message", original.recipientNumber(), original.messageCategory(), original.payload(), original.secondarySendPayload(), original.receivedAt()),
+                new MessageSubmission(id, 42L, original.messageId(), "01087654321", original.messageCategory(), original.payload(), original.secondarySendPayload(), original.receivedAt()),
+                new MessageSubmission(id, 42L, original.messageId(), original.recipientNumber(), MessageCategory.ALERT, original.payload(), original.secondarySendPayload(), original.receivedAt()),
+                new MessageSubmission(id, 42L, original.messageId(), original.recipientNumber(), original.messageCategory(), Map.of("message", "other"), original.secondarySendPayload(), original.receivedAt()),
+                new MessageSubmission(id, 42L, original.messageId(), original.recipientNumber(), original.messageCategory(), original.payload(), null, original.receivedAt()))) {
+            when(origins.find(id)).thenReturn(Optional.of(conflicting));
+            assertEquals(HttpStatus.CONFLICT, assertThrows(MessageAdmissionException.class,
+                    () -> service.receive(42L, request)).status());
+        }
+        verifyNoInteractions(publisher);
+        verify(origins, never()).save(any());
+        verify(duplicates, never()).release(any());
     }
 
     @Test

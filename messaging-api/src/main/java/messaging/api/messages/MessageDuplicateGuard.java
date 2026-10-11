@@ -22,6 +22,7 @@ public class MessageDuplicateGuard {
     // The business deadline is at most seven hours; allow two more hours for a successful
     // completion marker and time for delayed cleanup. A lost cleanup cannot block forever.
     private static final Duration ACTIVE_KEY_TTL = Duration.ofHours(24);
+    private static final String FINGERPRINT_VERSION = "v1:";
     private static final RedisScript<Long> RELEASE = RedisScript.of("""
             if redis.call('GET', KEYS[1]) == ARGV[1] then
                 return redis.call('DEL', KEYS[1])
@@ -39,7 +40,7 @@ public class MessageDuplicateGuard {
     public Claim claim(long clientId, MessageReceiveRequest request, String proposedClientMsgId) {
         String key = key(clientId, request.messageId(), request.recipientNumber());
         String fingerprint = fingerprint(request);
-        String value = proposedClientMsgId + ":" + fingerprint;
+        String value = proposedClientMsgId + ":" + FINGERPRINT_VERSION + fingerprint;
         try {
             if (Boolean.TRUE.equals(redis.opsForValue().setIfAbsent(key, value, ACTIVE_KEY_TTL))) {
                 return new Claim(proposedClientMsgId, key, value, true, true);
@@ -49,9 +50,20 @@ public class MessageDuplicateGuard {
                 throw new MessageAdmissionException(HttpStatus.SERVICE_UNAVAILABLE, "Duplicate state changed; retry request");
             }
             int separator = existing.indexOf(':');
-            if (separator < 1 || !existing.substring(separator + 1).equals(fingerprint)) {
-                throw new MessageAdmissionException(HttpStatus.CONFLICT, "messageId and recipientNumber already have different content");
+            if (separator < 1) {
+                throw new MessageAdmissionException(HttpStatus.SERVICE_UNAVAILABLE, "Invalid duplicate state");
             }
+            String storedFingerprint = existing.substring(separator + 1);
+            if (storedFingerprint.startsWith(FINGERPRINT_VERSION)) {
+                if (!storedFingerprint.equals(FINGERPRINT_VERSION + fingerprint)) {
+                    throw new MessageAdmissionException(HttpStatus.CONFLICT,
+                            "messageId and recipientNumber already have different content");
+                }
+            } else if (!storedFingerprint.matches("[0-9a-f]{64}")) {
+                throw new MessageAdmissionException(HttpStatus.SERVICE_UNAVAILABLE, "Unsupported duplicate state");
+            }
+            // Legacy hashes depended on the JVM's Map.of order. A non-owner must reconcile
+            // the entire request with ORIGIN before publishing; never replace its ID or TTL.
             return new Claim(existing.substring(0, separator), key, existing, false, true);
         } catch (RedisConnectionFailureException | QueryTimeoutException unavailable) {
             return new Claim(proposedClientMsgId, key, value, true, false);
@@ -70,11 +82,11 @@ public class MessageDuplicateGuard {
     private String fingerprint(MessageReceiveRequest request) {
         try {
             Map<String, Object> value = Map.of("messageId", request.messageId(), "recipientNumber", request.recipientNumber(),
-                    "messageCategory", request.messageCategory().name(), "payload", MessagePayloads.canonicalize(request.payload()),
+                    "messageCategory", request.messageCategory().name(), "payload", request.payload(),
                     "secondarySendPayload", request.hasSecondarySendPayload()
-                            ? MessagePayloads.canonicalize(request.secondarySendPayload()) : Map.of());
+                            ? request.secondarySendPayload() : Map.of());
             byte[] digest = MessageDigest.getInstance("SHA-256").digest(
-                    mapper.writeValueAsBytes(value));
+                    mapper.writeValueAsBytes(MessagePayloads.canonicalize(value)));
             return HexFormat.of().formatHex(digest);
         } catch (NoSuchAlgorithmException impossible) {
             throw new IllegalStateException(impossible);

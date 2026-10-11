@@ -71,8 +71,12 @@ public class MessageReceiveService {
                 throw new MessageAdmissionException(HttpStatus.SERVICE_UNAVAILABLE,
                         "Duplicate admission could not be confirmed", unavailable);
             }
-            if (existing.clientId() != clientId || !existing.messageId().equals(request.messageId())
-                    || !existing.recipientNumber().equals(request.recipientNumber())) {
+            if (!existing.clientMsgId().equals(claim.clientMsgId()) || existing.clientId() != clientId
+                    || !existing.messageId().equals(request.messageId())
+                    || !existing.recipientNumber().equals(request.recipientNumber())
+                    || existing.messageCategory() != request.messageCategory()
+                    || !existing.payload().equals(request.payload())
+                    || !Objects.equals(existing.secondarySendPayload(), request.secondarySendPayload())) {
                 throw new MessageAdmissionException(HttpStatus.CONFLICT, "Duplicate key no longer matches ORIGIN");
             }
             return accepted(existing);
