@@ -1,4 +1,4 @@
-package messaging.common.tcp;
+package messaging.tcp.sender;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;

@@ -2,9 +2,6 @@ package messaging.tcp.sender;
 
 import messaging.common.messages.SecondarySendCommand;
 import messaging.common.messages.TcpSendResult;
-import messaging.common.tcp.MessagingTcpRequest;
-import messaging.common.tcp.MessagingTcpResponse;
-import messaging.common.tcp.TcpFrames;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.json.JsonMapper;
 

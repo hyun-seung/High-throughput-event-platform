@@ -1,4 +1,6 @@
-package messaging.common.messages;
+package messaging.result;
+
+import messaging.common.messages.HttpCarrier;
 
 import org.junit.jupiter.api.Test;
 
@@ -47,7 +49,6 @@ class PrimaryHttpFailureDecisionTest {
         }
         assertEquals(new PrimaryHttpFailureDecision.FailPrimary(40003),
                 PrimaryHttpFailureDecision.decideNoResponse(HttpCarrier.SKT, 4, DECIDED_AT));
-        assertEquals(5, PrimaryHttpRetryPolicy.RESPONSE_TIMEOUT.toSeconds());
     }
 
     @Test

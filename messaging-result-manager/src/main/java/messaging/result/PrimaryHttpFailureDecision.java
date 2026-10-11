@@ -1,4 +1,8 @@
-package messaging.common.messages;
+package messaging.result;
+
+import messaging.common.messages.HttpCarrier;
+import messaging.common.messages.PrimaryHttpFailureCodes;
+import messaging.common.messages.PrimarySendFailureCodes;
 
 import java.time.Instant;
 import java.util.EnumSet;

@@ -6,7 +6,6 @@ import messaging.common.messages.HttpCarrier;
 import messaging.common.messages.HttpSendCommand;
 import messaging.common.messages.MessageOriginCodec;
 import messaging.common.messages.PreSendDispatch;
-import messaging.common.messages.PrimaryHttpFailureDecision;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.services.dynamodb.model.GetItemRequest;

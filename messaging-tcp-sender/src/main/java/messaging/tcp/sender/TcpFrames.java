@@ -1,4 +1,4 @@
-package messaging.common.tcp;
+package messaging.tcp.sender;
 
 import java.io.DataInputStream;
 import java.io.DataOutputStream;

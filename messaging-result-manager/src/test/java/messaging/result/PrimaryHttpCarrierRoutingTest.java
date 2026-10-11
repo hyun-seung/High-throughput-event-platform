@@ -1,4 +1,6 @@
-package messaging.common.messages;
+package messaging.result;
+
+import messaging.common.messages.HttpCarrier;
 
 import org.junit.jupiter.api.Test;
 

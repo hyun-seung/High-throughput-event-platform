@@ -1,4 +1,6 @@
-package messaging.common.messages;
+package messaging.result;
+
+import messaging.common.messages.HttpCarrier;
 
 import java.util.List;
 import java.util.Objects;
