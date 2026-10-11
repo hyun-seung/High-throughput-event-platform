@@ -832,3 +832,31 @@ ack를 확인한 세 요청은 같은 실행을 재발행하므로 RECEIVED·SKT
 전체 Java 검증 종료 뒤 읽기 확인에서도 Prometheus는 5.07초, AP health와 이전 부하의 최종 이력 조회는 각각 30.07초·30.06초의 제한을 넘겼다. 결과는 `.monitoring/admission-retry-confirmation/environment-status.json`, 재확인 코드는 같은 디렉터리의 `environment_probe.py`에 있다. 변경 API와 앞선 결과 Manager JAR은 적용하지 않았고 추가 메시지·부하도 보내지 않았다. 기존 실행 컨테이너는 재시작하지 않았다.
 
 이는 SDK 재시도의 결함 재현이며 이전 부하 `a9e2136d`의 409 22건 원인을 모두 확정하거나 복구한 결과는 아니다. 해당 실패 요청은 저장된 원본·Redis 마커·최종 이력을 개별 대조해야 한다. 다음은 공유 실행 환경의 조회 시간 초과 원인을 확인하는 것이다. 실행 환경 회복 후 기존 실패 요청 대조·변경 API와 결과 Manager 적용·기능 검증·같은 조건의 짧은 재측정을 진행하며, Java 검증과 부하는 순서대로 실행한다.
+
+## 공유 VM 자원 압박과 변경 AP 실행 검증 — 2026-10-12
+
+시간 초과 당시 Docker VM은 10 CPU·7.75 GiB·실행 컨테이너 33개였다. 부하 평균은 148.22, 10초 평균 CPU pressure `some`은 76.73%, 메모리 `some/full`은 35.21/12.19%, I/O `some`은 79.89%였고 1 GiB swap 여유는 48 KiB였다. 이 pressure는 자원을 기다린 시간 비율이며 AP의 CPU 사용률과 다르다. 호스트도 물리 메모리 16 GiB 중 약 15 GiB를 사용하고 swap 9,303.50 MiB·시스템 CPU 70.12%를 관측했다. 컨테이너에서 읽은 VM 대기와 호스트 페이지 회수 부담을 함께 기록한다. 근거는 `.monitoring/runtime-timeouts/initial.json`·`host.json`이다.
+
+이 검증 프로젝트의 Grafana·Loki·Alloy 3개만 일시 정지했다. 약 15초 뒤 CPU·메모리·I/O pressure `some`은 40.20/14.50/31.33%, swap 여유는 203,312 KiB, Prometheus `up` 조회는 0.20초였다. 같은 컨테이너를 복원한 뒤에는 CPU·메모리 pressure가 88.46/57.45%로 다시 높아졌고 health·수집 조회도 시간 초과가 발생했다. 관측 서비스 중단·복원에 따라 실행 환경 상태가 달라지므로 AP 코드 수정의 성능 개선율로 해석하지 않는다. 두 번의 일시 정지는 모두 `finally`에서 복원했고 볼륨은 유지했다. `.monitoring/runtime-timeouts/observer-pause.json`·`after-restore-resources.json`·`apply-and-smoke.json`에 대상 ID·실제 결과가 있다.
+
+두 번째 일시 정지에서 AP 11개 health UP과 유효한 Kafka 수집을 확인한 뒤 API·결과 Manager 두 AP만 적용했다. 소스는 `3e070a5`, Java 검증은 앞선 268개 통과·환경 의존 40개 제외 결과를 사용했다. API 불변 JAR의 SHA-256은 `6d33b223bdcd81b78f7dfab4745c53a31e985d18126e0c3a286fcae4fc0cf90c`, 결과 Manager는 `07d86d99f06d347c60ee5b78990042f1f7db3bc4d90223813afa06033c14bc55`이며 실제 마운트 경로와 대조했다. `.monitoring/jars.env`는 두 JAR만 갱신했고 이전 설정은 `.monitoring/runtime-timeouts/jars-previous.env`에 보존했다. 준비 내역은 `prepared-deployment.json`·`jars-next.env`에 있다.
+
+최초 약 20초의 기동 확인에서는 API가 아직 포트를 열지 않아 메시지를 보내지 않고 중단했다. 관측 서비스 복원 뒤 API의 실제 기동 완료 로그와 AP 11개 UP을 확인했다. 신규 기능 시험 `92ae30de`는 정상·1차 실패·TCP 전환 3건, 과금 대상 1건·고객 통지 3건·최종 정리를 모두 통과했다. 이후 유효한 Kafka 관측의 lag 0도 확인했다. 이는 기능 검증이고 처리 용량 검증은 아니다. 근거는 `.monitoring/runtime-timeouts/current-after-apply.json`·`smoke-three.log`·`pre-performance.json`, `.monitoring/demo-latest.json`이다.
+
+이전 실패 부하 `a9e2136d`는 읽기 대조에서 다음과 같이 확인했다. 동일 메시지에 대한 최종 이력은 중복 없이 428건·과금 대상 342건이고, 각 이력의 정리·고객 전달·응답 확인이 완료됐다.
+
+| 최초 HTTP 결과 | 요청 수 | 최종 이력·정리·고객 통지 확인 | 이력 미확인 |
+|---|---:|---:|---:|
+| 200 | 340 | 340 | 0 |
+| 409 | 22 | 22 | 0 |
+| 503 | 138 | 66 | 72 |
+
+409 요청 22건도 실제 완료됐지만 Redis 마커는 없었다. 조건부 실패를 확정 충돌로 처리하던 이전 API의 마커 해제 경계를 실제 요청 대조에서 확인했으며, 각 SDK 전송 시도의 원인까지 모두 증명한 것은 아니다. 200·503 요청의 Redis 마커는 각각 340개·138개였다. 그 실행 ID 478개를 일관 배치 조회했을 때 ORIGIN과 미처리 키는 모두 없었다. 이력 미확인 72건은 접수를 확정하지 못한 상태이며, 원본 부재를 이유로 마커를 제거하거나 이전 실패 요청을 다시 보내지 않았다. 서로 다른 시점의 읽기 결과이므로 영구 미접수라고 단정하지 않는다. 근거는 `.monitoring/runtime-timeouts/prior-redis-markers.json`·`prior-origin-reads.json`·`prior-final-histories.json`이고, 첫 조회 실패는 `prior-origin-reads-initial.json`에 따로 보존했다.
+
+관측 서비스까지 복원한 33개 컨테이너 구성에서 `85bb692b`의 50 TPS·10초·혼합 500건 부하를 실행했다. 파티션 3개·AP별 1개·소비 동시성 1·완료 정리 동시성 2·힙 64~192 MiB·CPU 인식 2개·공유 저장소와 로컬 업체/고객 mock, 정상 80%·업체 실패 10%·TCP 전환 10%·생성기 슬롯 256개·HTTP 대기 20초 조건이다. Java 검증과는 겹치지 않았다. 실제 시작은 267건, HTTP 200은 25건, 응답 대기 초과는 242건, 생성기 슬롯 부족으로 미발송은 233건이었다. 표본 58개 중 56개가 유효하지 않았고 최종 대조의 Docker/PostgreSQL 조회가 30초 제한을 넘겨 실패했다. **정상 처리량·지연·개선율·AP 최대 수용량·10,000 TPS 달성의 근거로 사용하지 않는다.** `.monitoring/performance/85bb692b/`와 `.monitoring/runtime-timeouts/performance-50.log`에 실패 결과를 보존한다.
+
+시험 종료 뒤 추가 읽기 확인에서도 AP health는 30초, 호스트 직접 PostgreSQL 조회는 서버의 5초 statement 제한을 넘겼다. 새 부하의 최종 완료 건수는 확인하지 못했으며 이를 0건으로 해석하지 않는다. CPU·메모리·I/O pressure `some`은 70.35/40.41/86.47%, swap 여유는 224 KiB였다. `.monitoring/runtime-timeouts/final-probes.json`에 확인한 값과 조회 실패를 보존한다. 유효한 독립 AP 처리량·실제 처리 시간 표본도 없어 건당 시간이나 최대 수용량을 계산하지 않는다.
+
+이 작업에서 변경한 실행 컨테이너는 두 AP와 일시 정지·복원한 관측 서비스 3개다. 초기·후속 전체 상태 대조에서는 다른 저장소의 `aws-rcs-poc` Kafka도 별도로 재생성된 상태를 관측했다. 해당 프로젝트에는 변경 명령을 보내지 않았으며 전체 외부 환경이 고정됐다고 주장하지 않는다. 관측 대상 33개는 모두 running·OOM 종료 흔적 없음이었다. 근거는 `.monitoring/runtime-timeouts/containers-before.json`·`containers-after.json`이다.
+
+다음 검증에는 동시 실행 범위 결정이 필요하다. 사용자에게 `aws-rcs-poc` 4개와 `rcs_grafana_lgtm_demo` 6개의 일시 정지·검증 후 복원, rcs 데모 6개만 정지, 다른 프로젝트 유지·검증 시간 분리 중 선택을 요청했다. **아직 승인되지 않아 다른 프로젝트는 정지하지 않는다.** 추천은 두 프로젝트 10개를 검증 동안만 정지하고 볼륨·원래 실행 상태를 보존해 복원하는 것이다. 정확한 대상과 대기 상태는 `.monitoring/runtime-timeouts/proposed-other-project-pause.json`에 있다. 선택을 받으면 현재 상태를 다시 확인하고, 실패 부하의 읽기 대조·lag 확인 후 새로운 고유 요청으로 재측정한다. 기존 실패 요청은 재전송하지 않는다.
