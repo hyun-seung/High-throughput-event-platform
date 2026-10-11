@@ -3,7 +3,7 @@ x-app: &app
   image: eclipse-temurin:21.0.7_6-jre
   restart: unless-stopped
   working_dir: /app
-  command: ["java", "-XX:ActiveProcessorCount=2", "-Xms64m", "-Xmx320m", "-jar", "/app/app.jar"]
+  command: ["java", "-XX:ActiveProcessorCount=2", "-Xms64m", "-Xmx${MONITOR_APP_HEAP_MAX:-192m}", "-jar", "/app/app.jar"]
 x-env: &app-env
   SPRING_PROFILES_ACTIVE: dev
   SERVER_ADDRESS: 0.0.0.0
@@ -45,6 +45,18 @@ x-carrier: &carrier
     api: {condition: service_started}
     mock: {condition: service_started}
 services:
+  kafka:
+    # Bound the broker in this shared local Docker VM; keep its data and partitions.
+    mem_limit: 1g
+    environment:
+      KAFKA_HEAP_OPTS: "-Xms128m -Xmx512m -XX:ActiveProcessorCount=2"
+    healthcheck:
+      # The CLI inherits the broker's environment, so give this JVM its own heap.
+      test: ["CMD-SHELL", "KAFKA_HEAP_OPTS='-Xms16m -Xmx64m -XX:ActiveProcessorCount=2' exec /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:29092 --list >/dev/null 2>&1"]
+  dynamodb-local:
+    mem_limit: 512m
+    environment:
+      JAVA_TOOL_OPTIONS: "-Xms64m -Xmx256m -XX:ActiveProcessorCount=2"
   db-init:
     image: postgres:17-alpine
     depends_on:

@@ -29,6 +29,8 @@ bash scripts/monitoring.sh stop
 
 `up`은 AP를 순서대로 띄우며 각 관리 지표가 수집될 때까지 기다린다. Prometheus와 Alloy도 재시작해 변경된 지표·로그 수집 설정을 반영한다. 로컬 Compose에서는 JVM 메모리와 Kafka 소비자 병렬도를 낮춰 기동한다. 실제 처리량 측정에는 이 로컬 설정을 그대로 사용하지 않는다.
 
+공유 Docker VM의 로컬 기본값은 AP별 초기 힙 64MiB·최대 192MiB, CPU 인식 2개다. `MONITOR_APP_HEAP_MAX`로 AP 최대 힙을 조절할 수 있다. Kafka는 초기 128MiB·최대 512MiB·컨테이너 상한 1GiB, DynamoDB Local은 초기 64MiB·최대 256MiB·컨테이너 상한 512MiB다. Kafka 상태 점검 CLI는 브로커 힙을 상속하지 않도록 초기 16MiB·최대 64MiB를 따로 지정한다. `exec`로 JVM을 실행해 점검 시간 초과 시 점검 프로세스에 직접 종료가 적용되게 한다. 이 제한은 `monitoring/compose.yml`의 로컬 설정이며 운영 수용량을 입증하지 않는다. 데이터 볼륨과 업무 토픽의 파티션 3개는 유지한다.
+
 `verify`의 구조화 로그 존재 확인은 최근 24시간을 조회한다. 접수 API와 발행 복구 AP가 조용한 동안 로그를 계속 생성한다고 가정하지 않는다. `.monitoring/verification.json`의 `logEvidence`에 마지막 로그 나이와 최근 1시간 기록 여부를 남기며 AP health·Prometheus 수집 상태는 별도로 검사한다. 오래된 로그를 찾은 것만으로 현재 로그 전송 지연까지 검증한 것은 아니다. 24시간 내 기록이 전혀 없거나 조회할 수 없으면 로그 증거 부족으로 검증에 실패한다.
 
 ## 성능 측정 도구
