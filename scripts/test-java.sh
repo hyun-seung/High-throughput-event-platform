@@ -59,7 +59,7 @@ if [[ "$mode" == integration ]]; then
   export POSTGRES_TEST_USER=delivery POSTGRES_TEST_PASSWORD=delivery REDIS_TEST_PORT=$REDIS_HOST_PORT
   maven_command+=(-Pintegration-tests)
 fi
-# Clean eliminates stale Surefire reports; do not mix previous runs in the result count.
+# Clean refreshes current modules; the reporter excludes removed modules' old targets.
 set +e
 "${maven_command[@]}" > "$evidence/maven.log" 2>&1
 maven_status=$?

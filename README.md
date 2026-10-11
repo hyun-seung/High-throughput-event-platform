@@ -18,3 +18,5 @@ bash scripts/monitoring.sh verify
 [Grafana 통합 관제](http://localhost:13000/d/messaging-overview)에서 AP·Kafka·저장소 지표와 로그를 볼 수 있습니다. 실행 옵션은 [로컬 실행 방법](docs/06-로컬-개발-환경-실행-방법.md), 화면 구성은 [모니터링 안내](docs/19-그라파나-대시보드-실행과-PPT-항목-대응.md)를 참고하세요.
 
 단위 테스트는 `bash scripts/test-java.sh unit`, 별도 Docker 인프라를 쓰는 통합 테스트는 `bash scripts/test-java.sh integration`으로 실행합니다. 2차 TCP 전문은 실제 업체 규격 확인 전까지 임시 형식입니다.
+
+테스트 집계는 루트 POM에 등록된 모듈만 대상으로 합니다. 삭제된 모듈의 구형 `target` 결과는 제외하며, 통합 테스트에서 제외된 테스트가 있으면 검증에 실패합니다.
