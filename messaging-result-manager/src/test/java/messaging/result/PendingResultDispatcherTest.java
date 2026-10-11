@@ -18,6 +18,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.*;
 
 class PendingResultDispatcherTest {
@@ -41,7 +42,7 @@ class PendingResultDispatcherTest {
     void measuresOnlyInboxWorkOnTheSharedIndexAndContinuesAfterItemFailure() {
         var candidate = new java.util.HashMap<>(key);
         candidate.put(MessageResultInboxIndex.DUE, AttributeValue.fromN(Long.toString(NOW.minusSeconds(7).toEpochMilli())));
-        var unrelated = Map.of("pk", key.get("pk"), "sk", AttributeValue.fromS("PRIMARY_DECISION#other"));
+        var unrelated = Map.of("pk", key.get("pk"), "sk", AttributeValue.fromS("HTTP_SEND#other"));
         when(db.query(any(QueryRequest.class))).thenReturn(QueryResponse.builder().items(candidate, unrelated).build(),
                 QueryResponse.builder().build());
         when(inbox.loadPending(key, NOW)).thenThrow(new IllegalStateException("test failure"));
@@ -145,5 +146,31 @@ class PendingResultDispatcherTest {
 
         verify(terminal).fromPreSend(preSend);
         verify(inbox).processed(preSend);
+    }
+
+    @Test
+    void failedDirectKafkaHandoffDoesNotCompleteTheCapturedInput() {
+        var command = mock(HttpSendCommand.class);
+        when(decisions.process(item)).thenReturn(new WebhookPrimaryDecisionService.SuccessPending(null, command));
+        when(terminal.fromWebhook(item, null, command, null)).thenThrow(new IllegalStateException("Kafka unavailable"));
+        assertThrows(IllegalStateException.class, () -> dispatcher.process(item, NOW));
+        verify(inbox, never()).processed(any());
+    }
+
+    @Test
+    void redeliveredClosedStageResumesItsHandoffBeforeCompletingInput() {
+        when(decisions.process(item)).thenReturn(new WebhookPrimaryDecisionService.Ignored());
+        dispatcher.process(item, NOW);
+        var order = inOrder(terminal, inbox);
+        order.verify(terminal).resume(item.clientMsgId());
+        order.verify(inbox).processed(item);
+    }
+
+    @Test
+    void failedResumeOfClosedStageKeepsInputRetryable() {
+        when(decisions.process(item)).thenReturn(new WebhookPrimaryDecisionService.Ignored());
+        doThrow(new IllegalStateException("Kafka unavailable")).when(terminal).resume(item.clientMsgId());
+        assertThrows(IllegalStateException.class, () -> dispatcher.process(item, NOW));
+        verify(inbox, never()).processed(any());
     }
 }

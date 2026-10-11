@@ -4,6 +4,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import messaging.common.metrics.ScheduledWorkMetrics;
 import static messaging.common.metrics.ScheduledWorkMetrics.Phase.*;
 
+import messaging.common.messages.MessageOriginCodec;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -145,16 +146,10 @@ public class FinalizedDynamoCleanup {
         String id = item.clientMsgId();
         var originKey = key(id, "META");
         Map<String, AttributeValue> origin;
-        Map<String, AttributeValue> outbox;
         try (var timing = metrics.start(LOAD)) {
             origin = db.getItem(GetItemRequest.builder().tableName(ORIGIN).key(originKey)
                     .consistentRead(true).build()).item();
-            String outboxSk = ("SECONDARY".equals(item.stage())
-                    ? "SECONDARY_DECISION#" : "PRIMARY_DECISION#") + item.decisionId();
-            outbox = db.getItem(GetItemRequest.builder().tableName(STEP).key(key(id, outboxSk))
-                    .consistentRead(true).build()).item();
         }
-        if (!outbox.isEmpty() && !"PUBLISHED".equals(string(outbox, "status"))) return false;
         if (!origin.isEmpty()) {
             String decisionField = "SECONDARY".equals(item.stage())
                     ? "secondary_decision_id" : "primary_decision_id";
@@ -163,12 +158,15 @@ public class FinalizedDynamoCleanup {
                 throw new IllegalStateException("SQL final result differs from DynamoDB ORIGIN");
             }
             if (!origin.containsKey("cleanup_ready_at")) {
-                if (!"PUBLISHED".equals(string(outbox, "status"))) return false;
+                if (!item.decisionId().equals(string(origin, MessageOriginCodec.FINAL_KAFKA_ACK_DECISION_ID))) {
+                    return false;
+                }
                 db.updateItem(UpdateItemRequest.builder().tableName(ORIGIN).key(originKey)
                         .conditionExpression("#status = :status AND #decision = :decision "
-                                + "AND attribute_not_exists(cleanup_ready_at)")
+                                + "AND #ack = :decision AND attribute_not_exists(cleanup_ready_at)")
                         .updateExpression("SET cleanup_ready_at = :now")
-                        .expressionAttributeNames(Map.of("#status", "status", "#decision", decisionField))
+                        .expressionAttributeNames(Map.of("#status", "status", "#decision", decisionField,
+                                "#ack", MessageOriginCodec.FINAL_KAFKA_ACK_DECISION_ID))
                         .expressionAttributeValues(Map.of(":status", origin.get("status"),
                                 ":decision", s(item.decisionId()), ":now", s(clock.instant().toString())))
                         .build());
@@ -242,7 +240,7 @@ public class FinalizedDynamoCleanup {
     private static boolean isFinalStatus(String status, String stage) {
         return "SECONDARY".equals(stage)
                 ? "SECONDARY_SUCCEEDED".equals(status) || "SECONDARY_FAILED".equals(status)
-                : "PRIMARY_SUCCEEDED".equals(status) || "PRIMARY_FAILED".equals(status);
+                : "PRIMARY_SUCCEEDED".equals(status) || "PRIMARY_FAILED".equals(status) || "PRIMARY_EXPIRED".equals(status);
     }
 
     private static String string(Map<String, AttributeValue> item, String field) {

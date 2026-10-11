@@ -11,13 +11,12 @@ import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.services.dynamodb.model.GetItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.GetItemResponse;
-import software.amazon.awssdk.services.dynamodb.model.TransactWriteItemsRequest;
+import software.amazon.awssdk.services.dynamodb.model.UpdateItemRequest;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -28,7 +27,8 @@ class SecondaryResultServiceTest {
     private static final Instant NOW = Instant.parse("2026-10-07T12:00:00Z");
     private final JsonMapper mapper = JsonMapper.builder().build();
     private final DynamoDbClient db = mock(DynamoDbClient.class);
-    private final SecondaryResultService service = new SecondaryResultService(db, mapper);
+    private final ResultKafkaPublisher publisher = mock(ResultKafkaPublisher.class);
+    private final SecondaryResultService service = new SecondaryResultService(db, mapper, publisher);
     private final MessageSubmission submission = new MessageSubmission(ID, 42L, "customer-1",
             "01012345678", MessageCategory.GENERAL, Map.of("text", "first"),
             Map.of("text", "second"), NOW.minusSeconds(30));
@@ -43,7 +43,7 @@ class SecondaryResultServiceTest {
 
     @Test
     @SuppressWarnings({"unchecked", "rawtypes"})
-    void matchingTcpObservationClosesSecondaryAndCreatesFinalHandoffAtomically() {
+    void matchingTcpObservationClosesSecondaryBeforeDirectFinalKafkaHandoff() {
         var origin = new HashMap<>(MessageOriginCodec.encode(submission, mapper));
         origin.put("status", AttributeValue.fromS("SECONDARY_PENDING"));
         origin.put("primary_decision_id", AttributeValue.fromS(primary.decisionId()));
@@ -57,13 +57,13 @@ class SecondaryResultServiceTest {
 
         assertEquals(SecondaryResultService.Outcome.STORED, service.process(item));
 
-        var capture = org.mockito.ArgumentCaptor.forClass(Consumer.class);
-        verify(db).transactWriteItems(capture.capture());
-        var builder = TransactWriteItemsRequest.builder();
-        ((Consumer<TransactWriteItemsRequest.Builder>) capture.getValue()).accept(builder);
-        var writes = builder.build().transactItems();
-        assertEquals("SECONDARY_SUCCEEDED", writes.get(0).update().expressionAttributeValues().get(":final").s());
-        assertEquals("SECONDARY_DECISION#" + tcp.resultId(), writes.get(1).put().item().get("sk").s());
+        var capture = org.mockito.ArgumentCaptor.forClass(UpdateItemRequest.class);
+        var order = inOrder(db, publisher);
+        order.verify(db).updateItem(capture.capture());
+        assertEquals("SECONDARY_SUCCEEDED", capture.getValue().expressionAttributeValues().get(":final").s());
+        order.verify(publisher).publish(argThat(value -> tcp.resultId().equals(value.get("secondary_decision_id").s())));
+        verify(db, never()).putItem(any(software.amazon.awssdk.services.dynamodb.model.PutItemRequest.class));
+
     }
 
     @Test
@@ -78,6 +78,31 @@ class SecondaryResultServiceTest {
                 mapper.writeValueAsString(other), NOW);
 
         assertThrows(IllegalStateException.class, () -> service.process(wrong));
-        verify(db, never()).transactWriteItems(any(Consumer.class));
+        verify(db, never()).updateItem(any(UpdateItemRequest.class));
+    }
+
+    @Test
+    void failedKafkaHandoffResumesTheSameFrozenSecondaryResult() {
+        var origin = new HashMap<>(MessageOriginCodec.encode(submission, mapper));
+        origin.put("status", AttributeValue.fromS("SECONDARY_PENDING"));
+        origin.put("primary_decision_id", AttributeValue.fromS(primary.decisionId()));
+        origin.put("primary_decision", AttributeValue.fromS(mapper.writeValueAsString(primary)));
+        var attempt = Map.of("command", AttributeValue.fromS(mapper.writeValueAsString(command)),
+                "tcp_observation", AttributeValue.fromS(mapper.writeValueAsString(tcp)));
+        when(db.getItem(any(GetItemRequest.class))).thenAnswer(call -> GetItemResponse.builder()
+                .item("ORIGIN".equals(call.getArgument(0, GetItemRequest.class).tableName()) ? origin : attempt).build());
+        when(db.updateItem(any(UpdateItemRequest.class))).thenAnswer(call -> {
+            var values = call.getArgument(0, UpdateItemRequest.class).expressionAttributeValues();
+            origin.put("status", values.get(":final"));
+            origin.put("secondary_decision_id", values.get(":id"));
+            origin.put("secondary_decision", values.get(":decision"));
+            return software.amazon.awssdk.services.dynamodb.model.UpdateItemResponse.builder().build();
+        });
+        doThrow(new IllegalStateException("Kafka unavailable")).doNothing().when(publisher).publish(anyMap());
+        assertThrows(IllegalStateException.class, () -> service.process(item));
+        String frozen = origin.get("secondary_decision").s();
+        assertEquals(SecondaryResultService.Outcome.ALREADY_CLOSED, service.process(item));
+        verify(db, times(1)).updateItem(any(UpdateItemRequest.class));
+        verify(publisher, times(2)).publish(argThat(value -> frozen.equals(value.get("secondary_decision").s())));
     }
 }

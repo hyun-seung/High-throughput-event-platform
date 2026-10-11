@@ -30,9 +30,9 @@ class MessageResultConsumerTest {
     private static final String ID = "a".repeat(32);
     private final JsonMapper mapper = JsonMapper.builder().build();
     private final DynamoDbClient db = mock(DynamoDbClient.class);
-    private final HttpFailureFollowupService http = mock(HttpFailureFollowupService.class);
+    private final PendingResultDispatcher dispatcher = mock(PendingResultDispatcher.class);
     private final MessageResultConsumer consumer = new MessageResultConsumer(new MessageResultRecordCodec(mapper),
-            new MessageResultInboxStore(db, mapper, Clock.fixed(NOW, ZoneOffset.UTC)), http);
+            new MessageResultInboxStore(db, mapper, Clock.fixed(NOW, ZoneOffset.UTC)), dispatcher, Clock.fixed(NOW, ZoneOffset.UTC));
 
     @Test
     void oneWebhookKafkaRecordBecomesOnePendingItemPerMessage() {
@@ -50,41 +50,34 @@ class MessageResultConsumerTest {
         for (var request : requests.getAllValues()) {
             assertEquals("PENDING", request.item().get("status").s());
             assertEquals("WEBHOOK", request.item().get("source").s());
-            assertTrue(request.item().containsKey(MessageResultInboxIndex.BUCKET));
+            assertFalse(request.item().containsKey(MessageResultInboxIndex.BUCKET));
             assertEquals(NOW.plusSeconds(7 * 24 * 60 * 60).getEpochSecond(),
                     Long.parseLong(request.item().get("ttl_epoch_seconds").n()));
-            assertEquals(NOW.toEpochMilli(), Long.parseLong(request.item().get(MessageResultInboxIndex.DUE).n()));
+            assertFalse(request.item().containsKey(MessageResultInboxIndex.DUE));
         }
-        verifyNoInteractions(http);
+        verify(dispatcher, times(100)).process(any(MessageResultInboxStore.Item.class), eq(NOW));
     }
 
     @Test
-    void httpFailureIsMarkedProcessedOnlyAfterItsFollowupIsFrozen() {
-        var failure = new CarrierHttpResult("result-1", ID, "attempt-1", HttpCarrier.KT, 1,
-                "HTTP_RESPONSE", CarrierHttpResult.Status.FAILED, 400, "4xx", "41001", 66002,
-                "tps", NOW);
-        when(http.process(failure)).thenReturn(new HttpFailureFollowupService.Ignored());
-
-        consumer.receive(record(ID, failure));
-
-        verify(db).putItem(any(PutItemRequest.class));
-        verify(http).process(failure);
-        verify(db).updateItem(argThat((UpdateItemRequest request) ->
-                request.updateExpression().contains("REMOVE #bucket, #due")));
-    }
-
-    @Test
-    void exhaustedHttpFailureAndPreSendFailureRemainPendingForNextStage() {
+    void httpAndPreSendInputsAreProcessedWithinTheListener() {
         var failure = new CarrierHttpResult("result-2", ID, "attempt-1", HttpCarrier.KT, 4,
                 "HTTP_RESPONSE", CarrierHttpResult.Status.FAILED, 400, "4xx", "41001", 66002,
                 "tps", NOW);
-        when(http.process(failure)).thenReturn(new HttpFailureFollowupService.PrimaryFailurePending(
-                40001, null, mock(messaging.common.messages.HttpSendCommand.class)));
-
         consumer.receive(record(ID, failure));
         consumer.receive(record(ID, PreSendFailure.of(ID, PreSendFailure.Reason.CONTRACT_MISSING, NOW)));
+        var order = inOrder(db, dispatcher);
+        order.verify(db).putItem(any(PutItemRequest.class));
+        order.verify(dispatcher).process(argThat(item -> item.source().equals("HTTP_RESPONSE")), eq(NOW));
+        order.verify(db).putItem(any(PutItemRequest.class));
+        order.verify(dispatcher).process(argThat(item -> item.source().equals("PRE_SEND")), eq(NOW));
+    }
 
-        verify(db, times(2)).putItem(any(PutItemRequest.class));
+    @Test
+    void kafkaHandoffFailurePreventsListenerCompletionAndRetainsCapturedInput() {
+        var failure = PreSendFailure.of(ID, PreSendFailure.Reason.CONTRACT_MISSING, NOW);
+        doThrow(new IllegalStateException("Kafka unavailable")).when(dispatcher).process(any(), any());
+        assertThrows(IllegalStateException.class, () -> consumer.receive(record(ID, failure)));
+        verify(db).putItem(any(PutItemRequest.class));
         verify(db, never()).updateItem(any(UpdateItemRequest.class));
     }
 
@@ -116,6 +109,18 @@ class MessageResultConsumerTest {
 
         verify(db, times(2)).putItem(any(PutItemRequest.class));
         assertEquals("PENDING", captured.get("status").s());
+    }
+
+    @Test
+    void observationWaitExplicitlyAddsThePendingInputIndex() {
+        var store = new MessageResultInboxStore(db, mapper, Clock.fixed(NOW, ZoneOffset.UTC));
+        var failure = PreSendFailure.of(ID, PreSendFailure.Reason.CONTRACT_MISSING, NOW);
+        var item = store.capture(new MessageResultInput.PreSend(failure)).getFirst();
+        store.defer(item, NOW.plusSeconds(5));
+        verify(db).updateItem(argThat((UpdateItemRequest request) ->
+                request.updateExpression().contains("SET #bucket = :bucket, #due = :due")
+                        && request.expressionAttributeValues().get(":bucket").s().equals(MessageResultInboxIndex.bucket(ID))
+                        && request.expressionAttributeValues().get(":due").n().equals(Long.toString(NOW.plusSeconds(5).toEpochMilli()))));
     }
 
     private ConsumerRecord<String, String> record(String key, Object value) {

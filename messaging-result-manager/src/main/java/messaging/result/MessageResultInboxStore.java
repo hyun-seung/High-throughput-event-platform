@@ -104,11 +104,12 @@ public class MessageResultInboxStore {
     public void defer(Item entry, Instant nextCheck) {
         try {
             db.updateItem(UpdateItemRequest.builder().tableName(STEP).key(entry.key())
-                    .conditionExpression("#status = :pending AND result_payload = :payload AND attribute_exists(#bucket)")
-                    .updateExpression("SET #due = :due")
+                    .conditionExpression("#status = :pending AND result_payload = :payload")
+                    .updateExpression("SET #bucket = :bucket, #due = :due")
                     .expressionAttributeNames(Map.of("#status", "status", "#bucket", MessageResultInboxIndex.BUCKET,
                             "#due", MessageResultInboxIndex.DUE))
                     .expressionAttributeValues(Map.of(":pending", s("PENDING"), ":payload", s(entry.payload()),
+                            ":bucket", s(MessageResultInboxIndex.bucket(entry.clientMsgId())),
                             ":due", AttributeValue.fromN(Long.toString(nextCheck.toEpochMilli())))).build());
         } catch (ConditionalCheckFailedException changed) {
             var current = read(entry.key());
@@ -129,7 +130,8 @@ public class MessageResultInboxStore {
         // A very late provider webhook can arrive after completion has removed ORIGIN.
         item.put("ttl_epoch_seconds", AttributeValue.fromN(Long.toString(
                 clock.instant().plus(Duration.ofDays(7)).getEpochSecond())));
-        MessageResultInboxIndex.add(item, entry.clientMsgId(), entry.receivedAt().toEpochMilli());
+        // Normal inputs are owned by the Kafka listener until processing/acks finish.
+        // Only defer() schedules observations that must wait after their input offset commits.
         try {
             db.putItem(PutItemRequest.builder().tableName(STEP).item(item)
                     .conditionExpression("attribute_not_exists(pk)").build());

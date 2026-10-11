@@ -24,7 +24,7 @@ import java.util.Objects;
 
 import static messaging.common.dynamodb.DynamoDbTableNames.STEP;
 
-/** Resolves captured first-send results and leaves their durable next-stage outbox in STEP. */
+/** Processes results immediately; polls only inputs waiting for another observation or recovery. */
 @Component
 public class PendingResultDispatcher {
     private static final Logger log = LoggerFactory.getLogger(PendingResultDispatcher.class);
@@ -101,10 +101,15 @@ public class PendingResultDispatcher {
         if (!key.get("sk").s().startsWith("RESULT_INBOX#")) return;
         var item = inbox.loadPending(key, now);
         if (item == null) return;
+        process(item, now);
+    }
+
+    void process(MessageResultInboxStore.Item item, Instant now) {
         if ("WEBHOOK".equals(item.source())) {
             var outcome = decisions.process(item);
             if (outcome instanceof WebhookPrimaryDecisionService.FollowupStored
                     || outcome instanceof WebhookPrimaryDecisionService.Ignored) {
+                if (outcome instanceof WebhookPrimaryDecisionService.Ignored) terminal.resume(item.clientMsgId());
                 inbox.processed(item);
             } else if (outcome instanceof WebhookPrimaryDecisionService.AwaitingHttp) {
                 inbox.defer(item, now.plus(Duration.ofSeconds(5)));
@@ -125,6 +130,8 @@ public class PendingResultDispatcher {
             }
             if (outcome instanceof HttpFailureFollowupService.PrimaryFailurePending failure) {
                 terminal.fromHttp(item, failure);
+            } else if (outcome instanceof HttpFailureFollowupService.Ignored) {
+                terminal.resume(item.clientMsgId());
             }
             inbox.processed(item);
         } else if ("PRE_SEND".equals(item.source())) {

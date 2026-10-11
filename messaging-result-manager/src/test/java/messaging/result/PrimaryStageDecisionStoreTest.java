@@ -19,7 +19,7 @@ import software.amazon.awssdk.services.dynamodb.model.GetItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.GetItemResponse;
 import software.amazon.awssdk.services.dynamodb.model.QueryRequest;
 import software.amazon.awssdk.services.dynamodb.model.QueryResponse;
-import software.amazon.awssdk.services.dynamodb.model.TransactWriteItemsRequest;
+import software.amazon.awssdk.services.dynamodb.model.UpdateItemRequest;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.time.Clock;
@@ -28,7 +28,6 @@ import java.time.Duration;
 import java.time.ZoneOffset;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -39,8 +38,9 @@ class PrimaryStageDecisionStoreTest {
     private static final String ID = "a".repeat(32);
     private final JsonMapper mapper = JsonMapper.builder().build();
     private final DynamoDbClient db = mock(DynamoDbClient.class);
+    private final ResultKafkaPublisher publisher = mock(ResultKafkaPublisher.class);
     private final PrimaryStageDecisionStore store = new PrimaryStageDecisionStore(db, mapper,
-            Clock.fixed(NOW, ZoneOffset.UTC));
+            Clock.fixed(NOW, ZoneOffset.UTC), publisher);
     private final MessageSubmission admission = new MessageSubmission(ID, 42L, "customer-id", "01012345678",
             MessageCategory.GENERAL, Map.of("text", "hello"), null, NOW.minusSeconds(60));
     private final HttpSendCommand command = new HttpSendCommand(HttpSendCommand.attemptId(ID, HttpCarrier.SKT),
@@ -49,7 +49,7 @@ class PrimaryStageDecisionStoreTest {
 
     @Test
     @SuppressWarnings({"unchecked", "rawtypes"})
-    void successWebhookClosesPrimaryAndStoresFinalHandoffAtomically() {
+    void successWebhookClosesPrimaryBeforeDirectKafkaHandoff() {
         reads(origin(false, new PreSendDispatch(command, null)));
         var item = webhook("success", null);
 
@@ -57,13 +57,13 @@ class PrimaryStageDecisionStoreTest {
                 store.fromWebhook(item, null, command, null));
 
         var writes = writes();
-        assertEquals("PRIMARY_SUCCEEDED", writes.get(0).update().expressionAttributeValues().get(":next").s());
-        var decision = mapper.readValue(writes.get(1).put().item().get("result_payload").s(),
+        assertEquals("PRIMARY_SUCCEEDED", writes.expressionAttributeValues().get(":next").s());
+        var decision = mapper.readValue(writes.expressionAttributeValues().get(":decision").s(),
                 PrimaryStageDecision.class);
         assertEquals(PrimaryStageDecision.Kind.SUCCESS, decision.kind());
         assertFalse(decision.secondaryRequired());
         assertEquals(item.resultId(), decision.decisionId());
-        assertTrue(writes.get(0).update().conditionExpression().contains("attribute_not_exists(primary_decision_id)"));
+        assertTrue(writes.conditionExpression().contains("attribute_not_exists(primary_decision_id)"));
     }
 
     @Test
@@ -76,8 +76,8 @@ class PrimaryStageDecisionStoreTest {
         assertEquals(PrimaryStageDecisionStore.Outcome.STORED, store.fromPreSend(item));
 
         var writes = writes();
-        assertEquals("SECONDARY_PENDING", writes.get(0).update().expressionAttributeValues().get(":next").s());
-        var decision = mapper.readValue(writes.get(1).put().item().get("result_payload").s(),
+        assertEquals("SECONDARY_PENDING", writes.expressionAttributeValues().get(":next").s());
+        var decision = mapper.readValue(writes.expressionAttributeValues().get(":decision").s(),
                 PrimaryStageDecision.class);
         assertTrue(decision.secondaryRequired());
         assertEquals("CONTRACT_MISSING", decision.reason());
@@ -97,8 +97,8 @@ class PrimaryStageDecisionStoreTest {
                 store.fromHttp(item, new HttpFailureFollowupService.PrimaryFailurePending(40001, null, command)));
 
         var writes = writes();
-        assertEquals("PRIMARY_FAILED", writes.get(0).update().expressionAttributeValues().get(":next").s());
-        var decision = mapper.readValue(writes.get(1).put().item().get("result_payload").s(),
+        assertEquals("PRIMARY_FAILED", writes.expressionAttributeValues().get(":next").s());
+        var decision = mapper.readValue(writes.expressionAttributeValues().get(":decision").s(),
                 PrimaryStageDecision.class);
         assertEquals(40001, decision.errorCode());
     }
@@ -111,7 +111,7 @@ class PrimaryStageDecisionStoreTest {
 
         assertEquals(PrimaryStageDecisionStore.Outcome.ALREADY_CLOSED,
                 store.fromWebhook(webhook("success", null), null, command, null));
-        verify(db, never()).transactWriteItems(any(Consumer.class));
+        verify(db, never()).updateItem(any(UpdateItemRequest.class));
     }
 
     @Test
@@ -122,9 +122,9 @@ class PrimaryStageDecisionStoreTest {
         assertEquals(PrimaryStageDecisionStore.Outcome.STORED, store.fromExpiry(ID));
 
         var writes = writes();
-        assertEquals("PRIMARY_EXPIRED", writes.get(0).update().expressionAttributeValues().get(":next").s());
-        assertTrue(writes.get(0).update().updateExpression().contains("REMOVE #expiryBucket, #expiryDue"));
-        var decision = mapper.readValue(writes.get(1).put().item().get("result_payload").s(),
+        assertEquals("PRIMARY_EXPIRED", writes.expressionAttributeValues().get(":next").s());
+        assertFalse(writes.updateExpression().contains("REMOVE"), "Expiry remains retryable until the Kafka ack");
+        var decision = mapper.readValue(writes.expressionAttributeValues().get(":decision").s(),
                 PrimaryStageDecision.class);
         assertEquals("PRIMARY_EXPIRED", decision.reason());
         assertEquals(PrimaryStageDecision.Kind.FAILURE, decision.kind());
@@ -139,7 +139,7 @@ class PrimaryStageDecisionStoreTest {
                 "received_at", AttributeValue.fromS(NOW.minus(Duration.ofHours(3)).toString()))).build());
 
         assertEquals(PrimaryStageDecisionStore.Outcome.WAITING, store.fromExpiry(ID));
-        verify(db, never()).transactWriteItems(any(Consumer.class));
+        verify(db, never()).updateItem(any(UpdateItemRequest.class));
     }
 
     @Test
@@ -152,9 +152,9 @@ class PrimaryStageDecisionStoreTest {
         assertEquals(PrimaryStageDecisionStore.Outcome.STORED, store.fromExpiry(ID));
 
         var writes = writes();
-        assertEquals("SECONDARY_PENDING", writes.get(0).update().expressionAttributeValues().get(":next").s());
-        assertTrue(writes.get(0).update().conditionExpression().contains("attribute_not_exists(pre_send_dispatch)"));
-        var decision = mapper.readValue(writes.get(1).put().item().get("result_payload").s(),
+        assertEquals("SECONDARY_PENDING", writes.expressionAttributeValues().get(":next").s());
+        assertTrue(writes.conditionExpression().contains("attribute_not_exists(pre_send_dispatch)"));
+        var decision = mapper.readValue(writes.expressionAttributeValues().get(":decision").s(),
                 PrimaryStageDecision.class);
         assertEquals("PRIMARY_EXPIRY", decision.source());
         assertTrue(decision.secondaryRequired());
@@ -195,12 +195,50 @@ class PrimaryStageDecisionStoreTest {
         when(db.query(any(QueryRequest.class))).thenReturn(QueryResponse.builder().build());
     }
 
-    @SuppressWarnings({"unchecked", "rawtypes"})
-    private java.util.List<software.amazon.awssdk.services.dynamodb.model.TransactWriteItem> writes() {
-        var capture = org.mockito.ArgumentCaptor.forClass(Consumer.class);
-        verify(db).transactWriteItems(capture.capture());
-        var builder = TransactWriteItemsRequest.builder();
-        ((Consumer<TransactWriteItemsRequest.Builder>) capture.getValue()).accept(builder);
-        return builder.build().transactItems();
+    private UpdateItemRequest writes() {
+        var capture = org.mockito.ArgumentCaptor.forClass(UpdateItemRequest.class);
+        verify(db).updateItem(capture.capture());
+        var order = inOrder(db, publisher);
+        order.verify(db).updateItem(any(UpdateItemRequest.class));
+        order.verify(publisher).publish(anyMap());
+        verify(db, never()).putItem(any(software.amazon.awssdk.services.dynamodb.model.PutItemRequest.class));
+        return capture.getValue();
+    }
+
+    @Test
+    void failedKafkaHandoffReusesFrozenDecisionWithoutWritingAnotherDecision() {
+        var origin = origin(false, new PreSendDispatch(command, null));
+        reads(origin);
+        when(db.updateItem(any(UpdateItemRequest.class))).thenAnswer(call -> {
+            var values = call.getArgument(0, UpdateItemRequest.class).expressionAttributeValues();
+            origin.put("status", values.get(":next"));
+            origin.put("primary_decision_id", values.get(":decisionId"));
+            origin.put("primary_decision", values.get(":decision"));
+            return software.amazon.awssdk.services.dynamodb.model.UpdateItemResponse.builder().build();
+        });
+        doThrow(new IllegalStateException("Kafka unavailable")).doNothing().when(publisher).publish(anyMap());
+        var item = webhook("success", null);
+        assertThrows(IllegalStateException.class, () -> store.fromWebhook(item, null, command, null));
+        String frozen = origin.get("primary_decision").s();
+        assertEquals(PrimaryStageDecisionStore.Outcome.ALREADY_CLOSED,
+                store.fromWebhook(item, null, command, null));
+        verify(db, times(1)).updateItem(any(UpdateItemRequest.class));
+        verify(publisher, times(2)).publish(argThat(value -> frozen.equals(value.get("primary_decision").s())));
+    }
+
+    @Test
+    void lostWriteResponseResumesCommittedBusinessDecision() {
+        var origin = origin(false, new PreSendDispatch(command, null));
+        reads(origin);
+        when(db.updateItem(any(UpdateItemRequest.class))).thenAnswer(call -> {
+            var values = call.getArgument(0, UpdateItemRequest.class).expressionAttributeValues();
+            origin.put("status", values.get(":next"));
+            origin.put("primary_decision_id", values.get(":decisionId"));
+            origin.put("primary_decision", values.get(":decision"));
+            throw new IllegalStateException("response lost after commit");
+        });
+        assertEquals(PrimaryStageDecisionStore.Outcome.STORED,
+                store.fromWebhook(webhook("success", null), null, command, null));
+        verify(publisher).publish(origin);
     }
 }

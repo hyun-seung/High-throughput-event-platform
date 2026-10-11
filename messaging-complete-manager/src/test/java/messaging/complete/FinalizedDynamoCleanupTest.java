@@ -1,6 +1,7 @@
 package messaging.complete;
 
 import org.junit.jupiter.api.Test;
+import messaging.common.messages.MessageOriginCodec;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -53,7 +54,7 @@ class FinalizedDynamoCleanupTest {
         when(db.getItem(any(GetItemRequest.class))).thenAnswer(call -> {
             GetItemRequest request = call.getArgument(0);
             return GetItemResponse.builder().item(request.tableName().equals("ORIGIN")
-                    ? origin() : Map.of("status", s("FINALIZED_PUBLISHED"))).build();
+                    ? Map.of("status", s("PRIMARY_SUCCEEDED"), "primary_decision_id", s(DECISION)) : Map.of()).build();
         });
 
         assertFalse(cleanup.cleanup(item));
@@ -71,7 +72,7 @@ class FinalizedDynamoCleanupTest {
                     ? origin() : Map.of("status", s("PUBLISHED"))).build();
         });
         when(db.query(any(QueryRequest.class))).thenReturn(QueryResponse.builder()
-                .items(Map.of("sk", s("PRIMARY_DECISION#" + DECISION)),
+                .items(Map.of("sk", s("HTTP_SEND#" + DECISION)),
                         Map.of("sk", s("RESULT_INBOX#result-1"))).build());
 
         assertTrue(cleanup.cleanup(item));
@@ -88,10 +89,36 @@ class FinalizedDynamoCleanupTest {
         order.verify(db, times(4)).updateItem(any(UpdateItemRequest.class));
         order.verify(db).batchWriteItem(batches.capture());
         order.verify(db).deleteItem(argThat((DeleteItemRequest request) -> request.tableName().equals("ORIGIN")));
-        assertEquals(List.of("PRIMARY_DECISION#" + DECISION, "RESULT_INBOX#result-1"),
+        assertEquals(List.of("HTTP_SEND#" + DECISION, "RESULT_INBOX#result-1"),
                 batches.getValue().requestItems().get("STEP").stream()
                         .map(write -> write.deleteRequest().key().get("sk").s()).toList());
         verify(db, never()).deleteItem(argThat((DeleteItemRequest request) -> request.tableName().equals("STEP")));
+    }
+
+    @Test
+    void ackForAnotherDecisionCannotPermitCleanup() {
+        var origin = new java.util.HashMap<>(origin());
+        origin.put(MessageOriginCodec.FINAL_KAFKA_ACK_DECISION_ID, s("another-decision"));
+        when(db.getItem(any(GetItemRequest.class))).thenReturn(GetItemResponse.builder().item(origin).build());
+        assertFalse(cleanup.cleanup(item));
+        verify(db, never()).query(any(QueryRequest.class));
+        verify(db, never()).updateItem(any(UpdateItemRequest.class));
+    }
+
+    @Test
+    void secondaryCleanupRequiresSecondaryFinalAck() {
+        var secondary = new FinalizedDynamoCleanup.Pending(ID, "secondary-result", "SECONDARY");
+        var origin = new java.util.HashMap<String, AttributeValue>();
+        origin.put("status", s("SECONDARY_SUCCEEDED"));
+        origin.put("secondary_decision_id", s(secondary.decisionId()));
+        origin.put("primary_kafka_ack_decision_id", s(DECISION));
+        when(db.getItem(any(GetItemRequest.class))).thenReturn(GetItemResponse.builder().item(origin).build());
+        assertFalse(cleanup.cleanup(secondary));
+        origin.put(MessageOriginCodec.FINAL_KAFKA_ACK_DECISION_ID, s(secondary.decisionId()));
+        when(db.getItem(any(GetItemRequest.class))).thenReturn(GetItemResponse.builder().item(origin).build());
+        when(db.query(any(QueryRequest.class))).thenReturn(QueryResponse.builder().build());
+        assertTrue(cleanup.cleanup(secondary));
+        verify(db).deleteItem(any(DeleteItemRequest.class));
     }
 
     @Test
@@ -399,7 +426,8 @@ class FinalizedDynamoCleanupTest {
     }
 
     private static Map<String, AttributeValue> origin() {
-        return Map.of("status", s("PRIMARY_SUCCEEDED"), "primary_decision_id", s(DECISION));
+        return Map.of("status", s("PRIMARY_SUCCEEDED"), "primary_decision_id", s(DECISION),
+                MessageOriginCodec.FINAL_KAFKA_ACK_DECISION_ID, s(DECISION));
     }
 
     private static AttributeValue s(String value) { return AttributeValue.fromS(value); }

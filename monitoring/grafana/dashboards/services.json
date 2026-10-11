@@ -206,7 +206,7 @@
     {
       "id": 8,
       "title": "조회·건별 처리·Kafka 인계 평균",
-      "description": "query: 한 페이지 조회, item: 후보 한 건 처리, handoff: Kafka send 완료 대기. 실패·무시·재대기 처리도 포함하며 처리 성공 건수나 서로 더할 수 있는 구간이 아닙니다.",
+      "description": "query: 예약 후보 한 페이지 조회, load: 완료 정리 ORIGIN 조회, item: 예약 후보 한 건 처리. 결과 Manager Kafka 직접 발행은 호출부터 ack까지의 실제 평균 시간이며 topic·성공/실패별로 구분합니다. 서로 중첩되는 시간을 합산하지 않습니다.",
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
@@ -214,9 +214,14 @@
       },
       "targets": [
         {
-          "expr": "sum by (worker, phase) (rate(messaging_scheduled_work_duration_seconds_sum{phase=~\"query|item|handoff\"}[5m])) / sum by (worker, phase) (rate(messaging_scheduled_work_duration_seconds_count{phase=~\"query|item|handoff\"}[5m]))",
+          "expr": "sum by (worker, phase) (rate(messaging_scheduled_work_duration_seconds_sum{phase=~\"query|load|item\"}[5m])) / sum by (worker, phase) (rate(messaging_scheduled_work_duration_seconds_count{phase=~\"query|load|item\"}[5m]))",
           "refId": "A",
           "legendFormat": "{{worker}} {{phase}} {{kind}}"
+        },
+        {
+          "expr": "sum by (topic, result) (rate(messaging_result_kafka_publish_seconds_sum[5m])) / sum by (topic, result) (rate(messaging_result_kafka_publish_seconds_count[5m]))",
+          "refId": "B",
+          "legendFormat": "Kafka {{topic}} {{result}}"
         }
       ],
       "gridPos": {
@@ -237,7 +242,7 @@
     {
       "id": 9,
       "title": "완료 정리 내부 단계 평균",
-      "description": "load: ORIGIN/outbox 읽기, step_query: STEP 페이지 조회 전체, ttl: STEP·ORIGIN TTL 기록 전체, delete: STEP 배치 삭제·ORIGIN 삭제. 재시도·실패 호출도 포함합니다.",
+      "description": "load: ORIGIN·Kafka ack 확인 읽기, step_query: STEP 페이지 조회 전체, ttl: STEP·ORIGIN TTL 기록 전체, delete: STEP 배치 삭제·ORIGIN 삭제. 재시도·실패 호출도 포함합니다.",
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
@@ -299,7 +304,7 @@
     {
       "id": 11,
       "title": "페이지당 조회 후보와 담당 후보 평균",
-      "description": "candidate는 조회된 전체 후보, eligible은 해당 작업이 담당하는 키 접두사의 후보입니다. inbox/outbox는 같은 GSI를 읽으므로 두 수치가 다를 수 있습니다. 완료 정리는 두 수치가 같습니다.",
+      "description": "candidate는 조회된 전체 후보, eligible은 해당 작업이 담당하는 입력 키 접두사의 후보입니다. 결과 inbox는 다른 관찰을 기다리는 입력만 폴링합니다. 일반 결과는 Kafka 소비자가 직접 처리합니다. 완료 정리는 두 수치가 같습니다.",
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",

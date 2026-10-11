@@ -3,7 +3,6 @@ package messaging.result;
 import messaging.common.messages.FollowupHttpCommand;
 import messaging.common.messages.HttpSendCommand;
 import messaging.common.messages.MessageOriginCodec;
-import messaging.common.messages.MessageResultInboxIndex;
 import messaging.common.messages.PreSendDispatch;
 import messaging.common.messages.PreSendFailure;
 import messaging.common.messages.PrimaryExpiryIndex;
@@ -12,11 +11,7 @@ import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.services.dynamodb.model.ConditionalCheckFailedException;
 import software.amazon.awssdk.services.dynamodb.model.GetItemRequest;
-import software.amazon.awssdk.services.dynamodb.model.Put;
 import software.amazon.awssdk.services.dynamodb.model.QueryRequest;
-import software.amazon.awssdk.services.dynamodb.model.TransactWriteItem;
-import software.amazon.awssdk.services.dynamodb.model.TransactionCanceledException;
-import software.amazon.awssdk.services.dynamodb.model.Update;
 import software.amazon.awssdk.services.dynamodb.model.UpdateItemRequest;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -31,18 +26,25 @@ import java.util.UUID;
 import static messaging.common.dynamodb.DynamoDbTableNames.ORIGIN;
 import static messaging.common.dynamodb.DynamoDbTableNames.STEP;
 
-/** Atomically closes the first-send stage and preserves its next-stage handoff. */
+/** Freezes first-send business state, then directly publishes its next stage to Kafka. */
 public class PrimaryStageDecisionStore {
     public enum Outcome { STORED, ALREADY_CLOSED, WAITING }
 
     private final DynamoDbClient db;
     private final JsonMapper mapper;
     private final Clock clock;
+    private final ResultKafkaPublisher publisher;
 
-    public PrimaryStageDecisionStore(DynamoDbClient db, JsonMapper mapper, Clock clock) {
+    public PrimaryStageDecisionStore(DynamoDbClient db, JsonMapper mapper, Clock clock, ResultKafkaPublisher publisher) {
         this.db = Objects.requireNonNull(db);
         this.mapper = Objects.requireNonNull(mapper);
         this.clock = Objects.requireNonNull(clock);
+        this.publisher = Objects.requireNonNull(publisher);
+    }
+
+    /** Resumes the canonical frozen result when a redelivery encounters a closed stage. */
+    public void resume(String clientMsgId) {
+        publisher.publish(read(ORIGIN, MessageOriginCodec.key(clientMsgId)));
     }
 
     public Outcome fromWebhook(MessageResultInboxStore.Item item, String previousDecisionId,
@@ -89,6 +91,7 @@ public class PrimaryStageDecisionStore {
         var origin = read(ORIGIN, MessageOriginCodec.key(clientMsgId));
         if (origin == null || !origin.containsKey(MessageOriginCodec.MESSAGE_ID)
                 || !MessageOriginCodec.STATUS_RECEIVED.equals(origin.getOrDefault("status", s("")).s())) {
+            publisher.publish(origin);
             return Outcome.ALREADY_CLOSED;
         }
         var deadline = origin.get(PrimaryExpiryIndex.DEADLINE);
@@ -146,6 +149,7 @@ public class PrimaryStageDecisionStore {
                            PrimaryStageDecision.Kind kind) {
         var origin = read(ORIGIN, MessageOriginCodec.key(item.clientMsgId()));
         if (!("PRIMARY_EXPIRY".equals(item.source()) ? activeForExpiry(origin) : active(origin))) {
+            publisher.publish(origin);
             return Outcome.ALREADY_CLOSED;
         }
         boolean secondary = kind == PrimaryStageDecision.Kind.FAILURE
@@ -161,8 +165,6 @@ public class PrimaryStageDecisionStore {
         var names = new HashMap<String, String>();
         names.put("#status", "status");
         names.put("#currentDecision", FollowupHttpCommand.CURRENT_DECISION);
-        names.put("#expiryBucket", PrimaryExpiryIndex.BUCKET);
-        names.put("#expiryDue", PrimaryExpiryIndex.DUE);
         values.put(":id", s(item.clientMsgId()));
         values.put(":received", s(MessageOriginCodec.STATUS_RECEIVED));
         values.put(":next", s(nextStatus));
@@ -195,43 +197,35 @@ public class PrimaryStageDecisionStore {
         if (command != null && !command.request().clientMsgId().equals(item.clientMsgId())) {
             throw new IllegalArgumentException("Primary decision command belongs to another message");
         }
-        var outbox = new HashMap<String, AttributeValue>();
-        outbox.put("pk", s("DELIVERY#" + item.clientMsgId()));
-        outbox.put("sk", s("PRIMARY_DECISION#" + item.resultId()));
-        outbox.put("schema_version", AttributeValue.fromN("4"));
-        outbox.put("delivery_id", s(item.clientMsgId()));
-        outbox.put("result_id", s(item.resultId()));
-        outbox.put("source", s("PRIMARY_DECISION"));
-        outbox.put("result_payload", s(encoded));
-        outbox.put("submission_payload", s(mapper.writeValueAsString(MessageOriginCodec.decode(origin, mapper))));
-        outbox.put("status", s("PENDING"));
-        outbox.put("received_at", s(decision.decidedAt().toString()));
-        MessageResultInboxIndex.add(outbox, item.clientMsgId(), decision.decidedAt().toEpochMilli());
         try {
-            db.transactWriteItems(builder -> builder.transactItems(
-                    TransactWriteItem.builder().update(Update.builder().tableName(ORIGIN)
-                            .key(MessageOriginCodec.key(item.clientMsgId()))
-                            .conditionExpression("delivery_id = :id AND #status = :received "
-                                    + "AND attribute_not_exists(primary_decision_id) "
-                                    + "AND attribute_not_exists(completion_event_id) AND " + condition)
-                            .updateExpression("SET #status = :next, primary_decision_id = :decisionId, "
-                                    + "primary_decision = :decision, updated_at = :now "
-                                    + "REMOVE #expiryBucket, #expiryDue")
-                            .expressionAttributeNames(names)
-                            .expressionAttributeValues(values).build()).build(),
-                    TransactWriteItem.builder().put(Put.builder().tableName(STEP).item(outbox)
-                            .conditionExpression("attribute_not_exists(pk)").build()).build()));
-            return Outcome.STORED;
-        } catch (TransactionCanceledException changed) {
-            if (!changed.cancellationReasons().stream().anyMatch(
-                    reasonCode -> "ConditionalCheckFailed".equals(reasonCode.code()))) throw changed;
+            db.updateItem(UpdateItemRequest.builder().tableName(ORIGIN)
+                    .key(MessageOriginCodec.key(item.clientMsgId()))
+                    .conditionExpression("delivery_id = :id AND #status = :received "
+                            + "AND attribute_not_exists(primary_decision_id) "
+                            + "AND attribute_not_exists(completion_event_id) AND " + condition)
+                    .updateExpression("SET #status = :next, primary_decision_id = :decisionId, "
+                            + "primary_decision = :decision, updated_at = :now")
+                    .expressionAttributeNames(names).expressionAttributeValues(values).build());
+        } catch (RuntimeException changed) {
+            // A write may have committed even if its response was lost. Use the stored
+            // decision (including its original timestamp), never manufacture a new result.
             var latest = read(ORIGIN, MessageOriginCodec.key(item.clientMsgId()));
-            var stored = read(STEP, Map.of("pk", outbox.get("pk"), "sk", outbox.get("sk")));
-            if (item.resultId().equals(latest.getOrDefault("primary_decision_id", s("")).s())
-                    && encoded.equals(stored.getOrDefault("result_payload", s("")).s())) return Outcome.STORED;
-            if (!active(latest)) return Outcome.ALREADY_CLOSED;
-            throw new IllegalStateException("Primary decision conflicts with active state", changed);
+            if (latest != null && latest.containsKey("primary_decision")) {
+                publisher.publish(latest);
+                return item.resultId().equals(latest.get("primary_decision_id").s())
+                        ? Outcome.STORED : Outcome.ALREADY_CLOSED;
+            }
+            if (changed instanceof ConditionalCheckFailedException && !activeForExpiry(latest)) {
+                return Outcome.ALREADY_CLOSED;
+            }
+            throw changed;
         }
+        var frozen = new HashMap<>(origin);
+        frozen.put("status", s(nextStatus));
+        frozen.put("primary_decision_id", s(item.resultId()));
+        frozen.put("primary_decision", s(encoded));
+        publisher.publish(frozen);
+        return Outcome.STORED;
     }
 
     private Map<String, AttributeValue> read(String table, Map<String, AttributeValue> key) {

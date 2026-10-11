@@ -21,7 +21,7 @@
 
 현재 확정한 새 경로의 토픽은 `message.received.v1`(API → PRE-SEND-MANAGER), `message.skt.http.send.v1`·`message.kt.http.send.v1`·`message.lgu.http.send.v1`(Manager → 통신사별 sender), `MSG_RESULT`(발송 전 실패·1차 웹훅·명시적 HTTP 실패·5초 타임아웃·2차 TCP 즉시 응답 → MSG-RESULT-MANAGER), `MSG-RESULT-FINALIZED`(완료 관리자 인계), `WEBHOOK-SEND`(결과 관리자 → 고객 웹훅 sender)다. 1차 HTTP `200 OK`에서는 sender가 Kafka 결과를 발행하지 않는다. 명시적 비-200과 5초 무응답은 sender가 출처를 구분해 `MSG_RESULT`에 직접 발행한다. 오류 코드 대역과 결과 전문은 [54 오류 코드 계약](54-메시징-오류-코드와-결과-인계-계약.md)을 따른다. 2차 발송 AP는 `MSG-TCP-SENDER`, 현재 발송 명령 토픽은 `message.tcp.requested.v1`이다. 2차 TCP는 즉시 응답을 최종 결과로 보고 `MSG_RESULT`에 `source=TCP_RESPONSE`로 인계한다.
 
-단일 메시지 처리용 Kafka 레코드의 key는 최초 접수에서 발급한 고정 `clientMsgId`다. 고객 ID는 API의 `messageId`이며 UTF-8 최대 40바이트다. `clientMsgId`는 하이픈 없는 UUID 32자리로 만들고 API 202 응답, ORIGIN·Kafka·STEP, 업체 발송 요청·웹훅, 이력·과금에 같은 값을 사용한다. `attemptId`는 내부 통신사 시도, `invocation`은 같은 통신사의 재시도 회차를 구분하며 업체 ID에 붙이지 않는다. 업체 웹훅에는 `clientMsgId`만 돌아온다. 고객 API 요청과 웹훅 HTTP 요청은 인입마다 별도의 `traceId`를 발급해 추적하고 메시지 키로 사용하지 않는다. 한 웹훅 HTTP 요청의 1~100개 결과는 `MSG_RESULT`의 Kafka 1레코드에 담고 배치 key에는 `traceId`를 사용한다. 단일 메시지 명령·HTTP 응답 실패 레코드는 `clientMsgId` key를 사용한다. 웹훅 배치 안의 개별 메시지에 대한 Kafka 파티션 순서와 토픽 간 도착 순서는 보장되지 않으므로 DynamoDB 조건부 상태 전이가 필요하다.
+단일 메시지 처리용 Kafka 레코드의 key는 최초 접수에서 발급한 고정 `clientMsgId`다. 고객 ID는 API의 `messageId`이며 UTF-8 최대 40바이트다. `clientMsgId`는 하이픈 없는 UUID 32자리로 만들고 API 200 응답, ORIGIN·Kafka·STEP, 업체 발송 요청·웹훅, 이력·과금에 같은 값을 사용한다. `attemptId`는 내부 통신사 시도, `invocation`은 같은 통신사의 재시도 회차를 구분하며 업체 ID에 붙이지 않는다. 업체 웹훅에는 `clientMsgId`만 돌아온다. 고객 API 요청과 웹훅 HTTP 요청은 인입마다 별도의 `traceId`를 발급해 추적하고 메시지 키로 사용하지 않는다. 한 웹훅 HTTP 요청의 1~100개 결과는 `MSG_RESULT`의 Kafka 1레코드에 담고 배치 key에는 `traceId`를 사용한다. 단일 메시지 명령·HTTP 응답 실패 레코드는 `clientMsgId` key를 사용한다. 웹훅 배치 안의 개별 메시지에 대한 Kafka 파티션 순서와 토픽 간 도착 순서는 보장되지 않으므로 DynamoDB 조건부 상태 전이가 필요하다.
 
 발송·결과 경로의 AP 표기는 다음과 같다. 이는 **논리 AP/Deployment 이름**이며 Maven 모듈명이나 물리 Kafka 토픽명을 일괄 변경한 뜻은 아니다.
 
@@ -74,8 +74,9 @@ sequenceDiagram
     A->>R: 고객 중복키 확인·선점
     A->>D: ORIGIN RECEIVED 조건부 저장
     D-->>A: 저장 확인
-    A->>K: message.received.v1 발행 시작
-    A-->>C: 202 + clientMsgId
+    A->>K: message.received.v1 발행
+    K-->>A: 성공 ack (acks=all)
+    A-->>C: 200 OK + clientMsgId
     K->>M: 불변 접수 원문
     M->>R: 계약·번호별 통신사 조회
     M->>M: 발송 조건 확인, 전문·attemptId 고정
@@ -88,7 +89,7 @@ sequenceDiagram
     Note over S,K: 200 OK 경로는 Kafka 발행 없이 종료
 ```
 
-`202`는 ORIGIN 영속 접수 확인이다. Kafka ack, 업체 접수, 최종 성공을 기다리지 않는다. 업체의 `200 OK`는 발송 요청에 대한 HTTP 응답일 뿐 고객 메시지의 최종 성공은 아니다. sender는 DynamoDB 기록을 마치면 이 호출을 끝내고 웹훅을 기다린다.
+`200 OK`는 ORIGIN 영속 저장과 Kafka 성공 ack 확인이다. API는 Kafka 발행 future를 기본 최대 10초 기다리고, 실패·시간 초과·대기 중단에는 `503`·오류 코드 `50004`를 반환한다. 업체 접수와 최종 성공은 후속 단계에서 확인한다. 업체의 `200 OK`는 발송 요청에 대한 HTTP 응답일 뿐 고객 메시지의 최종 성공은 아니다. sender는 DynamoDB 기록을 마치면 이 호출을 끝내고 웹훅을 기다린다.
 
 ```mermaid
 sequenceDiagram
@@ -111,9 +112,8 @@ sequenceDiagram
     K->>M: 성공 결과 처리
     M->>D: 실행·시도·회차 확인 후 최종 성공 조건부 저장
     M->>K: MSG-RESULT-FINALIZED 발행·ack
-    M->>D: FINALIZED_PUBLISHED 중간 상태 저장
     M->>K: WEBHOOK-SEND 발행·ack
-    M->>R: deadline 후보 제거
+    M->>D: 두 Kafka ack 확인 결과 저장·만료 후보 제거
     par 완료 이력·과금·정리
         K->>F: MSG-RESULT-FINALIZED
         F->>Q: TBL_MSG_HIST + TBL_CDR_HIST 원자 commit
@@ -132,7 +132,7 @@ sequenceDiagram
 
 ## 2. 접수 거절·중복·최초 발행 불명확
 
-정상 접수 순서는 `JWT → Redis TPS·분류별 월 Quota 증가·판정 → 본문 상세 검증 → 고객 중복 확인 → ORIGIN 저장 → Kafka send 시작 → 202`다. API는 계약 PostgreSQL을 조회하지 않는다. `messageCategory`를 확인할 수 있는 잘못된 본문과 고객 중복 요청도 사용량에 포함된다.
+정상 접수 순서는 `JWT → Redis TPS·분류별 월 Quota 증가·판정 → 본문 상세 검증 → 고객 중복 확인 → ORIGIN 저장 → Kafka send → 성공 ack 확인 → 200 OK`다. API는 계약 PostgreSQL을 조회하지 않는다. `messageCategory`를 확인할 수 있는 잘못된 본문과 고객 중복 요청도 사용량에 포함된다.
 
 | 발생 지점 | 흐름 | 고객 응답·후속 |
 |---|---|---|
@@ -141,9 +141,9 @@ sequenceDiagram
 | 정책 키 누락·형식 오류 | 접수 제어 정책을 판정할 수 없음 | 503, ORIGIN·Kafka 없음 |
 | Redis 사용량 검사 연결 실패·타임아웃 | 제한 검사를 우회하는 가용성 정책 | 이후 검증·접수 계속. 이 기간 사용량 누락 가능 |
 | 본문 상세 검증 실패 | 사용량 증가 후 중단 | 400, 중복 선점·ORIGIN·Kafka 없음 |
-| 동일 고객 중복키 재요청 | Redis 실행 ID로 ORIGIN을 대조 | 같은 실행을 202로 반환·재발행할 수 있음. 원본과 충돌하면 409, 저장 확인 전이면 503 |
-| 새 ORIGIN Put의 결과 불명확 | 동일 `clientMsgId`로 강한 일관성 조회 | 같은 원본이 확인되면 202, 확인 불가하면 503. Redis 중복키를 성급히 해제하지 않음 |
-| ORIGIN 저장 뒤 Kafka 발행 실패·ack 불명확 | API는 ORIGIN 접수 기준으로 202. 발행 복구 앱이 같은 원문·ID로 재발행 | Kafka 기록 중복 가능, 새 실행을 만들지 않음 |
+| 동일 고객 중복키 재요청 | Redis 실행 ID로 ORIGIN을 대조 | 같은 실행을 재발행하고 Kafka 성공 ack 확인 후 200 반환. 원본과 충돌하면 409, 저장 확인 전이면 503 |
+| 새 ORIGIN Put의 결과 불명확 | 동일 `clientMsgId`로 강한 일관성 조회 | 같은 원본이 확인되면 재발행 후 Kafka 성공 ack 확인 시 200, 원본 또는 ack 확인 불가하면 503. Redis 중복키를 성급히 해제하지 않음 |
+| ORIGIN 저장 뒤 Kafka 발행 실패·ack 불명확 | API는 503 반환. ORIGIN·중복키를 유지하고 발행 복구 앱이 같은 원문·ID로 재발행 | Kafka 기록 중복 가능, 새 실행을 만들지 않음 |
 
 ```mermaid
 flowchart LR
@@ -231,7 +231,7 @@ flowchart TD
 
 공통 `PrimaryHttpFailureDecision`은 `66001`·`66002`·다른 6만 대역 실패와 5초 무응답에 대한 다음 통신사·회차·1차 실패 코드를 계산한다. 이는 순수 판단이며 활성 상태·중복 결과를 확인하고 DynamoDB에 고정·Kafka에 발행하는 책임은 결과 Manager가 수행한다. 기한 경과 자체는 후속 발송 거절 조건이 아니고, 만료 상태로의 조건부 전이가 먼저 확정됐는지가 기준이다. 신규 ORIGIN에는 인입 +3시간의 고정 deadline과 조회용 만료 시각을 함께 저장한다. `MSG-RESULT-MANAGER`는 16개 버킷의 `message_primary_expiry_v1` GSI에서 기한 도래 후보를 찾는다. 기한 이전에 STEP inbox에 저장된 미처리 결과가 있으면 그 판단을 기다리고 조회용 시각만 10초 늦춘다. PRE-SEND 판단이 저장되지 않았더라도 만료가 ORIGIN의 조건부 전이를 먼저 확정하면 최종 실패 또는 2차 발송 대상으로 인계한다. 기존 ORIGIN v4 항목은 새 GSI 속성이 없을 수 있다. 새 GSI가 ACTIVE인 상태에서 `MSG_RESULT_EXPIRY_BACKFILL_ENABLED=true`를 한 Pod에 일시 설정하면 `MSG-RESULT-MANAGER`가 ORIGIN을 페이지별로 스캔해 활성 v4 메시지만 조건부 보강한다. 스캔은 읽기 비용이 있으므로 `MSG_RESULT_EXPIRY_BACKFILL_PAGE_SIZE`와 `MSG_RESULT_EXPIRY_BACKFILL_POLL_MS`로 속도를 제한하고 완료 로그를 확인한 뒤 비활성화한다. 재시작하면 처음부터 다시 검사하지만 이미 보강된 항목은 건너뛴다.
 
-결과 Manager의 예약 작업은 같은 AP의 크기 5 스케줄러 풀에서 실행한다. inbox 판단이 저장소를 기다려도 outbox 발행·후속 HTTP 발행·만료 검사가 그 작업의 종료를 기다리지 않게 한다. 선택적 만료 backfill까지 총 5개 작업이며, 각 poll은 기존 동기화와 fixed-delay를 유지한다. 작업 간 실행 순서는 보장하지 않고 ORIGIN·STEP의 조건부 전이로 경합을 처리한다. 1분 재시도와 만료 정책은 그대로다.
+결과 Manager는 결과 소비 처리 중 Kafka를 직접 발행하고 ack를 확인한다. 관찰이 아직 없거나 재처리가 필요한 입력 inbox, 후속 HTTP 예약 발행, 만료 검사와 선택적 만료 backfill은 같은 AP의 크기 5 스케줄러 풀에서 실행한다. Outbox 발행 작업은 없다. 각 poll의 동기화·fixed-delay와 ORIGIN·STEP 조건부 전이를 유지하며 1분 재시도와 만료 정책은 그대로다.
 
 ## 5. 웹훅 묶음과 실패 분기
 
@@ -393,7 +393,7 @@ flowchart LR
     U --> V[(TBL_WEBHOOK_HIST 발송 이력)]
 ```
 
-결과 Manager는 `MSG-RESULT-FINALIZED`의 Kafka ack를 먼저 확인한 뒤 `WEBHOOK-SEND`를 발행하지만 두 소비 AP의 처리 완료 순서는 보장되지 않는다. **고객 웹훅이 과금·이력 commit보다 먼저 도착할 수 있다.** 웹훅 sender는 DynamoDB가 이미 정리됐거나 SQL 이력이 아직 없더라도 처리할 수 있도록 `WEBHOOK-SEND`에 고정 `clientMsgId` key·불변 결과 ID·고객 발송에 필요한 전문을 담아 자체 멱등 처리해야 한다. 고객 통지 완료는 과금이나 DynamoDB 삭제의 선행 조건이 아니다. 앞단 Manager는 최종 판단과 두 토픽의 발행 상태를 내구성 있게 관리해, 한 토픽 발행만 성공한 뒤 종료해도 나머지를 같은 결과 ID로 복구해야 한다. 고객 웹훅 대상은 **중간 재시도·통신사 이동을 제외한 최종 성공·실패·만료 모두**로 둔다. 1차 최종 결과는 하나의 STEP outbox에서 `PENDING` → `FINALIZED_PUBLISHED` → `PUBLISHED`로 전이한다. `MSG-RESULT-FINALIZED` ack 뒤 중간 상태를 저장하고, `WEBHOOK-SEND` ack 뒤에만 pending 인덱스를 제거하므로 어느 한 토픽 발행 뒤 종료해도 미발행 토픽부터 재개한다.
+결과 Manager는 `MSG-RESULT-FINALIZED`의 Kafka ack를 먼저 확인한 뒤 `WEBHOOK-SEND`를 발행하지만 두 소비 AP의 처리 완료 순서는 보장되지 않는다. **고객 웹훅이 과금·이력 commit보다 먼저 도착할 수 있다.** 웹훅 sender는 DynamoDB가 이미 정리됐거나 SQL 이력이 아직 없더라도 처리할 수 있도록 `WEBHOOK-SEND`에 고정 `clientMsgId` key·불변 결과 ID·고객 발송에 필요한 전문을 담아 자체 멱등 처리해야 한다. 고객 통지 완료는 과금이나 DynamoDB 삭제의 선행 조건이 아니다. 앞단 Manager는 ORIGIN에 조건부로 고정한 업무 판단에서 이벤트를 만들고 `ResultKafkaPublisher`를 직접 호출한다. STEP `PRIMARY_DECISION`·`SECONDARY_DECISION` Outbox와 별도 발행 폴링은 제거했다. 각 Kafka future는 기본 최대 10초 ack를 기다린다. 두 최종 토픽의 ack를 모두 확인한 뒤에만 ORIGIN의 `final_kafka_ack_decision_id`를 기록하고 입력 inbox를 처리 완료한다. 그 전에 실패하면 예외를 Kafka 소비자에 전달해 offset을 완료하지 않는다. 일반 입력은 폴링 인덱스에 등록하지 않고 Kafka 소비자가 ack까지 맡는다. HTTP 관찰 등 다른 입력을 기다리는 경우에만 inbox를 예약하고 offset을 완료하며, 이후 inbox 재처리도 같은 ORIGIN 판단을 사용한다. 한 토픽만 성공한 경우 재시도에서 두 토픽을 다시 발행할 수 있으며, 결과 ID·전문·판단 시각을 유지해 각 소비자가 중복을 제거한다. 2차 TCP 명령도 직접 발행하며 `primary_kafka_ack_decision_id`는 최종 정리 허가가 아니다. 만료 판단은 Kafka ack 전까지 만료 후보를 남겨 새 Kafka 입력이 없는 만료 경로도 재시도한다. 고객 웹훅 대상은 **중간 재시도·통신사 이동을 제외한 최종 성공·실패·만료 모두**다. 예약 HTTP 명령의 `notBefore`와 고객 HTTP 발송용 `tbl_webhook_outbox`, API의 최초 발행 복구 경로는 이번 결과 Manager 즉시 발행 변경 범위에 포함하지 않는다.
 
 `WEBHOOK-SEND`는 최종 메시지별 인계다. `MSG-WEBHOOK-SENDER`가 Kafka 소비 후 자체 PostgreSQL `tbl_webhook_outbox`에 명령을 저장하고 나서 offset을 완료한다. 같은 `clientId`의 미묶음 결과를 **최대 100건**, 최대 256KiB 요청 본문으로 묶으며 기본 100ms 동안 더 들어올 결과를 기다린다. 100건에 도달하거나 바이트 상한에 닿으면 즉시 묶는다. 고객별 lane 잠금으로 동시에 두 Pod가 같은 고객의 묶음을 만들지 못하게 한다. 묶음 `batchId`·본문·대상 URL은 DB에 고정해 재시도 때 유지한다. 고객의 HTTP `204`만 배치 성공으로 보고, 실패하면 지수 간격 최대 60초로 최초 포함 총 21회까지 재시도한다. 최종 소진 시 `EXHAUSTED`로 보존해 운영 확인 대상으로 남긴다.
 
@@ -415,7 +415,7 @@ flowchart LR
 
 `TBL_MSG_HIST`는 메시지당 최종 행 1건으로 확정한다. 통신사 이동·`66002` 재시도처럼 여러 시도의 개별 이력이 운영에 필요하다면 이 최종 행의 보존 가능한 상세 정보 또는 별도 시도 이력 저장소를 추가할 수 있다. 최종 행의 필수 내용은 `clientMsgId`, 고객 메시지 식별자, 최종 상태·코드, 최종 통신사/2차 업체, 최종 시각과 고객 조회·늦은 웹훅 대조에 필요한 참조값이다. CDR은 금액 산정 없이 과금 대상 식별자·1차 성공 통신사·시각을 고정한다. 두 이력 테이블이 같은 PostgreSQL DB라는 현재 가정이 다르면 원자 저장 대신 별도의 대사·복구 방식이 필요하다.
 
-현재 완료 AP의 `TBL_CDR_HIST`는 과금 대상 여부와 식별자·통신사·시각만 보존한다. 금액·요율 계산은 서비스 범위에 넣지 않는다. `MSG-RESULT-FINALIZED` 소비 후 SQL commit 전에 오류가 나면 Kafka offset을 완료하지 않고 재전달받는다. 고객 웹훅 인계는 결과 Manager outbox의 `PUBLISHED` 상태로 확인하며 고객 HTTP 응답까지 기다리지는 않는다.
+현재 완료 AP의 `TBL_CDR_HIST`는 과금 대상 여부와 식별자·통신사·시각만 보존한다. 금액·요율 계산은 서비스 범위에 넣지 않는다. `MSG-RESULT-FINALIZED` 소비 후 SQL commit 전에 오류가 나면 Kafka offset을 완료하지 않고 재전달받는다. 고객 웹훅 Kafka 인계는 ORIGIN의 `final_kafka_ack_decision_id`가 SQL의 최종 결정 ID와 같은지 확인하며 고객 HTTP 응답까지 기다리지는 않는다.
 
 **업무 판단은 메시지별, 물리적 SQL 저장은 최대 100건 배치**로 한다. Kafka 레코드 규격은 메시지당 한 레코드 그대로이며 소비자가 한 poll에서 받은 목록을 한 트랜잭션으로 처리한다. `max.poll.records=100`, batch listener, `AckMode.BATCH`, 자동 commit 비활성으로 구성한다. 묶음 크기를 확보하는 브로커 fetch 기준은 16KiB·최대 25ms이며, 100건을 채울 때까지 기다리지 않는다. 1건만 있어도 처리된다. 이 25ms는 [Kafka fetch의 묶음 대기 상한](https://kafka.apache.org/42/configuration/consumer-configs/)이지 전체 처리 시간 보장이 아니다.
 
@@ -427,7 +427,7 @@ flowchart LR
 
 정리 작업은 기본 100건 페이지가 가득 차면 같은 실행에서 다음 페이지를 바로 조회하며 최대 4페이지까지만 처리한다. `MSG_COMPLETE_CLEANUP_MAX_PAGES_PER_POLL`로 1~20페이지를 설정할 수 있고, 1이면 기존의 한 페이지 처리 방식이다. 빈 페이지나 덜 찬 페이지에서는 즉시 종료하며 이후 기본 5초 주기로 다시 실행한다. 별도 AP나 병렬 작업자는 추가하지 않는다. STEP 삭제는 [DynamoDB BatchWriteItem의 25건 제한과 미처리 항목 반환 규격](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_BatchWriteItem.html)에 맞춰 나눈다. TTL을 먼저 설정한 뒤 모든 STEP 삭제가 확인된 경우에만 ORIGIN을 삭제한다. `UnprocessedItems`가 남으면 SQL을 `DONE`으로 바꾸지 않고 기존 10초 지연 재시도로 넘긴다. 운영 IAM에서는 완료 AP에 STEP 테이블의 `dynamodb:BatchWriteItem` 권한이 필요하다.
 
-`messaging-complete-manager`는 PostgreSQL `messaging_completion` 스키마의 `TBL_MSG_HIST`·`TBL_CDR_HIST`에 최종 이력과 1차 성공 과금 대상을 원자적으로 저장한다. `MSG_COMPLETE_CONSUMER_ENABLED=true`와 `MSG_COMPLETE_CLEANUP_ENABLED=true`가 기본값이며 DynamoDB 정리·TTL 경로도 연결됐다. `WEBHOOK-SEND`는 결과 Manager outbox가 발행하고 `messaging-webhook-sender`가 고객별 최대 100건을 묶어 HTTP로 발송한 뒤 `messaging_webhook.tbl_webhook_hist`에 저장한다. 고객 URL이 없으면 SQL에 보류한다.
+`messaging-complete-manager`는 PostgreSQL `messaging_completion` 스키마의 `TBL_MSG_HIST`·`TBL_CDR_HIST`에 최종 이력과 1차 성공 과금 대상을 원자적으로 저장한다. `MSG_COMPLETE_CONSUMER_ENABLED=true`와 `MSG_COMPLETE_CLEANUP_ENABLED=true`가 기본값이며 DynamoDB 정리·TTL 경로도 연결됐다. `WEBHOOK-SEND`는 결과 Manager가 직접 Kafka ack를 확인하며 발행하고 `messaging-webhook-sender`가 고객별 최대 100건을 묶어 HTTP로 발송한 뒤 `messaging_webhook.tbl_webhook_hist`에 저장한다. 고객 URL이 없으면 SQL에 보류한다.
 
 ## 9. 중간 종료와 저장소 장애
 

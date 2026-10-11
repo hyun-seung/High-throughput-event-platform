@@ -7,7 +7,6 @@ import org.springframework.boot.test.context.ConfigDataApplicationContextInitial
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
@@ -26,10 +25,10 @@ import static org.mockito.Mockito.*;
 
 class ResultSchedulingTest {
     @Test
-    void slowInboxDoesNotBlockOutbox() { verifyIndependentProgress(true); }
+    void slowInboxDoesNotBlockExpiry() { verifyIndependentProgress(true); }
 
     @Test
-    void slowOutboxDoesNotBlockInbox() { verifyIndependentProgress(false); }
+    void slowExpiryDoesNotBlockInbox() { verifyIndependentProgress(false); }
 
     private void verifyIndependentProgress(boolean blockInbox) {
         new ApplicationContextRunner()
@@ -38,8 +37,8 @@ class ResultSchedulingTest {
                 .withUserConfiguration(Jobs.class)
                 .withBean(Probe.class, () -> new Probe(blockInbox))
                 .withPropertyValues("messaging.result.webhook.initial-delay-ms=0", "messaging.result.webhook.poll-ms=20",
-                        "messaging.result.outbox.enabled=true", "messaging.result.outbox.initial-delay-ms=0",
-                        "messaging.result.outbox.poll-ms=20")
+                        "messaging.result.expiry.initial-delay-ms=0",
+                        "messaging.result.expiry.poll-ms=20")
                 .run(context -> {
                     assertNull(context.getStartupFailure());
                     var probe = context.getBean(Probe.class);
@@ -87,11 +86,10 @@ class ResultSchedulingTest {
                     mock(PrimaryStageDecisionStore.class), mock(SecondaryResultService.class),
                     JsonMapper.builder().build(), Clock.systemUTC(), 100, new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
         }
-        @Bean PrimaryDecisionOutboxDispatcher outbox(Probe probe) {
+        @Bean PrimaryExpiryDispatcher expiry(Probe probe) {
             var db = mock(DynamoDbClient.class);
             when(db.query(any(QueryRequest.class))).thenAnswer(call -> probe.query(false));
-            return new PrimaryDecisionOutboxDispatcher(db, JsonMapper.builder().build(),
-                    mock(KafkaTemplate.class), Clock.systemUTC(), 100, new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
+            return new PrimaryExpiryDispatcher(db, mock(PrimaryStageDecisionStore.class), Clock.systemUTC(), 100);
         }
     }
 }

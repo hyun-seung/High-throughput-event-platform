@@ -10,8 +10,8 @@ import java.util.concurrent.TimeUnit;
 
 /** Bounded labels only. Nested phase durations overlap and must not be added together. */
 public final class ScheduledWorkMetrics {
-    public enum Worker { RESULT_INBOX, RESULT_OUTBOX, COMPLETE_CLEANUP }
-    public enum Phase { POLL, QUERY, ITEM, HANDOFF, LOAD, STEP_QUERY, TTL, DELETE }
+    public enum Worker { RESULT_INBOX, COMPLETE_CLEANUP }
+    public enum Phase { POLL, QUERY, ITEM, LOAD, STEP_QUERY, TTL, DELETE }
     private final MeterRegistry registry;
     private final EnumMap<Phase, Timer> timers = new EnumMap<>(Phase.class);
     private final Timer idle;
@@ -25,7 +25,6 @@ public final class ScheduledWorkMetrics {
         String label = worker.name().toLowerCase(java.util.Locale.ROOT);
         Phase[] phases = switch (worker) {
             case RESULT_INBOX -> new Phase[] {Phase.POLL, Phase.QUERY, Phase.ITEM};
-            case RESULT_OUTBOX -> new Phase[] {Phase.POLL, Phase.QUERY, Phase.ITEM, Phase.HANDOFF};
             case COMPLETE_CLEANUP -> new Phase[] {Phase.POLL, Phase.QUERY, Phase.ITEM, Phase.LOAD,
                     Phase.STEP_QUERY, Phase.TTL, Phase.DELETE};
         };

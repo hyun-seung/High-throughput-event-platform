@@ -32,7 +32,7 @@ LAG_SERIES = {"messaging-pre-send-manager/message.received.v1", "messaging-resul
               "messaging-tcp-sender/message.tcp.requested.v1",
               *(f"messaging-{carrier}-http-sender/message.{carrier}.http.send.v1" for carrier in ("skt", "kt", "lgu"))}
 # Include the metric name in union matching: CPU/up and probe-up/probe-time share other labels.
-METRICS = " or on(__name__,job,instance,group,topic,partition,area,id) ".join((
+METRICS = " or on(__name__,job,instance,group,topic,partition,area,id,worker,phase) ".join((
     'platform_kafka_committed_lag{group=~"messaging-.*"}', 'platform_kafka_log_end_offset', 'platform_kafka_probe_up',
     'platform_kafka_probe_last_success_timestamp_seconds', f'process_cpu_usage{{job=~"{JOBS}"}}',
     f'jvm_memory_used_bytes{{area="heap",job=~"{JOBS}"}}', f'up{{job=~"{JOBS}"}}',
@@ -40,7 +40,7 @@ METRICS = " or on(__name__,job,instance,group,topic,partition,area,id) ".join((
     'spring_kafka_listener_seconds_count{result="success"}', 'spring_kafka_listener_seconds_sum{result="success"}',
     'messaging_complete_sql_batch_size_sum',
     'messaging_scheduled_work_duration_seconds_count{phase="item"}',
-    'messaging_scheduled_work_duration_seconds_sum{phase="item"}',
+    'messaging_scheduled_work_duration_seconds_sum{phase=~"item|load"}',
     'http_server_requests_seconds_count{job="api",status="200",method="POST"}',
     'http_server_requests_seconds_sum{job="api",status="200",method="POST"}',
     'http_server_requests_seconds_count{job="webhook-receive",status="202",method="POST"}',
@@ -69,7 +69,7 @@ def telemetry():
     snapshot = {"at": time.time(), "cpuRatio": {}, "heapBytes": {}, "lag": {}, "up": {},
                 "endOffsets": {}, "processStartedAt": {}, "listenerCount": {}, "listenerSeconds": {},
                 "completionBatchRecords": None, "httpCount": {}, "httpSeconds": {},
-                "scheduledCount": {}, "scheduledSeconds": {}}
+                "scheduledCount": {}, "scheduledSeconds": {}, "scheduledLoadSeconds": {}}
     for item in result["data"]["result"]:
         labels = item["metric"]
         value = float(item["value"][1])
@@ -100,7 +100,8 @@ def telemetry():
             field = "httpCount" if name.endswith("_count") else "httpSeconds"
             snapshot[field][job] = snapshot[field].get(job, 0) + value
         elif name.startswith("messaging_scheduled_work_duration_seconds_"):
-            field = "scheduledCount" if name.endswith("_count") else "scheduledSeconds"
+            field = "scheduledLoadSeconds" if labels.get("phase") == "load" else (
+                "scheduledCount" if name.endswith("_count") else "scheduledSeconds")
             snapshot[field][labels["worker"]] = value
         elif name == "platform_kafka_probe_up":
             snapshot["probeUp"] = value
@@ -282,7 +283,7 @@ def summarize_ap_observations(samples):
             "processRestartObserved": len(starts) > 1, "acceptedRequests": count,
             "meanObservedRequestRps": count / (timed[-1]["at"] - timed[0]["at"]) if len(timed) > 1 and count >= 0 and len(starts) <= 1 else None,
             "meanRequestMs": duration * 1000 / count if count > 0 and duration >= 0 and len(starts) <= 1 else None}
-    for job, worker in (("result-manager", "result_inbox"), ("result-manager", "result_outbox"),
+    for job, worker in (("result-manager", "result_inbox"),
                         ("complete-manager", "complete_cleanup")):
         timed = [s for s in valid if worker in s.get("scheduledCount", {}) and worker in s.get("scheduledSeconds", {})]
         count = timed[-1]["scheduledCount"][worker] - timed[0]["scheduledCount"][worker] if len(timed) > 1 else 0

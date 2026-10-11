@@ -206,13 +206,17 @@ def run():
 
             def preserved():
                 rows = read_items("ORIGIN", [key(identifier, "META") for identifier in identifiers])
-                return len(rows) == 100 and all(field(row, "status") in ("PRIMARY_SUCCEEDED", "PRIMARY_FAILED") for row in rows)
+                return len(rows) == 100 and all(field(row, "status") in ("PRIMARY_SUCCEEDED", "PRIMARY_FAILED")
+                    and field(row, "final_kafka_ack_decision_id") == field(row, "primary_decision_id") for row in rows)
 
             eventually("Final decisions were not preserved during SQL outage", preserved)
             # Wait for publication of every final record; the SQL consumer must not skip any of them.
-            eventually("Completion consumer skipped or did not receive final results", lambda: completion_lag() == 100)
+            # Redelivery or an ambiguous ack can repeat the same immutable result.
+            # The receipts above prove all 100 unique decisions were handed off;
+            # SQL recovery below verifies unique histories, billing and deliveries.
+            eventually("Completion consumer skipped or did not receive final results", lambda: completion_lag() >= 100)
             report["outagePreservedOrigins"] = 100
-            report["outageCompletionLag"] = 100
+            report["outageCompletionLag"] = completion_lag()
             checkpoint("100-results-preserved-uncommitted-during-sql-outage")
         finally:
             compose("start", "postgres", timeout=60)

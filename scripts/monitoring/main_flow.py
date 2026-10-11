@@ -226,7 +226,6 @@ def verify() -> None:
                           for item in counts["data"]["result"]}
         expected = {
             "result_inbox": ("poll", "query", "item"),
-            "result_outbox": ("poll", "query", "item", "handoff"),
             "complete_cleanup": ("poll", "query", "item", "load", "step_query", "ttl", "delete")}
         for worker, phases in expected.items():
             for phase in phases:
@@ -237,7 +236,8 @@ def verify() -> None:
         board = request_json("http://127.0.0.1:13000/api/dashboards/uid/messaging-services")
         for panel in board["dashboard"]["panels"]:
             expressions = [target["expr"] for target in panel.get("targets", [])
-                           if "messaging_scheduled_work_" in target.get("expr", "")]
+                           if "messaging_scheduled_work_" in target.get("expr", "")
+                           or "messaging_result_kafka_publish_" in target.get("expr", "")]
             if not expressions:
                 continue
             for expression in expressions:

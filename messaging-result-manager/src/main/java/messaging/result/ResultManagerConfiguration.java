@@ -4,7 +4,6 @@ import messaging.common.messages.HttpSendCommand;
 import messaging.common.messages.MessageTopics;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.kafka.core.KafkaTemplate;
@@ -34,28 +33,26 @@ public class ResultManagerConfiguration {
         return new WebhookPrimaryDecisionService(db, mapper, commands, clock);
     }
 
-    @Bean PrimaryStageDecisionStore primaryStageDecisionStore(DynamoDbClient db, JsonMapper mapper, Clock clock) {
-        return new PrimaryStageDecisionStore(db, mapper, clock);
+    @Bean PrimaryStageDecisionStore primaryStageDecisionStore(DynamoDbClient db, JsonMapper mapper, Clock clock,
+                                                              ResultKafkaPublisher publisher) {
+        return new PrimaryStageDecisionStore(db, mapper, clock, publisher);
     }
 
     @Bean
-    @ConditionalOnProperty(prefix = "messaging.result.outbox", name = "enabled", havingValue = "true")
-    NewTopic finalizedResultTopic(@Value("${messaging.result.outbox.partitions:3}") int partitions,
-                                  @Value("${messaging.result.outbox.replicas:1}") int replicas) {
+    NewTopic finalizedResultTopic(@Value("${messaging.result.kafka.partitions:3}") int partitions,
+                                  @Value("${messaging.result.kafka.replicas:1}") int replicas) {
         return outputTopic(MessageTopics.MSG_RESULT_FINALIZED, partitions, replicas);
     }
 
     @Bean
-    @ConditionalOnProperty(prefix = "messaging.result.outbox", name = "enabled", havingValue = "true")
-    NewTopic customerWebhookTopic(@Value("${messaging.result.outbox.partitions:3}") int partitions,
-                                  @Value("${messaging.result.outbox.replicas:1}") int replicas) {
+    NewTopic customerWebhookTopic(@Value("${messaging.result.kafka.partitions:3}") int partitions,
+                                  @Value("${messaging.result.kafka.replicas:1}") int replicas) {
         return outputTopic(MessageTopics.WEBHOOK_SEND, partitions, replicas);
     }
 
     @Bean
-    @ConditionalOnProperty(prefix = "messaging.result.outbox", name = "enabled", havingValue = "true")
-    NewTopic secondarySendTopic(@Value("${messaging.result.outbox.partitions:3}") int partitions,
-                                @Value("${messaging.result.outbox.replicas:1}") int replicas) {
+    NewTopic secondarySendTopic(@Value("${messaging.result.kafka.partitions:3}") int partitions,
+                                @Value("${messaging.result.kafka.replicas:1}") int replicas) {
         return outputTopic(MessageTopics.TCP_SEND, partitions, replicas);
     }
 
