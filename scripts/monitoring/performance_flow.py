@@ -40,7 +40,7 @@ METRICS = " or on(__name__,job,instance,group,topic,partition,area,id,worker,pha
     'spring_kafka_listener_seconds_count{result="success"}', 'spring_kafka_listener_seconds_sum{result="success"}',
     'messaging_complete_sql_batch_size_sum',
     'messaging_scheduled_work_duration_seconds_count{phase="item"}',
-    'messaging_scheduled_work_duration_seconds_sum{phase=~"item|load"}',
+    'messaging_scheduled_work_duration_seconds_sum{phase="item"}',
     'http_server_requests_seconds_count{job="api",status="200",method="POST"}',
     'http_server_requests_seconds_sum{job="api",status="200",method="POST"}',
     'http_server_requests_seconds_count{job="webhook-receive",status="202",method="POST"}',
@@ -69,7 +69,7 @@ def telemetry():
     snapshot = {"at": time.time(), "cpuRatio": {}, "heapBytes": {}, "lag": {}, "up": {},
                 "endOffsets": {}, "processStartedAt": {}, "listenerCount": {}, "listenerSeconds": {},
                 "completionBatchRecords": None, "httpCount": {}, "httpSeconds": {},
-                "scheduledCount": {}, "scheduledSeconds": {}, "scheduledLoadSeconds": {}}
+                "scheduledCount": {}, "scheduledSeconds": {}}
     for item in result["data"]["result"]:
         labels = item["metric"]
         value = float(item["value"][1])
@@ -100,8 +100,7 @@ def telemetry():
             field = "httpCount" if name.endswith("_count") else "httpSeconds"
             snapshot[field][job] = snapshot[field].get(job, 0) + value
         elif name.startswith("messaging_scheduled_work_duration_seconds_"):
-            field = "scheduledLoadSeconds" if labels.get("phase") == "load" else (
-                "scheduledCount" if name.endswith("_count") else "scheduledSeconds")
+            field = "scheduledCount" if name.endswith("_count") else "scheduledSeconds"
             snapshot[field][labels["worker"]] = value
         elif name == "platform_kafka_probe_up":
             snapshot["probeUp"] = value

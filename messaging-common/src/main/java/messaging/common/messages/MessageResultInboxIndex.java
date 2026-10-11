@@ -1,7 +1,6 @@
 package messaging.common.messages;
 
 import software.amazon.awssdk.services.dynamodb.model.AttributeDefinition;
-import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.services.dynamodb.model.GlobalSecondaryIndex;
 import software.amazon.awssdk.services.dynamodb.model.KeySchemaElement;
 import software.amazon.awssdk.services.dynamodb.model.KeyType;
@@ -10,7 +9,6 @@ import software.amazon.awssdk.services.dynamodb.model.ProjectionType;
 import software.amazon.awssdk.services.dynamodb.model.ScalarAttributeType;
 
 import java.util.List;
-import java.util.Map;
 
 /** Sparse STEP index for result items that still need a business decision. */
 public final class MessageResultInboxIndex {
@@ -20,11 +18,6 @@ public final class MessageResultInboxIndex {
     public static final int SHARDS = 16;
 
     private MessageResultInboxIndex() { }
-
-    public static void add(Map<String, AttributeValue> item, String clientMsgId, long due) {
-        item.put(BUCKET, AttributeValue.fromS(bucket(clientMsgId)));
-        item.put(DUE, AttributeValue.fromN(Long.toString(due)));
-    }
 
     public static String bucket(String clientMsgId) {
         return "message-result-v1-" + Math.floorMod(clientMsgId.hashCode(), SHARDS);
