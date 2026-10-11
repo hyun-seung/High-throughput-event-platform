@@ -87,19 +87,21 @@ public class MessageReceiveService {
                 request.secondarySendPayload(), clock.instant());
         try {
             origins.save(event);
-        } catch (ConditionalCheckFailedException definitiveFailure) {
-            duplicates.release(claim);
-            throw new MessageAdmissionException(HttpStatus.CONFLICT, "Execution ID already exists", definitiveFailure);
         } catch (RuntimeException uncertain) {
             log.warn("Origin admission save unconfirmed: clientMsgId={}, failureType={}, rootCauseType={}",
                     event.clientMsgId(), uncertain.getClass().getName(), rootCauseType(uncertain));
-            // PutItem may have committed even when its response was lost. Never release the Redis key
-            // before a strongly consistent read resolves the same execution.
+            // PutItem may have committed even when its response was lost; an SDK retry can then
+            // fail its condition. Only a strongly consistent read can resolve this execution.
             Optional<MessageSubmission> stored = Optional.empty();
             try {
                 stored = lookup(event.clientMsgId());
             } catch (RuntimeException stillUncertain) {
                 uncertain.addSuppressed(stillUncertain);
+            }
+            if (stored.isPresent() && !sameAdmission(stored.get(), event)
+                    && uncertain instanceof ConditionalCheckFailedException) {
+                duplicates.release(claim);
+                throw new MessageAdmissionException(HttpStatus.CONFLICT, "Execution ID already exists", uncertain);
             }
             if (stored.isEmpty() || !sameAdmission(stored.get(), event)) {
                 throw new MessageAdmissionException(HttpStatus.SERVICE_UNAVAILABLE,

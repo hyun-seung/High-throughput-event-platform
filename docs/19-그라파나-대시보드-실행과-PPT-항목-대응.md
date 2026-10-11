@@ -818,3 +818,17 @@ ack를 확인한 세 요청은 같은 실행을 재발행하므로 RECEIVED·SKT
 이 시도 일부는 호스트 Java 검증과 겹쳤다. 이후 Prometheus 조회·AP health·PostgreSQL 이력 조회도 각각 제한 시간을 넘겼다. **변경한 결과 Manager JAR은 실행 환경에 아직 적용하지 않았고, 변경 후 성능 재측정도 미완료다.** 추가 부하나 다른 프로젝트 컨테이너 재시작은 하지 않았다. 증거는 `.monitoring/performance/a9e2136d/`, `.monitoring/result-query-pruning-before.log`, `.monitoring/result-query-pruning/baseline-api-origin-failures.log`·`baseline-final-check.json`에 있다.
 
 다음은 API 조건부 Put 재시도 뒤 저장된 ORIGIN 확인을 회귀 검증하는 것이다. 첫 Put의 저장 응답이 유실된 뒤 SDK 재시도가 조건 충돌하면 이미 저장한 실행을 충돌로 처리할 가능성이 있다. 이번 409 22건의 원인으로 입증한 것은 아니며 별도 재현이 필요하다. 실행 환경 회복 후에는 이전 실패 요청의 최종 상태를 먼저 대조하고, 결과 Manager만 적용해 기능 검증과 같은 조건의 짧은 부하를 순서대로 실행한다. Java 검증과 부하는 겹치지 않게 한다.
+
+## API 조건부 저장 재시도 뒤 원본 확인 — 2026-10-12
+
+실제 운영 설정의 AWS SDK·Apache HTTP 클라이언트·`DynamoMessageOriginStore`와 로컬 HTTP 서버로 첫 조건부 Put이 저장된 뒤 500 응답 또는 응답 없는 연결 종료를 재현했다. SDK 재시도는 같은 Put의 조건 충돌을 받았고, 수정 전에는 두 경우 모두 `Execution ID already exists`로 실패했다. 기존 API는 이 예외를 확정 충돌로 분류해 Redis 마커도 해제했다. 서버는 DynamoDB의 불명확한 저장 응답을 모사하고 Redis 선점과 Kafka ack는 mock을 사용한다. 실제 저장소·브로커 통합 시험은 아니다.
+
+조건부 실패도 기존 불명확한 저장 실패처럼 ORIGIN을 일관 조회한다. 같은 실행 ID·고객·메시지·수신 번호·분류·1차·2차 payload이면 저장된 원본과 접수 시각을 사용하고 Kafka ack를 확인한 뒤 성공한다. 조건부 실패 후 다른 원본을 확인한 경우만 자기 Redis 선점 마커를 비교 삭제하고 409를 반환한다. 원본 부재·조회 실패는 마커를 유지하고 503을 반환하며 새 실행을 만들거나 발행하지 않는다. 정상 저장 성공 경로에는 조회를 추가하지 않는다.
+
+수정 후 두 전송 경계에서 같은 내용의 Put 2회 뒤 일관 Get 1회, 기존 실행의 Kafka 발행과 마커 보존을 확인했다. 관련 테스트 26개가 통과했다. 같은 원본의 최초 접수 시각 보존, 원본 부재·조회 장애의 503, 확인된 다른 원본의 409, Kafka 실패·대기 초과의 503과 미완료 발행 보존도 검증했다. 수정 전 재현·수정 후 회귀 근거는 `.monitoring/admission-retry-confirmation/before.log`·`before-tests.xml`·`after-targeted.log`에 있다.
+
+전체 12개 모듈 `clean verify`는 Java 268개 통과·환경 의존 40개 제외·실패/오류 0개였다. `.test-results/java-test-20261011152139-41080/`, `.monitoring/admission-retry-confirmation/full-unit.log`에 빌드와 69개 테스트 클래스의 실행 근거를 보존한다.
+
+전체 Java 검증 종료 뒤 읽기 확인에서도 Prometheus는 5.07초, AP health와 이전 부하의 최종 이력 조회는 각각 30.07초·30.06초의 제한을 넘겼다. 결과는 `.monitoring/admission-retry-confirmation/environment-status.json`, 재확인 코드는 같은 디렉터리의 `environment_probe.py`에 있다. 변경 API와 앞선 결과 Manager JAR은 적용하지 않았고 추가 메시지·부하도 보내지 않았다. 기존 실행 컨테이너는 재시작하지 않았다.
+
+이는 SDK 재시도의 결함 재현이며 이전 부하 `a9e2136d`의 409 22건 원인을 모두 확정하거나 복구한 결과는 아니다. 해당 실패 요청은 저장된 원본·Redis 마커·최종 이력을 개별 대조해야 한다. 다음은 공유 실행 환경의 조회 시간 초과 원인을 확인하는 것이다. 실행 환경 회복 후 기존 실패 요청 대조·변경 API와 결과 Manager 적용·기능 검증·같은 조건의 짧은 재측정을 진행하며, Java 검증과 부하는 순서대로 실행한다.

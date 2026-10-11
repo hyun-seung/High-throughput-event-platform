@@ -230,6 +230,13 @@ class MessageReceiveServiceTest {
                 () -> service.receive(42L, request));
         assertEquals(HttpStatus.SERVICE_UNAVAILABLE, ambiguousFailure.status());
         assertEquals("Kafka publication was not confirmed", ambiguousFailure.getMessage());
+
+        doThrow(ConditionalCheckFailedException.builder().message("retry collided with committed origin").build())
+                .when(origins).save(any());
+        MessageAdmissionException conditionalFailure = assertThrows(MessageAdmissionException.class,
+                () -> service.receive(42L, request));
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, conditionalFailure.status());
+        assertEquals("Kafka publication was not confirmed", conditionalFailure.getMessage());
         verify(duplicates, never()).release(any());
     }
 
@@ -255,17 +262,97 @@ class MessageReceiveServiceTest {
     }
 
     @Test
-    void definitiveOriginFailureNeverPublishes() {
+    void confirmedConflictingOriginNeverPublishesAndReleasesOnlyItsClaim() {
         String id = "00000000-0000-0000-0000-000000000001";
+        var claim = new MessageDuplicateGuard.Claim(id, "key", "value", true, true);
         when(duplicates.claim(eq(42L), eq(request), anyString()))
-                .thenReturn(new MessageDuplicateGuard.Claim(id, "key", "value", true, true));
+                .thenReturn(claim);
         doThrow(ConditionalCheckFailedException.builder().message("collision").build())
                 .when(origins).save(any());
+        var original = event(id);
+        when(origins.find(id)).thenReturn(Optional.of(new MessageSubmission(id, original.clientId(),
+                original.messageId(), original.recipientNumber(), original.messageCategory(),
+                Map.of("message", "different"), original.secondarySendPayload(), original.receivedAt())));
 
-        assertThrows(MessageAdmissionException.class, () -> service.receive(42L, request));
+        MessageAdmissionException failure = assertThrows(MessageAdmissionException.class,
+                () -> service.receive(42L, request));
 
+        assertEquals(HttpStatus.CONFLICT, failure.status());
         verifyNoInteractions(publisher);
-        verify(duplicates).release(any());
+        var order = inOrder(origins, duplicates);
+        order.verify(origins).save(any());
+        order.verify(origins).find(id);
+        order.verify(duplicates).release(claim);
+    }
+
+    @Test
+    void conditionalFailureWithSameOriginPreservesOriginalTimestampAndClaim() {
+        claimNewExecution();
+        doThrow(ConditionalCheckFailedException.builder().message("retry conflict").build())
+                .when(origins).save(any());
+        var original = event("stable-id");
+        var stored = new MessageSubmission(original.clientMsgId(), original.clientId(), original.messageId(),
+                original.recipientNumber(), original.messageCategory(), original.payload(),
+                original.secondarySendPayload(), original.receivedAt().minusSeconds(1));
+        when(origins.find("stable-id")).thenReturn(Optional.of(stored));
+
+        assertEquals("stable-id", service.receive(42L, request).clientMsgId());
+
+        verify(publisher).publish(stored);
+        verify(duplicates, never()).release(any());
+    }
+
+    @Test
+    void conditionalFailureWithoutOriginReturns503AndKeepsClaim() {
+        claimNewExecution();
+        doThrow(ConditionalCheckFailedException.builder().message("retry conflict").build())
+                .when(origins).save(any());
+        when(origins.find("stable-id")).thenReturn(Optional.empty());
+
+        MessageAdmissionException failure = assertThrows(MessageAdmissionException.class,
+                () -> service.receive(42L, request));
+
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, failure.status());
+        verifyNoInteractions(publisher);
+        verify(duplicates, never()).release(any());
+    }
+
+    @Test
+    void conditionalFailureWithUnavailableReadReturns503AndKeepsClaim() {
+        claimNewExecution();
+        var putFailure = ConditionalCheckFailedException.builder().message("retry conflict").build();
+        var readFailure = DynamoDbException.builder().message("read unavailable").build();
+        doThrow(putFailure).when(origins).save(any());
+        when(origins.find("stable-id")).thenThrow(readFailure);
+
+        MessageAdmissionException failure = assertThrows(MessageAdmissionException.class,
+                () -> service.receive(42L, request));
+
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, failure.status());
+        assertSame(putFailure, failure.getCause());
+        assertArrayEquals(new Throwable[]{readFailure}, putFailure.getSuppressed());
+        verifyNoInteractions(publisher);
+        verify(duplicates, never()).release(any());
+    }
+
+    @Test
+    void confirmedConditionalFailureStillWaitsForKafkaAckAndKeepsPendingSend() {
+        claimNewExecution();
+        doThrow(ConditionalCheckFailedException.builder().message("retry conflict").build())
+                .when(origins).save(any());
+        when(origins.find("stable-id")).thenReturn(Optional.of(event("stable-id")));
+        var send = new CompletableFuture<>();
+        doReturn(send).when(publisher).publish(any());
+        var bounded = new MessageReceiveService(usage, duplicates, origins, publisher, Clock.systemUTC(), 10);
+
+        MessageAdmissionException failure = assertThrows(MessageAdmissionException.class,
+                () -> bounded.receive(42L, request));
+
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, failure.status());
+        assertEquals("Kafka publication was not confirmed", failure.getMessage());
+        assertInstanceOf(TimeoutException.class, failure.getCause());
+        assertFalse(send.isDone());
+        verify(duplicates, never()).release(any());
     }
 
     private MessageSubmission event(String id) {
