@@ -13,8 +13,11 @@ import messaging.common.messages.PreSendFailure;
 import messaging.common.messages.PrimaryStageDecision;
 import messaging.common.messages.PrimaryExpiryIndex;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
+import software.amazon.awssdk.services.dynamodb.model.ConditionalCheckFailedException;
 import software.amazon.awssdk.services.dynamodb.model.GetItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.GetItemResponse;
 import software.amazon.awssdk.services.dynamodb.model.QueryRequest;
@@ -48,13 +51,12 @@ class PrimaryStageDecisionStoreTest {
             "01012345678", admission.payload(), admission.receivedAt()));
 
     @Test
-    @SuppressWarnings({"unchecked", "rawtypes"})
     void successWebhookClosesPrimaryBeforeDirectKafkaHandoff() {
-        reads(origin(false, new PreSendDispatch(command, null)));
+        var origin = origin(false, new PreSendDispatch(command, null));
         var item = webhook("success", null);
 
         assertEquals(PrimaryStageDecisionStore.Outcome.STORED,
-                store.fromWebhook(item, null, command, null));
+                store.fromWebhook(item, null, command, null, origin));
 
         var writes = writes();
         assertEquals("PRIMARY_SUCCEEDED", writes.expressionAttributeValues().get(":next").s());
@@ -64,6 +66,13 @@ class PrimaryStageDecisionStoreTest {
         assertFalse(decision.secondaryRequired());
         assertEquals(item.resultId(), decision.decisionId());
         assertTrue(writes.conditionExpression().contains("attribute_not_exists(primary_decision_id)"));
+        assertTrue(writes.conditionExpression().contains("attribute_not_exists(completion_event_id)"));
+        assertTrue(writes.conditionExpression().contains("#status = :received"));
+        assertTrue(writes.conditionExpression().contains("pre_send_dispatch = :dispatch"));
+        assertTrue(writes.conditionExpression().contains("attribute_not_exists(#currentDecision)"));
+        assertEquals(mapper.writeValueAsString(new PreSendDispatch(command, null)),
+                writes.expressionAttributeValues().get(":dispatch").s());
+        verify(db, never()).getItem(any(GetItemRequest.class));
     }
 
     @Test
@@ -110,7 +119,7 @@ class PrimaryStageDecisionStoreTest {
         reads(closed);
 
         assertEquals(PrimaryStageDecisionStore.Outcome.ALREADY_CLOSED,
-                store.fromWebhook(webhook("success", null), null, command, null));
+                store.fromWebhook(webhook("success", null), null, command, null, closed));
         verify(db, never()).updateItem(any(UpdateItemRequest.class));
     }
 
@@ -218,10 +227,10 @@ class PrimaryStageDecisionStoreTest {
         });
         doThrow(new IllegalStateException("Kafka unavailable")).doNothing().when(publisher).publish(anyMap());
         var item = webhook("success", null);
-        assertThrows(IllegalStateException.class, () -> store.fromWebhook(item, null, command, null));
+        assertThrows(IllegalStateException.class, () -> store.fromWebhook(item, null, command, null, origin));
         String frozen = origin.get("primary_decision").s();
         assertEquals(PrimaryStageDecisionStore.Outcome.ALREADY_CLOSED,
-                store.fromWebhook(item, null, command, null));
+                store.fromWebhook(item, null, command, null, origin));
         verify(db, times(1)).updateItem(any(UpdateItemRequest.class));
         verify(publisher, times(2)).publish(argThat(value -> frozen.equals(value.get("primary_decision").s())));
     }
@@ -229,6 +238,7 @@ class PrimaryStageDecisionStoreTest {
     @Test
     void lostWriteResponseResumesCommittedBusinessDecision() {
         var origin = origin(false, new PreSendDispatch(command, null));
+        var snapshot = Map.copyOf(origin);
         reads(origin);
         when(db.updateItem(any(UpdateItemRequest.class))).thenAnswer(call -> {
             var values = call.getArgument(0, UpdateItemRequest.class).expressionAttributeValues();
@@ -238,7 +248,93 @@ class PrimaryStageDecisionStoreTest {
             throw new IllegalStateException("response lost after commit");
         });
         assertEquals(PrimaryStageDecisionStore.Outcome.STORED,
-                store.fromWebhook(webhook("success", null), null, command, null));
+                store.fromWebhook(webhook("success", null), null, command, null, snapshot));
         verify(publisher).publish(origin);
+        verify(db).getItem(argThat((GetItemRequest request) -> request.consistentRead()
+                && request.key().equals(MessageOriginCodec.key(ID))));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"WEBHOOK", "PRIMARY_EXPIRY"})
+    void staleSnapshotResumesTheWinningDecisionInsteadOfPublishingTheProposedResult(String source) {
+        var snapshot = origin(false, new PreSendDispatch(command, null));
+        var latest = new HashMap<>(snapshot);
+        var winner = new PrimaryStageDecision("winner", ID, PrimaryStageDecision.Kind.FAILURE, source,
+                "WEBHOOK".equals(source) ? 66003 : null,
+                "PRIMARY_EXPIRY".equals(source) ? "PRIMARY_EXPIRED" : null,
+                command.carrier(), command.invocation(), false, NOW.minusSeconds(10));
+        latest.put("status", AttributeValue.fromS("PRIMARY_EXPIRY".equals(source) ? "PRIMARY_EXPIRED" : "PRIMARY_FAILED"));
+        latest.put("primary_decision_id", AttributeValue.fromS(winner.decisionId()));
+        latest.put("primary_decision", AttributeValue.fromS(mapper.writeValueAsString(winner)));
+        reads(latest);
+        when(db.updateItem(any(UpdateItemRequest.class)))
+                .thenThrow(ConditionalCheckFailedException.builder().message("Another decision won").build());
+
+        assertEquals(PrimaryStageDecisionStore.Outcome.ALREADY_CLOSED,
+                store.fromWebhook(webhook("success", null), null, command, null, snapshot));
+
+        verify(db, times(1)).updateItem(any(UpdateItemRequest.class));
+        verify(db).getItem(argThat((GetItemRequest request) -> request.consistentRead()));
+        verify(publisher).publish(latest);
+        verifyNoMoreInteractions(publisher);
+    }
+
+    @Test
+    void changedInvocationRemainsRetryableAndCannotPublishAStaleSuccess() {
+        var snapshot = origin(false, new PreSendDispatch(command, null));
+        var latest = new HashMap<>(snapshot);
+        var retry = new HttpSendCommand(command.attemptId(), command.carrier(), 2,
+                command.deadlineAt(), command.request());
+        latest.put(messaging.common.messages.FollowupHttpCommand.CURRENT_DECISION, AttributeValue.fromS("retry"));
+        latest.put(messaging.common.messages.FollowupHttpCommand.CURRENT_COMMAND,
+                AttributeValue.fromS(mapper.writeValueAsString(retry)));
+        reads(latest);
+        var conflict = ConditionalCheckFailedException.builder().message("Invocation advanced").build();
+        when(db.updateItem(any(UpdateItemRequest.class))).thenThrow(conflict);
+
+        assertSame(conflict, assertThrows(ConditionalCheckFailedException.class,
+                () -> store.fromWebhook(webhook("success", null), null, command, null, snapshot)));
+
+        verify(db).getItem(argThat((GetItemRequest request) -> request.consistentRead()));
+        verifyNoInteractions(publisher);
+    }
+
+    @Test
+    void ambiguousWriteWithoutAStoredDecisionRemainsRetryable() {
+        var snapshot = origin(false, new PreSendDispatch(command, null));
+        reads(snapshot);
+        var unavailable = new IllegalStateException("Write response unavailable");
+        when(db.updateItem(any(UpdateItemRequest.class))).thenThrow(unavailable);
+
+        assertSame(unavailable, assertThrows(IllegalStateException.class,
+                () -> store.fromWebhook(webhook("success", null), null, command, null, snapshot)));
+
+        verify(db).getItem(argThat((GetItemRequest request) -> request.consistentRead()));
+        verifyNoInteractions(publisher);
+    }
+
+    @Test
+    void removedOriginCannotBeRecreatedFromAStaleSnapshot() {
+        var snapshot = origin(false, new PreSendDispatch(command, null));
+        reads(Map.of());
+        when(db.updateItem(any(UpdateItemRequest.class)))
+                .thenThrow(ConditionalCheckFailedException.builder().message("Already cleaned up").build());
+
+        assertEquals(PrimaryStageDecisionStore.Outcome.ALREADY_CLOSED,
+                store.fromWebhook(webhook("success", null), null, command, null, snapshot));
+
+        verify(db).getItem(argThat((GetItemRequest request) -> request.consistentRead()));
+        verifyNoInteractions(publisher);
+    }
+
+    @Test
+    void rejectsAnotherMessagesOriginBeforeWritingOrPublishing() {
+        var snapshot = origin(false, new PreSendDispatch(command, null));
+        snapshot.put("delivery_id", AttributeValue.fromS("b".repeat(32)));
+
+        assertThrows(IllegalArgumentException.class,
+                () -> store.fromWebhook(webhook("success", null), null, command, null, snapshot));
+
+        verifyNoInteractions(db, publisher);
     }
 }

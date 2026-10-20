@@ -27,9 +27,14 @@ public class WebhookPrimaryDecisionService {
     public sealed interface Outcome permits FollowupStored, SuccessPending, PrimaryFailurePending,
             AwaitingHttp, Ignored { }
     public record FollowupStored(FollowupHttpCommand value) implements Outcome { }
-    public record SuccessPending(String previousDecisionId, HttpSendCommand command) implements Outcome { }
+    public record SuccessPending(String previousDecisionId, HttpSendCommand command,
+                                 Map<String, AttributeValue> origin) implements Outcome {
+        public SuccessPending { origin = Map.copyOf(origin); }
+    }
     public record PrimaryFailurePending(int errorCode, String previousDecisionId,
-                                        HttpSendCommand command) implements Outcome { }
+                                        HttpSendCommand command, Map<String, AttributeValue> origin) implements Outcome {
+        public PrimaryFailurePending { origin = Map.copyOf(origin); }
+    }
     public record AwaitingHttp() implements Outcome { }
     public record Ignored() implements Outcome { }
 
@@ -83,13 +88,13 @@ public class WebhookPrimaryDecisionService {
         var http = mapper.readValue(observation.s(), CarrierHttpResult.class);
         if (http.status() == CarrierHttpResult.Status.FAILED) return new Ignored();
 
-        if ("success".equals(webhook.result().status())) return new SuccessPending(previousDecision, current);
+        if ("success".equals(webhook.result().status())) return new SuccessPending(previousDecision, current, origin);
         int errorCode = webhook.result().error().code();
         var action = PrimaryHttpFailureDecision.decide(errorCode, current.carrier(), current.invocation(),
                 errorCode == PrimaryHttpFailureCodes.NOT_OUR_CARRIER ? attempted(item.clientMsgId()) : Set.of(),
                 clock.instant());
         if (action instanceof PrimaryHttpFailureDecision.FailPrimary failed) {
-            return new PrimaryFailurePending(failed.errorCode(), previousDecision, current);
+            return new PrimaryFailurePending(failed.errorCode(), previousDecision, current, origin);
         }
         var send = (PrimaryHttpFailureDecision.Send) action;
         var next = new HttpSendCommand(HttpSendCommand.attemptId(item.clientMsgId(), send.carrier()),

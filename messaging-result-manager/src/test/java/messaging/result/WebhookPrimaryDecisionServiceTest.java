@@ -11,12 +11,15 @@ import messaging.common.messages.MessageSubmission;
 import messaging.common.messages.MessageWebhookResult;
 import messaging.common.messages.PreSendDispatch;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.services.dynamodb.model.GetItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.GetItemResponse;
 import software.amazon.awssdk.services.dynamodb.model.QueryRequest;
 import software.amazon.awssdk.services.dynamodb.model.QueryResponse;
+import software.amazon.awssdk.services.dynamodb.model.UpdateItemRequest;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.time.Clock;
@@ -95,6 +98,37 @@ class WebhookPrimaryDecisionServiceTest {
                 service.process(webhook(HttpCarrier.SKT, "success", null)));
         verifyNoInteractions(commands);
         verify(db, never()).query(any(QueryRequest.class));
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void terminalWebhookReusesTheVerifiedOriginThroughTheDispatcher(boolean success) {
+        var origin = origin();
+        if (!success) origin.put("secondary_send_payload", AttributeValue.fromS("{\"text\":\"backup\"}"));
+        reads(origin, observed(CarrierHttpResult.Status.ACCEPTED));
+        var item = webhook(HttpCarrier.SKT, success ? "success" : "fail", success ? null : 66003);
+        var publisher = mock(ResultKafkaPublisher.class);
+        var terminal = new PrimaryStageDecisionStore(db, mapper, Clock.fixed(NOW, ZoneOffset.UTC), publisher);
+        var inbox = mock(MessageResultInboxStore.class);
+        var dispatcher = new PendingResultDispatcher(db, inbox, service, mock(HttpFailureFollowupService.class),
+                terminal, mock(SecondaryResultService.class), mapper, Clock.fixed(NOW, ZoneOffset.UTC), 100,
+                new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
+
+        dispatcher.process(item, NOW);
+
+        var requests = org.mockito.ArgumentCaptor.forClass(GetItemRequest.class);
+        verify(db, times(2)).getItem(requests.capture());
+        assertEquals(java.util.List.of("ORIGIN", "STEP"),
+                requests.getAllValues().stream().map(GetItemRequest::tableName).toList());
+        assertTrue(requests.getAllValues().stream().allMatch(GetItemRequest::consistentRead));
+        var order = inOrder(db, publisher, inbox);
+        order.verify(db).updateItem(any(UpdateItemRequest.class));
+        order.verify(publisher).publish(argThat(frozen -> item.resultId().equals(frozen.get("primary_decision_id").s())
+                && (success ? "PRIMARY_SUCCEEDED" : "SECONDARY_PENDING").equals(frozen.get("status").s())
+                && origin.get("message_id").equals(frozen.get("message_id"))));
+        order.verify(inbox).processed(item);
+        verify(inbox, never()).defer(any(), any());
+        verifyNoInteractions(commands);
     }
 
     @Test
@@ -196,6 +230,18 @@ class WebhookPrimaryDecisionServiceTest {
                 && "HTTP_COMMAND#".equals(request.expressionAttributeValues().get(":prefix").s())));
         verify(db, times(2)).getItem(any(GetItemRequest.class));
         verifyNoInteractions(commands);
+
+        var publisher = mock(ResultKafkaPublisher.class);
+        var terminal = new PrimaryStageDecisionStore(db, mapper, Clock.fixed(NOW, ZoneOffset.UTC), publisher);
+        assertEquals(PrimaryStageDecisionStore.Outcome.STORED,
+                terminal.fromWebhook(webhook(HttpCarrier.SKT, "success", null), outcome.previousDecisionId(),
+                        outcome.command(), null, outcome.origin()));
+        var write = org.mockito.ArgumentCaptor.forClass(UpdateItemRequest.class);
+        verify(db).updateItem(write.capture());
+        assertTrue(write.getValue().conditionExpression().contains("#currentDecision = :previous AND #currentCommand = :command"));
+        assertEquals("earlier-result", write.getValue().expressionAttributeValues().get(":previous").s());
+        assertEquals(mapper.writeValueAsString(retry), write.getValue().expressionAttributeValues().get(":command").s());
+        verify(db, times(2)).getItem(any(GetItemRequest.class));
     }
 
     private MessageResultInboxStore.Item webhook(HttpCarrier carrier, String status, Integer errorCode) {

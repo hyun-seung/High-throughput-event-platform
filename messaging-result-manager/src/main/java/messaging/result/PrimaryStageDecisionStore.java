@@ -48,7 +48,7 @@ public class PrimaryStageDecisionStore {
     }
 
     public Outcome fromWebhook(MessageResultInboxStore.Item item, String previousDecisionId,
-                               HttpSendCommand command, Integer errorCode) {
+                               HttpSendCommand command, Integer errorCode, Map<String, AttributeValue> origin) {
         if (!"WEBHOOK".equals(item.source())) throw new IllegalArgumentException("Expected webhook item");
         var webhook = mapper.readValue(item.payload(), MessageResultInboxStore.WebhookItem.class);
         if (!item.clientMsgId().equals(webhook.result().clientMsgId())
@@ -58,8 +58,11 @@ public class PrimaryStageDecisionStore {
                 || ("success".equals(webhook.result().status())) != (errorCode == null)) {
             throw new IllegalArgumentException("Webhook decision context mismatch");
         }
+        if (!item.clientMsgId().equals(Objects.requireNonNull(origin).getOrDefault("delivery_id", s("")).s())) {
+            throw new IllegalArgumentException("Webhook ORIGIN belongs to another message");
+        }
         return freeze(item, previousDecisionId, command, errorCode,
-                null, errorCode == null ? PrimaryStageDecision.Kind.SUCCESS : PrimaryStageDecision.Kind.FAILURE);
+                null, errorCode == null ? PrimaryStageDecision.Kind.SUCCESS : PrimaryStageDecision.Kind.FAILURE, origin);
     }
 
     public Outcome fromHttp(MessageResultInboxStore.Item item,
@@ -147,7 +150,15 @@ public class PrimaryStageDecisionStore {
     private Outcome freeze(MessageResultInboxStore.Item item, String previousDecisionId,
                            HttpSendCommand command, Integer errorCode, String reason,
                            PrimaryStageDecision.Kind kind) {
-        var origin = read(ORIGIN, MessageOriginCodec.key(item.clientMsgId()));
+        return freeze(item, previousDecisionId, command, errorCode, reason, kind,
+                read(ORIGIN, MessageOriginCodec.key(item.clientMsgId())));
+    }
+
+    private Outcome freeze(MessageResultInboxStore.Item item, String previousDecisionId,
+                           HttpSendCommand command, Integer errorCode, String reason,
+                           PrimaryStageDecision.Kind kind, Map<String, AttributeValue> origin) {
+        // Webhooks reuse their verified snapshot. The conditional write still checks
+        // current state/invocation; a race or ambiguous write response reloads below.
         if (!("PRIMARY_EXPIRY".equals(item.source()) ? activeForExpiry(origin) : active(origin))) {
             publisher.publish(origin);
             return Outcome.ALREADY_CLOSED;

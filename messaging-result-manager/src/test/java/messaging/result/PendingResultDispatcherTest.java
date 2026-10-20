@@ -95,11 +95,11 @@ class PendingResultDispatcherTest {
     void successFreezesThePrimaryStageAndCompletesTheInboxItem() {
         when(inbox.loadPending(key, NOW)).thenReturn(item);
         var command = mock(HttpSendCommand.class);
-        when(decisions.process(item)).thenReturn(new WebhookPrimaryDecisionService.SuccessPending(null, command));
+        when(decisions.process(item)).thenReturn(new WebhookPrimaryDecisionService.SuccessPending(null, command, Map.of()));
 
         dispatcher.dispatch(key, NOW);
 
-        verify(terminal).fromWebhook(item, null, command, null);
+        verify(terminal).fromWebhook(item, null, command, null, Map.of());
         verify(inbox).processed(item);
     }
 
@@ -151,8 +151,8 @@ class PendingResultDispatcherTest {
     @Test
     void failedDirectKafkaHandoffDoesNotCompleteTheCapturedInput() {
         var command = mock(HttpSendCommand.class);
-        when(decisions.process(item)).thenReturn(new WebhookPrimaryDecisionService.SuccessPending(null, command));
-        when(terminal.fromWebhook(item, null, command, null)).thenThrow(new IllegalStateException("Kafka unavailable"));
+        when(decisions.process(item)).thenReturn(new WebhookPrimaryDecisionService.SuccessPending(null, command, Map.of()));
+        when(terminal.fromWebhook(item, null, command, null, Map.of())).thenThrow(new IllegalStateException("Kafka unavailable"));
         assertThrows(IllegalStateException.class, () -> dispatcher.process(item, NOW));
         verify(inbox, never()).processed(any());
     }

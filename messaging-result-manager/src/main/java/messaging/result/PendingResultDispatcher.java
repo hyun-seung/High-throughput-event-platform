@@ -114,10 +114,11 @@ public class PendingResultDispatcher {
             } else if (outcome instanceof WebhookPrimaryDecisionService.AwaitingHttp) {
                 inbox.defer(item, now.plus(Duration.ofSeconds(5)));
             } else if (outcome instanceof WebhookPrimaryDecisionService.SuccessPending success) {
-                terminal.fromWebhook(item, success.previousDecisionId(), success.command(), null);
+                terminal.fromWebhook(item, success.previousDecisionId(), success.command(), null, success.origin());
                 inbox.processed(item);
             } else if (outcome instanceof WebhookPrimaryDecisionService.PrimaryFailurePending failure) {
-                terminal.fromWebhook(item, failure.previousDecisionId(), failure.command(), failure.errorCode());
+                terminal.fromWebhook(item, failure.previousDecisionId(), failure.command(), failure.errorCode(),
+                        failure.origin());
                 inbox.processed(item);
             }
         } else if ("HTTP_RESPONSE".equals(item.source()) || "HTTP_TIMEOUT".equals(item.source())) {
