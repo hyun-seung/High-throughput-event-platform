@@ -860,3 +860,92 @@ ack를 확인한 세 요청은 같은 실행을 재발행하므로 RECEIVED·SKT
 이 작업에서 변경한 실행 컨테이너는 두 AP와 일시 정지·복원한 관측 서비스 3개다. 초기·후속 전체 상태 대조에서는 다른 저장소의 `aws-rcs-poc` Kafka도 별도로 재생성된 상태를 관측했다. 해당 프로젝트에는 변경 명령을 보내지 않았으며 전체 외부 환경이 고정됐다고 주장하지 않는다. 관측 대상 33개는 모두 running·OOM 종료 흔적 없음이었다. 근거는 `.monitoring/runtime-timeouts/containers-before.json`·`containers-after.json`이다.
 
 다음 검증에는 동시 실행 범위 결정이 필요하다. 사용자에게 `aws-rcs-poc` 4개와 `rcs_grafana_lgtm_demo` 6개의 일시 정지·검증 후 복원, rcs 데모 6개만 정지, 다른 프로젝트 유지·검증 시간 분리 중 선택을 요청했다. **아직 승인되지 않아 다른 프로젝트는 정지하지 않는다.** 추천은 두 프로젝트 10개를 검증 동안만 정지하고 볼륨·원래 실행 상태를 보존해 복원하는 것이다. 정확한 대상과 대기 상태는 `.monitoring/runtime-timeouts/proposed-other-project-pause.json`에 있다. 선택을 받으면 현재 상태를 다시 확인하고, 실패 부하의 읽기 대조·lag 확인 후 새로운 고유 요청으로 재측정한다. 기존 실패 요청은 재전송하지 않는다.
+
+## 코드 기준 성능 최적화 검토 — 2026-10-20
+
+검토 소스는 `7471254`다. 접수·발송 준비·HTTP Sender·결과 판단·완료 정리·고객 웹훅의 코드와 기존 측정 기록을 확인했다. 아래 수치는 코드의 반복 횟수·기본 스케줄 설정으로 계산한 값이며 실제 AP 최대 수용량이나 새 성능 측정값이 아니다. 이번 검토에서 업무 코드·실행 설정을 변경하거나 새 부하를 실행하지 않았다. 이전 실패 시험의 공유 VM 제약과 다른 프로젝트 정지 범위 결정은 여전히 별도 경계다.
+
+### 우선순위 1: 완료 정리의 고정 대기
+
+`FinalizedDynamoCleanup.poll`은 기본 100건 × 최대 4페이지를 처리하고 종료한다. `@Scheduled(fixedDelay=5000)`이므로 잔여 건이 있어도 다음 회차까지 5초를 기다린다. 다른 즉시 정리 호출 경로는 없다. **한 인스턴스에서 저장소 처리 시간을 0으로 놓아도 스케줄 설정상 상한은 400/5 = 초당 80건**이다. 실제 처리 비용이 있으면 이보다 낮고, 실패·재선택 후보는 성공 정리 건수와 구분해야 한다. 현재 종단 완료 정의가 원본 정리 시각까지 포함하므로 최종 완료 10,000 TPS와 직접 연결된다.
+
+권장 방향은 backlog가 남으면 제한된 시간·작업량 예산 안에서 연속 처리하고, 예산을 다 쓰면 곧 다음 회차를 깨우며, 빈 큐에는 기존 유휴 대기를 적용하는 것이다. SQL commit 뒤 깨우기는 보조 신호로 사용할 수 있고 SQL의 PENDING 상태와 정기 조회가 복구를 맡는다. 같은 poll 중첩 금지·전체 동시성 상한·실패 backoff·SQL 최종 결과와 두 Kafka ack 확인·모든 STEP 삭제 후 ORIGIN 삭제 순서를 유지한다. 단순히 무한 반복하거나 페이지 상한만 크게 늘리면 한 작업이 스케줄러를 오래 점유할 수 있다.
+
+즉시 깨우기가 항상 더 빠른 것도 아니다. SQL commit이 ORIGIN의 두 Kafka ack 확인 기록보다 빠를 수 있으며, 현재는 ack가 없으면 `defer`로 10초 뒤에 다시 검사한다. 신호 처리 시점과 이 준비 대기·backoff를 함께 검증해야 하고, 준비되지 않은 같은 행을 반복 조회하는 루프나 기존보다 긴 완료 지연을 만들지 않아야 한다.
+
+근거: `messaging-complete-manager/.../FinalizedDynamoCleanup.java:58-90`, 같은 모듈 `application.yml:57-60`. 완료 건수/초와 함께 실제 건별 처리 시간, 회차 평균 시간·페이지 수·회차 사이 대기·SQL 정리 지연을 측정한다.
+
+### 우선순위 1: 고객 웹훅의 배치 하나씩 발송
+
+`WebhookDeliveryScheduler.tick`은 기본 100ms마다 고객을 한 번씩 방문하고, `WebhookDeliveryService.deliver`는 배치 하나만 claim·전송·완료한다. 같은 고객의 중첩 작업은 `active`가 막고 배치는 최대 100건이다. **한 인스턴스·고객 한 명에 대해 HTTP·DB 시간이 0이어도 스케줄 기준 상한은 약 초당 1,000건**이다. 이는 측정 용량이 아니며 고객 수·AP 수가 달라지면 조건도 달라진다. 전역 worker 수만 늘려도 같은 고객의 이 제한은 해소되지 않는다.
+
+성공한 배치 뒤 대기 데이터가 있으면 고객별 작업량·시간 예산 안에서 다음 배치를 이어 보내는 방식을 검토한다. 고객별 순서·동시 in-flight 한 개·lease와 재시도 시각·다른 고객의 공정성을 유지하며 실패 시 빠른 재전송 루프를 만들지 않는다. 고객 1명 집중과 여러 고객 분산을 각각 측정한다.
+
+근거: `messaging-webhook-sender/.../WebhookDeliveryScheduler.java:37-54`, `WebhookDeliveryService.java:24-37`, `WebhookBatchRepository.java:94-120`.
+
+### 우선순위 1: 결과 판단의 중복 ORIGIN 읽기
+
+일반 최초 성공 웹훅은 `WebhookPrimaryDecisionService.process`에서 ORIGIN·HTTP STEP을 읽고, `PrimaryStageDecisionStore.freeze`가 같은 ORIGIN을 다시 읽는다. 동일 처리 안에서 확인한 원본을 결정 문맥에 전달하면 이 정상 경로의 일관 Get 1회를 줄일 후보가 된다. 조건 충돌·SDK 응답 유실이 없는 해당 결과 소비 경로는 현재 inbox Put 1 + Get 3 + 상태/ack/inbox Update 3 = DynamoDB 논리 호출 7회이며, 제안대로라면 6회다. SDK 재시도·타 AP·Kafka 호출·완료 정리는 이 수에 포함하지 않는다.
+
+캐시를 추가하는 방식이 아니라 같은 처리 범위의 snapshot을 전달한다. 실행 ID·전문 검증과 상태·현재 회차·완료 여부의 조건부 Update를 유지하고, 조건 충돌·저장 응답 유실에는 기존처럼 최신 원본을 일관 조회해 승리한 불변 판단으로 복구해야 한다. 만료·회차 변경·동시 웹훅 경합을 검증한 뒤 적용한다.
+
+근거: `messaging-result-manager/.../WebhookPrimaryDecisionService.java:58-86`, `PendingResultDispatcher.java:116-121`, `PrimaryStageDecisionStore.java:147-227`, `MessageResultInboxStore.java:135-155`.
+
+### 우선순위 1: 고객 웹훅 JSON의 누적 재생성
+
+`WebhookBatchRepository.claim`은 항목을 하나 추가할 때마다 현재 전체 목록을 `CustomerWebhookBatch`로 복사·직렬화하고 UTF-8 바이트 배열도 다시 만든다. 100건이 모두 들어가면 목록 항목 직렬화 방문 횟수 합은 1+2+…+100=5,050회다. 이는 처리량이 50배 좋아진다는 뜻이 아니라 반복 작업량의 계산이다. 이 작업은 고객 lane의 SQL 트랜잭션 안에서 실행된다.
+
+각 결과를 한 번씩 직렬화해 크기를 누적하거나 JSON 생성기를 사용해 최종 본문을 한 번 만드는 후보가 있다. 공통 필드·배열·구분자·이스케이프·null·한글을 포함한 정확한 UTF-8 크기, 최대 100건과 바이트 제한, 배치 ID·항목 순서·재시도 본문 고정을 유지한다. 1건/100건·바이트 경계·다국어·실패/2차 결과로 본문과 배치 구성이 같음을 확인하고 CPU·할당량·트랜잭션 점유 시간을 비교한다.
+
+근거: `messaging-webhook-sender/.../WebhookBatchRepository.java:94-129`, `CustomerWebhookBatch.java:11-16`.
+
+### 우선순위 2: 100건 결과 입력의 제한된 병렬 처리
+
+업체 웹훅 한 요청은 Kafka 1레코드에 최대 100개 메시지를 담는다. `MessageResultInboxStore.capture`가 조건부 Put을 건별 순차 실행한 다음 `MessageResultConsumer`가 결과 판단·저장·발행도 건별 순차 실행한다. 느린 한 메시지의 I/O가 같은 레코드의 나머지 메시지를 기다리게 한다.
+
+서로 다른 실행의 저장·처리를 작은 동시성으로 비교할 수 있다. 동일 `clientMsgId`의 순서와 조건부 상태 변경, 부분 저장 후 재전달의 동일 payload 확인, 입력 보존과 모든 필요한 ack 확인 후 offset 완료를 유지한다. 한 항목의 실패 때 다른 진행 중 작업의 결과도 수습하고 무제한 작업 제출을 막아야 한다. 조건부 Put을 검증 없이 무조건 배치 쓰기로 치환하는 제안은 아니다. 배치 시간·평균 메시지 수·메시지별 실제 처리 시간과 처리량을 따로 기록한다.
+
+근거: `messaging-result-manager/.../MessageResultInboxStore.java:57-84`, `MessageResultConsumer.java:27-33`; `MessageWebhookBatch`가 배치 내 중복 실행 ID를 거절한다.
+
+### 우선순위 2: 기준정보 조회와 정리의 I/O 효율
+
+- PRE-SEND의 정상 활성 계약 경로는 계약 Redis GET 뒤 전화번호 Redis GET을 순차 실행한다. 계약 miss마다 PostgreSQL을 조회하며 조회 결과를 캐시에 채우지는 않는다. 계약 hit/miss·SQL fallback 비율과 각 실제 지연을 먼저 계측하고 독립 읽기의 파이프라인을 비교한다. Redis Cluster에서는 키 배치와 노드별 분산 호출 특성을 확인해야 한다. CDC 갱신과 충돌할 수 있는 무조건 cache 쓰기나 기간 제한 없는 로컬 cache는 제안하지 않는다. 기본 모니터링 구성은 계약 SQL 초기화만 하고 CDC AP·계약 Redis 초기값을 자동 구성하지 않으므로 별도 주입 상태를 확인해야 하며, 실제 cache hit 비율을 100%라고 가정하지 않는다.
+- 완료 정리의 STEP Query는 전체 payload를 받지만 `pk/sk`만 사용한다. 해당 필드 projection으로 응답·객체 생성량을 줄일 수 있으며 호출 횟수가 감소하는 것은 아니다. STEP별 TTL Update는 순차이므로 AP 전체 동시성 예산 안에서 제한된 병렬화도 후보가 된다. 모든 필요한 TTL 반영 뒤 STEP 삭제, 마지막 ORIGIN 삭제의 장벽을 유지한다. 건별 SQL DONE 갱신은 성공 행을 모아 반영할 여지도 있으나 오류·중단 후 기존 PENDING 재시도를 유지해야 한다.
+
+근거: `messaging-pre-send-manager/.../PreSendReferenceReader.java:25-41`, `PreSendPreparation.java:40-45`, `monitoring/init.sql`, `monitoring/compose.yml:60-75`; `messaging-complete-manager/.../FinalizedDynamoCleanup.java:129-206`.
+
+### 후속 검토와 유지할 계약
+
+API는 Kafka future 대기 동안 servlet thread를 사용하고 HTTP Sender도 외부 HTTP·저장·Kafka 인계를 같은 소비 스레드에서 기다린다. 위 낭비를 줄인 후 thread 점유·풀 대기·큐 크기를 측정해 제한된 비동기 처리나 pipeline을 검토한다. API의 200은 계속 Kafka ack 이후여야 하며, Sender는 같은 명령의 중복 보호·시작 시점·timeout 복구·통신사 수용량을 유지해야 한다. 단순히 future를 분리하고 offset/응답을 먼저 완료하는 변경은 해당하지 않는다.
+
+결과 Manager의 두 출력은 `MSG-RESULT-FINALIZED` ack를 받은 뒤 `WEBHOOK-SEND`를 발행한다. `ResultKafkaPublisherTest.pendingAckHoldsProcessingAndDoesNotAllowCleanup`과 `failedFinalAckPropagatesAndDoesNotSendWebhookOrReceipt`가 이 순서를 명시적으로 검증한다. 두 send를 먼저 시작하고 함께 기다리면 첫 출력 실패 시에도 고객 통지가 나갈 수 있어 현재 계약이 바뀐다. **이 단순 병렬화는 이번 추천에서 제외한다.** 즉시 발행 Outbox를 다시 도입하거나 멱등 조건·ack 확인을 줄이는 변경도 하지 않는다.
+
+검증은 우선 중복 Get과 JSON 생성의 동등성·경합 회귀부터 준비하고, 완료 정리·고객 웹훅의 backlog 연속 처리와 유휴 대기를 분리한다. 각 변경은 기존 AP 안에서 목적별로 나누고 파티션 3개·AP 한 인스턴스 조건에서 건별 SDK/SQL 호출 수·응답 byte·실제 평균 처리 시간·실제 배치 크기·완료 지연을 비교한다. cache hit 비율과 고객 분포·실패 비율도 고정한다. 새 고유 요청의 접수·최종 이력·과금 대상·고객 통지·정리와 중복 부재를 대조한 뒤 짧은 단계별 부하와 확장 검증으로 이어간다. 기존 기록만으로 개선율이나 독립 최대 용량을 제시하지 않는다.
+
+## 완료 정리의 backlog 연속 예약 — 2026-10-20
+
+위 검토 이후 첫 코드 개선으로 `FinalizedDynamoCleanup`의 회차 사이 대기를 바꿨다. `@Scheduled`의 고정 지연 대신 같은 bean의 `SchedulingConfigurer`에서 완료 시점과 회차 결과에 따라 다음 실행을 예약한다. 기본 100건 × 최대 4페이지가 모두 차면 다음 회차를 즉시 예약해 스케줄러에 제어를 돌려주고, 짧거나 빈 페이지가 나오거나 회차가 실패하면 완료 시점부터 기존 `poll-ms`(기본 5초)를 기다린다. 정확히 400건의 배수만 대기 중이었다면 다음 회차의 빈 조회 한 번 뒤 유휴 대기로 돌아간다. 무한 루프로 한 스케줄 실행을 점유하지 않는다.
+
+최초 지연은 `initial-delay-ms`(기본 5초), 회차별 최대 페이지 수는 4, 메시지 동시성은 2로 유지한다. 최초 지연은 0 이상, 유휴·오류 지연은 1ms 이상이어야 한다. 매 회차 시작 때 즉시 예약 상태를 초기화해 이전 회차가 가득 찼더라도 SQL 오류나 중단 후 빠른 실패 재시도 루프가 되지 않는다. `enabled=false` 또는 enabled 설정이 없는 경우 정리 bean과 작업을 등록하지 않는다.
+
+정리 업무 로직은 유지했다. SQL commit 때마다 정리를 즉시 깨우는 변경은 없으며, ORIGIN의 두 Kafka 인계 확인 기록이 아직 없으면 기존대로 10초 뒤에 검사한다. 개별 실패의 증가형 SQL backoff, 모든 TTL 반영 뒤 STEP 삭제·마지막 ORIGIN 삭제, 부분 삭제의 PENDING 재시도, 중단 시 worker 종료를 기다린 뒤 poll lock 해제도 같다.
+
+JDK 21에서 완료 정리 관련 24개 테스트가 통과했다. 기존 17개는 Kafka 인계 장벽·TTL/삭제 순서·부분 처리·행별 재시도·제한 병렬 처리·중단 후 worker drain을 검증한다. 추가 7개는 기본 최초 지연, 가득 찬 회차의 즉시 예약과 빈 큐의 대기 복귀, 오류·중단 뒤 지연 복원, 실제 Spring scheduler에서 5초 전에 다음 회차 진행·동일 poll 중첩 방지·빈 큐 반복 방지·오류 후 재예약, 비활성화와 잘못된 지연 설정을 확인한다. 실제 스케줄러 시험의 JDBC·DynamoDB는 mock이므로 AP·저장소의 처리량 측정으로 해석하지 않는다.
+
+이후 `JAVA_HOME`을 JDK 21로 지정해 `bash scripts/test-java.sh unit`의 전체 12개 모듈 `clean verify`를 통과했다. 70개 suite·275개 실행·환경 의존 40개 제외·실패/오류 0개이며 Maven 원문과 집계는 `.test-results/java-test-20261020063239-19407/`에 보존한다.
+
+현재 변경 JAR은 실행 중인 AP에 적용하지 않았고 새 부하도 실행하지 않았다. 기존의 400건마다 5초 대기하는 설정상 제한을 없앤 것이며 AP 최대 수용량이나 서비스 10,000 TPS 달성을 입증한 결과는 아니다. 실제 저장소를 포함한 적용·단계 부하 비교는 남아 있고, 다른 프로젝트의 일시 정지는 여전히 승인받지 않았다. 다음 코드 개선은 결과 판단의 중복 ORIGIN Get 1회 제거이며 조건 충돌·응답 유실에는 최신 일관 조회로 복구하는 기존 계약을 유지한다.
+
+## 결과 판단의 중복 ORIGIN 조회 제거 — 2026-10-20
+
+두 번째 코드 개선으로 웹훅이 성공 또는 1차 최종 실패로 판단된 경우의 중복 ORIGIN Get을 제거했다. `WebhookPrimaryDecisionService`가 ORIGIN·현재 HTTP STEP을 일관 조회해 검증한 뒤, `SuccessPending`·`PrimaryFailurePending`에 `Map.copyOf`로 원본 snapshot을 담는다. `PendingResultDispatcher`가 이 snapshot을 최종 판단 저장에 전달하므로 `PrimaryStageDecisionStore.fromWebhook`은 정상 경로에서 다시 Get하지 않는다. 이 전달은 같은 입력 처리 범위 안에서만 사용하며 전역 cache를 만들지 않는다. 다른 메시지의 ORIGIN이 전달되면 쓰기 전에 거절한다.
+
+정상 최초 성공 웹훅의 Get은 기존 ORIGIN 2 + STEP 1에서 ORIGIN 1 + STEP 1로 감소한다. inbox Put 1 + Get 2 + 상태/ack/inbox Update 3으로 DynamoDB 논리 호출은 7회에서 6회다. 이 수에는 SDK 재시도·Kafka·타 AP·완료 정리가 포함되지 않으며, 오류·경합 복구에서는 추가 Get이 필요하다. HTTP 실패·PRE-SEND·만료 판단의 기존 조회 흐름은 이번에 바꾸지 않았다.
+
+입력 ID·웹훅·전문 검증과 `delivery_id`, RECEIVED 상태, 판단·완료 기록 부재, 최초 전문 또는 현재 판단 ID·전문의 조건부 쓰기는 유지한다. 원본을 읽은 뒤 다른 웹훅·만료 판단이 먼저 닫았다면 조건 충돌 후 최신 원본을 일관 조회해 승리한 불변 판단을 발행한다. 저장이 반영됐지만 응답이 유실된 경우에도 저장된 시각·결과를 재사용한다. 발송 회차가 바뀌었거나 저장 여부를 확정하지 못한 상태가 여전히 활성이라면 예외를 전파해 inbox를 재시도하며, 삭제된 원본은 재생성하지 않는다. Kafka ack 실패 시 입력을 완료하지 않는 동작과 최종 결과 ack 후 고객 웹훅 발행 순서도 유지한다.
+
+JDK 21에서 `./mvnw -pl messaging-result-manager -am test`가 통과했다. 공통 모듈 29개와 결과 Manager 98개가 실행됐으며 실패·오류·제외는 0개다. 추가 회귀 8개는 실제 검증 service·dispatcher·판단 store를 연결한 성공/2차 대기 경로의 일관 Get 2회, 다른 웹훅/만료 판단의 승리, 회차 변경, 결과 미확정 쓰기 실패, 원본 삭제, 다른 메시지 snapshot 거절을 확인한다. 기존 저장 응답 유실 회귀는 읽기 전 snapshot을 고정한 뒤 최신 원본 조회를 검증하고, 현재 재시도 회차의 성공 회귀는 판단 저장까지 연결해 현재 ID·전문 조건과 추가 Get 부재를 확인했다. 이 시험의 DynamoDB·Kafka publisher는 mock이며 경합은 조건부 실패 주입으로 검증했다. 실제 저장소 동시성·처리량 시험으로 간주하지 않는다.
+
+이후 앞선 완료 정리 변경도 포함해 `bash scripts/test-java.sh unit`의 전체 12개 모듈 `clean verify`를 통과했다. 70개 suite·283개 실행·환경 의존 40개 제외·실패/오류 0개이며 원문과 집계는 `.test-results/java-test-20261020065827-22042/`에 보존한다.
+
+이번 변경도 실행 AP에 적용하거나 새 부하를 실행하지 않았다. 앞선 완료 정리 변경과 함께 실제 저장소를 포함한 적용·단계 부하 비교가 남아 있다. 현재 호출 수 감소만으로 처리량·지연 개선율이나 독립 최대 용량을 제시하지 않는다. 다음 코드 개선은 고객 웹훅 배치 구성의 누적 JSON 재생성 제거이며 정확한 UTF-8 크기·100건 제한·항목 순서·재시도 본문 고정을 검증한다.
