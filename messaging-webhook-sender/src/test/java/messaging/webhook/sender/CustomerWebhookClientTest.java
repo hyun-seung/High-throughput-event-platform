@@ -32,7 +32,7 @@ class CustomerWebhookClientTest {
         try {
             var destination = new WebhookSenderProperties.Destination(
                     URI.create("http://127.0.0.1:" + server.getAddress().getPort() + "/webhook"), false);
-            var settings = new WebhookSenderProperties(true, 100, 1, Duration.ZERO, 262144,
+            var settings = new WebhookSenderProperties(true, 100, 1, 4, Duration.ofMillis(100), Duration.ZERO, 262144,
                     Duration.ofSeconds(3), Duration.ofSeconds(30), Duration.ofSeconds(1),
                     Duration.ofSeconds(60), Map.of(42L, destination));
             var claim = new WebhookBatchRepository.Claim(UUID.randomUUID(), 42L,

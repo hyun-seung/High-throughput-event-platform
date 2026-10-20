@@ -13,6 +13,8 @@ public record WebhookSenderProperties(
         @DefaultValue("true") boolean enabled,
         @DefaultValue("100") long pollMs,
         @DefaultValue("4") int concurrency,
+        @DefaultValue("4") int maxBatchesPerTurn,
+        @DefaultValue("100ms") Duration maxTurnDuration,
         @DefaultValue("100ms") Duration batchWindow,
         @DefaultValue("262144") int maxBatchBytes,
         @DefaultValue("3s") Duration httpTimeout,
@@ -22,7 +24,10 @@ public record WebhookSenderProperties(
         Map<Long, Destination> customers) {
     public WebhookSenderProperties {
         customers = customers == null ? Map.of() : Map.copyOf(customers);
-        if (pollMs < 10 || concurrency < 1 || concurrency > 64 || batchWindow == null || batchWindow.isNegative()
+        if (pollMs < 10 || concurrency < 1 || concurrency > 64
+                || maxBatchesPerTurn < 1 || maxBatchesPerTurn > 100
+                || maxTurnDuration == null || maxTurnDuration.isNegative() || maxTurnDuration.isZero()
+                || batchWindow == null || batchWindow.isNegative()
                 || maxBatchBytes < 16384 || maxBatchBytes > 1048576 || httpTimeout == null || httpTimeout.isNegative()
                 || lease == null || lease.compareTo(httpTimeout.plusSeconds(5)) < 0
                 || retryDelay == null || retryDelay.isNegative() || maxRetryDelay == null

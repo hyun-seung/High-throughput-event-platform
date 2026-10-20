@@ -25,8 +25,12 @@ import java.util.Map;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 @EnabledIfEnvironmentVariable(named = "POSTGRES_TEST_URL", matches = ".+")
 class WebhookBatchRepositoryPostgresTest {
@@ -34,7 +38,7 @@ class WebhookBatchRepositoryPostgresTest {
     private final JsonMapper mapper = JsonMapper.builder().build();
     private final WebhookSenderProperties.Destination destination = new WebhookSenderProperties.Destination(
             URI.create("https://example.org/results"), false);
-    private final WebhookSenderProperties settings = new WebhookSenderProperties(true, 100, 4,
+    private final WebhookSenderProperties settings = new WebhookSenderProperties(true, 100, 4, 4, Duration.ofMillis(100),
             Duration.ZERO, 262144, Duration.ofSeconds(3), Duration.ofSeconds(30),
             Duration.ofMillis(1), Duration.ofSeconds(60), Map.of(42L, destination, 43L, destination));
     private HikariDataSource pool;
@@ -111,7 +115,7 @@ class WebhookBatchRepositoryPostgresTest {
         var reference = new CustomerWebhookBatch(1, new UUID(0, 0), 42,
                 commands.subList(0, 2).stream().map(CustomerWebhookBatch.Result::from).toList());
         int limit = mapper.writeValueAsString(reference).getBytes(StandardCharsets.UTF_8).length;
-        var limited = new WebhookSenderProperties(true, 100, 4, Duration.ofMinutes(10), limit,
+        var limited = new WebhookSenderProperties(true, 100, 4, 4, Duration.ofMillis(100), Duration.ofMinutes(10), limit,
                 settings.httpTimeout(), settings.lease(), settings.retryDelay(), settings.maxRetryDelay(), settings.customers());
         commands.forEach(repository::capture);
 
@@ -140,13 +144,88 @@ class WebhookBatchRepositoryPostgresTest {
     @Test
     void oversizedSingleResultRollsBackWithoutCreatingABatchOrLosingTheInput() {
         repository.capture(withMessageId(command(1, 42), "한".repeat(6000)));
-        var limited = new WebhookSenderProperties(true, 100, 4, Duration.ZERO, 16384,
+        var limited = new WebhookSenderProperties(true, 100, 4, 4, Duration.ofMillis(100), Duration.ZERO, 16384,
                 settings.httpTimeout(), settings.lease(), settings.retryDelay(), settings.maxRetryDelay(), settings.customers());
 
         assertThrows(IllegalStateException.class, () -> repository.claim(42, destination, limited));
 
         assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM tbl_webhook_batch", Integer.class));
         assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM tbl_webhook_outbox WHERE status = 'PENDING' AND batch_id IS NULL", Integer.class));
+    }
+
+    @Test
+    void oneSchedulerTickDrainsSeveralBatchesAndGivesAnotherCustomerATurn() throws Exception {
+        for (int index = 0; index < 201; index++) repository.capture(command(index, 42));
+        repository.capture(command(999, 43));
+        var properties = new WebhookSenderProperties(true, 5000, 1, 1, Duration.ofMillis(100), Duration.ZERO,
+                262144, settings.httpTimeout(), settings.lease(), settings.retryDelay(), settings.maxRetryDelay(), settings.customers());
+        var client = mock(CustomerWebhookClient.class);
+        var seen = new CopyOnWriteArrayList<Long>();
+        when(client.send(any(), any())).thenAnswer(call -> {
+            WebhookBatchRepository.Claim claim = call.getArgument(0);
+            assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM tbl_webhook_batch WHERE client_id = ? AND status = 'IN_FLIGHT'",
+                    Integer.class, claim.clientId()));
+            seen.add(claim.clientId());
+            return new CustomerWebhookClient.Result(true, 204, null);
+        });
+        var completed = new CountDownLatch(1);
+        var store = spy(repository);
+        doAnswer(call -> {
+            boolean changed = (boolean) call.callRealMethod();
+            if (changed && jdbc.queryForObject("SELECT count(*) FROM tbl_webhook_outbox WHERE status = 'DELIVERED'", Integer.class) == 202) {
+                completed.countDown();
+            }
+            return changed;
+        }).when(store).complete(any(), any(), any());
+        var service = new WebhookDeliveryService(store, client, properties,
+                new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
+
+        try (var scheduler = new WebhookDeliveryScheduler(service, properties)) {
+            scheduler.tick();
+            assertTrue(completed.await(5, TimeUnit.SECONDS), "Continue without waiting for another 5s polling tick");
+        }
+
+        assertEquals(List.of(42L, 43L, 42L, 42L), seen);
+        assertEquals(202, jdbc.queryForObject("SELECT count(*) FROM tbl_webhook_outbox WHERE status = 'DELIVERED'", Integer.class));
+        assertEquals(4, jdbc.queryForObject("SELECT count(*) FROM tbl_webhook_hist", Integer.class));
+        assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM tbl_webhook_batch WHERE status = 'IN_FLIGHT'", Integer.class));
+    }
+
+    @Test
+    void failedSecondBatchStopsTheTurnAndKeepsItsBackoffBodyAndMembership() {
+        for (int index = 0; index < 201; index++) repository.capture(command(index, 42));
+        var properties = new WebhookSenderProperties(true, 100, 1, 4, Duration.ofMillis(100), Duration.ZERO,
+                262144, settings.httpTimeout(), settings.lease(), Duration.ofSeconds(1), settings.maxRetryDelay(), settings.customers());
+        var client = mock(CustomerWebhookClient.class);
+        var success = new CustomerWebhookClient.Result(true, 204, null);
+        when(client.send(any(), any())).thenReturn(success, new CustomerWebhookClient.Result(false, 503, "HTTP_503"), success);
+        var service = new WebhookDeliveryService(repository, client, properties,
+                new io.micrometer.core.instrument.simple.SimpleMeterRegistry(), () -> 0L);
+
+        assertFalse(service.deliver(42));
+
+        var claims = org.mockito.ArgumentCaptor.forClass(WebhookBatchRepository.Claim.class);
+        verify(client, times(2)).send(claims.capture(), any());
+        var failed = claims.getAllValues().get(1);
+        assertEquals(100, jdbc.queryForObject("SELECT count(*) FROM tbl_webhook_outbox WHERE status = 'DELIVERED'", Integer.class));
+        assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM tbl_webhook_outbox WHERE batch_id IS NULL", Integer.class));
+        assertEquals(Boolean.TRUE, jdbc.queryForObject("SELECT next_attempt_at > clock_timestamp() FROM tbl_webhook_batch WHERE batch_id = ?",
+                Boolean.class, failed.batchId()));
+        assertEquals("PENDING", jdbc.queryForObject("SELECT status FROM tbl_webhook_batch WHERE batch_id = ?", String.class, failed.batchId()));
+        jdbc.update("UPDATE tbl_webhook_batch SET next_attempt_at = clock_timestamp() - interval '1 second' WHERE batch_id = ?", failed.batchId());
+
+        assertFalse(service.deliver(42));
+
+        var allClaims = org.mockito.ArgumentCaptor.forClass(WebhookBatchRepository.Claim.class);
+        verify(client, times(4)).send(allClaims.capture(), any());
+        var retried = allClaims.getAllValues().get(2);
+        assertEquals(failed.batchId(), retried.batchId());
+        assertEquals(failed.body(), retried.body());
+        assertEquals(100, retried.size());
+        assertEquals(2, retried.attempt());
+        assertEquals(1, allClaims.getAllValues().getLast().size());
+        assertEquals(201, jdbc.queryForObject("SELECT count(*) FROM tbl_webhook_outbox WHERE status = 'DELIVERED'", Integer.class));
+        assertEquals(4, jdbc.queryForObject("SELECT count(*) FROM tbl_webhook_hist", Integer.class));
     }
 
     @Test
