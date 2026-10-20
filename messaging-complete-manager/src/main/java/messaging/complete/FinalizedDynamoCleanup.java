@@ -11,7 +11,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.scheduling.annotation.SchedulingConfigurer;
+import org.springframework.scheduling.config.ScheduledTaskRegistrar;
 import org.springframework.stereotype.Component;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
@@ -42,7 +43,7 @@ import static messaging.common.dynamodb.DynamoDbTableNames.STEP;
 /** Cleans finalized DynamoDB rows after SQL commit and both Kafka handoffs are durable. */
 @Component
 @ConditionalOnProperty(prefix = "messaging.complete.cleanup", name = "enabled", havingValue = "true")
-public class FinalizedDynamoCleanup {
+public class FinalizedDynamoCleanup implements SchedulingConfigurer {
     private static final Logger log = LoggerFactory.getLogger(FinalizedDynamoCleanup.class);
     private static final String TTL = "ttl_epoch_seconds";
     private final JdbcTemplate jdbc;
@@ -53,34 +54,60 @@ public class FinalizedDynamoCleanup {
     private final Duration retention;
     private final int concurrency;
     private final ScheduledWorkMetrics metrics;
+    private final Duration initialDelay;
+    private final Duration pollDelay;
+    private volatile boolean continueImmediately;
 
     @Autowired
     public FinalizedDynamoCleanup(JdbcTemplate jdbc, DynamoDbClient db,
                                   @Value("${messaging.complete.cleanup.page-size:100}") int pageSize,
                                   @Value("${messaging.complete.cleanup.max-pages-per-poll:4}") int maxPagesPerPoll,
                                   @Value("${messaging.complete.cleanup.retention:7d}") Duration retention, MeterRegistry registry,
-                                  @Value("${messaging.complete.cleanup.concurrency:2}") int concurrency) {
-        this(jdbc, db, Clock.systemUTC(), pageSize, maxPagesPerPoll, retention, registry, concurrency);
+                                  @Value("${messaging.complete.cleanup.concurrency:2}") int concurrency,
+                                  @Value("${messaging.complete.cleanup.initial-delay-ms:5000}") long initialDelayMs,
+                                  @Value("${messaging.complete.cleanup.poll-ms:5000}") long pollMs) {
+        this(jdbc, db, Clock.systemUTC(), pageSize, maxPagesPerPoll, retention, registry, concurrency,
+                initialDelayMs, pollMs);
     }
 
     FinalizedDynamoCleanup(JdbcTemplate jdbc, DynamoDbClient db, Clock clock,
                            int pageSize, int maxPagesPerPoll, Duration retention, MeterRegistry registry, int concurrency) {
+        this(jdbc, db, clock, pageSize, maxPagesPerPoll, retention, registry, concurrency, 5000, 5000);
+    }
+
+    FinalizedDynamoCleanup(JdbcTemplate jdbc, DynamoDbClient db, Clock clock,
+                           int pageSize, int maxPagesPerPoll, Duration retention, MeterRegistry registry, int concurrency,
+                           long initialDelayMs, long pollMs) {
         this.jdbc = Objects.requireNonNull(jdbc);
         this.db = Objects.requireNonNull(db);
         this.clock = Objects.requireNonNull(clock);
         if (pageSize < 1 || pageSize > 1000 || maxPagesPerPoll < 1 || maxPagesPerPoll > 20
                 || concurrency < 1 || concurrency > 4 || retention == null || retention.isNegative()
-                || retention.isZero()) throw new IllegalArgumentException("Invalid cleanup settings");
+                || retention.isZero() || initialDelayMs < 0 || pollMs < 1) {
+            throw new IllegalArgumentException("Invalid cleanup settings");
+        }
         this.pageSize = pageSize;
         this.maxPagesPerPoll = maxPagesPerPoll;
         this.retention = retention;
         this.concurrency = concurrency;
         this.metrics = new ScheduledWorkMetrics(registry, ScheduledWorkMetrics.Worker.COMPLETE_CLEANUP);
+        this.initialDelay = Duration.ofMillis(initialDelayMs);
+        this.pollDelay = Duration.ofMillis(pollMs);
     }
 
-    @Scheduled(initialDelayString = "${messaging.complete.cleanup.initial-delay-ms:5000}",
-            fixedDelayString = "${messaging.complete.cleanup.poll-ms:5000}")
+    @Override
+    public void configureTasks(ScheduledTaskRegistrar registrar) {
+        // Each turn yields to the scheduler after at most maxPagesPerPoll pages.
+        // Empty/short pages and failed turns retain the idle/error delay.
+        registrar.addTriggerTask(this::poll, context -> {
+            var completed = context.lastCompletion();
+            if (completed == null) return context.getClock().instant().plus(initialDelay);
+            return completed.plus(continueImmediately ? Duration.ZERO : pollDelay);
+        });
+    }
+
     public synchronized void poll() {
+        continueImmediately = false;
         // The scoped pool drains before the poll lock is released, including on interruption.
         // Only a bounded number of lanes is queued, never one task per pending message.
         try (var timing = metrics.start(POLL);
@@ -90,6 +117,8 @@ public class FinalizedDynamoCleanup {
                 if (Thread.currentThread().isInterrupted() || cleanupPage(workers) < pageSize) return;
             }
         }
+        // Do not carry a previous full turn's fast retry into failure or interruption.
+        continueImmediately = !Thread.currentThread().isInterrupted();
     }
 
     private int cleanupPage(ExecutorService workers) {
