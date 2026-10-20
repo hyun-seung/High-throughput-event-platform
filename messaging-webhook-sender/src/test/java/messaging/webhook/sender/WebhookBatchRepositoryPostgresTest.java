@@ -18,9 +18,11 @@ import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -103,6 +105,51 @@ class WebhookBatchRepositoryPostgresTest {
     }
 
     @Test
+    void byteLimitedBatchDoesNotWaitForTheWindowAndRetriesTheIdenticalBody() {
+        var commands = java.util.stream.IntStream.range(0, 3).mapToObj(index ->
+                withMessageId(command(index, 42), "한😀\"\n".repeat(900) + index)).toList();
+        var reference = new CustomerWebhookBatch(1, new UUID(0, 0), 42,
+                commands.subList(0, 2).stream().map(CustomerWebhookBatch.Result::from).toList());
+        int limit = mapper.writeValueAsString(reference).getBytes(StandardCharsets.UTF_8).length;
+        var limited = new WebhookSenderProperties(true, 100, 4, Duration.ofMinutes(10), limit,
+                settings.httpTimeout(), settings.lease(), settings.retryDelay(), settings.maxRetryDelay(), settings.customers());
+        commands.forEach(repository::capture);
+
+        var first = repository.claim(42, destination, limited).orElseThrow();
+        assertEquals(2, first.size());
+        assertEquals(limit, first.body().getBytes(StandardCharsets.UTF_8).length);
+        assertEquals(mapper.writeValueAsString(new CustomerWebhookBatch(1, first.batchId(), 42, reference.results())),
+                first.body());
+        assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM tbl_webhook_outbox WHERE batch_id IS NULL", Integer.class));
+        assertTrue(repository.complete(first, new CustomerWebhookClient.Result(false, 503, "HTTP_503"), Duration.ZERO));
+
+        var retry = repository.claim(42, destination, limited).orElseThrow();
+        assertEquals(first.batchId(), retry.batchId());
+        assertEquals(first.body(), retry.body());
+        assertEquals(2, retry.size());
+        assertEquals(2, retry.attempt());
+        assertTrue(repository.complete(retry, new CustomerWebhookClient.Result(true, 204, null), Duration.ZERO));
+        assertTrue(repository.claim(42, destination, limited).isEmpty(), "The remaining row must still wait for its window");
+        jdbc.update("UPDATE tbl_webhook_outbox SET captured_at = clock_timestamp() - interval '11 minutes' WHERE batch_id IS NULL");
+        var last = repository.claim(42, destination, limited).orElseThrow();
+        assertEquals(1, last.size());
+        assertEquals(List.of(CustomerWebhookBatch.Result.from(commands.getLast())),
+                mapper.readValue(last.body(), CustomerWebhookBatch.class).results());
+    }
+
+    @Test
+    void oversizedSingleResultRollsBackWithoutCreatingABatchOrLosingTheInput() {
+        repository.capture(withMessageId(command(1, 42), "한".repeat(6000)));
+        var limited = new WebhookSenderProperties(true, 100, 4, Duration.ZERO, 16384,
+                settings.httpTimeout(), settings.lease(), settings.retryDelay(), settings.maxRetryDelay(), settings.customers());
+
+        assertThrows(IllegalStateException.class, () -> repository.claim(42, destination, limited));
+
+        assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM tbl_webhook_batch", Integer.class));
+        assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM tbl_webhook_outbox WHERE status = 'PENDING' AND batch_id IS NULL", Integer.class));
+    }
+
+    @Test
     void duplicateCommandIsIdempotentButDifferentFinalDecisionConflicts() {
         var original = command(1, 42);
         repository.capture(original);
@@ -135,5 +182,13 @@ class WebhookBatchRepositoryPostgresTest {
         var submission = new MessageSubmission(id, clientId, "customer-" + index, "01012345678",
                 MessageCategory.GENERAL, Map.of("text", "hello"), null, now.minusSeconds(30));
         return CustomerWebhookSendCommand.from(new FinalizedMessageResult(decision, submission));
+    }
+
+    private static CustomerWebhookSendCommand withMessageId(CustomerWebhookSendCommand command, String messageId) {
+        var original = command.finalized().submission();
+        var submission = new MessageSubmission(original.clientMsgId(), original.clientId(), messageId,
+                original.recipientNumber(), original.messageCategory(), original.payload(),
+                original.secondarySendPayload(), original.receivedAt());
+        return CustomerWebhookSendCommand.from(new FinalizedMessageResult(command.finalized().decision(), submission));
     }
 }

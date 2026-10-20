@@ -9,7 +9,6 @@ import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.json.JsonMapper;
 
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -98,35 +97,30 @@ public class WebhookBatchRepository {
                             """, clientId);
                     if (rows.isEmpty()) return Optional.empty();
                     batchId = UUID.randomUUID();
-                    var results = new ArrayList<CustomerWebhookBatch.Result>();
+                    var batch = new CustomerWebhookBatchBuilder(mapper, batchId, clientId, settings.maxBatchBytes());
                     var ids = new ArrayList<UUID>();
-                    String body = null;
                     boolean sizeLimitReached = false;
                     for (var row : rows) {
                         var command = mapper.readValue((String) row.get("command_json"), CustomerWebhookSendCommand.class);
-                        results.add(CustomerWebhookBatch.Result.from(command));
-                        String candidate = mapper.writeValueAsString(new CustomerWebhookBatch(1, batchId, clientId, results));
-                        if (candidate.getBytes(StandardCharsets.UTF_8).length > settings.maxBatchBytes()) {
-                            results.removeLast();
+                        if (!batch.add(CustomerWebhookBatch.Result.from(command))) {
                             sizeLimitReached = true;
                             break;
                         }
                         ids.add((UUID) row.get("webhook_id"));
-                        body = candidate;
                     }
-                    if (results.isEmpty()) throw new IllegalStateException("Single customer webhook exceeds batch byte limit");
+                    if (ids.isEmpty()) throw new IllegalStateException("Single customer webhook exceeds batch byte limit");
                     Instant oldest = ((java.sql.Timestamp) rows.getFirst().get("captured_at")).toInstant();
                     if (rows.size() < 100 && !sizeLimitReached
                             && oldest.plus(settings.batchWindow()).isAfter(Instant.now())) return Optional.empty();
                     jdbc.update("""
                             INSERT INTO tbl_webhook_batch(batch_id, client_id, destination_url, request_body, item_count, status)
                             VALUES (?, ?, ?, ?, ?, 'PENDING')
-                            """, batchId, clientId, destination.url().toString(), body, results.size());
+                            """, batchId, clientId, destination.url().toString(), batch.body(), ids.size());
                     int linked = named.update("""
                             UPDATE tbl_webhook_outbox SET batch_id = :batch, updated_at = clock_timestamp()
                             WHERE webhook_id IN (:ids) AND batch_id IS NULL
                             """, Map.of("batch", batchId, "ids", ids));
-                    if (linked != results.size()) throw new IllegalStateException("Customer webhook batch membership changed");
+                    if (linked != ids.size()) throw new IllegalStateException("Customer webhook batch membership changed");
                 }
             }
             UUID token = UUID.randomUUID();
