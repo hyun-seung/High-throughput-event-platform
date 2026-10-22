@@ -9,9 +9,13 @@
     </parent>
     <artifactId>verification-tools</artifactId>
     <dependencies>
+        <dependency><groupId>org.side.project.messaging</groupId><artifactId>messaging-common</artifactId><version>${project.version}</version></dependency>
+        <dependency><groupId>software.amazon.awssdk</groupId><artifactId>dynamodb</artifactId></dependency>
+        <dependency><groupId>software.amazon.awssdk</groupId><artifactId>apache5-client</artifactId></dependency>
         <dependency><groupId>tools.jackson.core</groupId><artifactId>jackson-databind</artifactId></dependency>
         <dependency><groupId>org.apache.kafka</groupId><artifactId>kafka-clients</artifactId></dependency>
         <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><scope>test</scope></dependency>
+        <dependency><groupId>org.mockito</groupId><artifactId>mockito-core</artifactId><scope>test</scope></dependency>
     </dependencies>
     <build><plugins><plugin>
         <groupId>org.springframework.boot</groupId><artifactId>spring-boot-maven-plugin</artifactId>
